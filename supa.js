@@ -258,9 +258,12 @@ const SupaSync = {
     if (!items.length) { if (force) delete D.sync.forceAll; return []; }
     const refused = [];
     try {
-      for (let i = 0; i < items.length; i += 100) {
-        const res = await (await sbFetch('/rest/v1/rpc/push_records', { method: 'POST', body: JSON.stringify({ items: items.slice(i, i + 100) }) })).json();
-        res.forEach((x, j) => { const d = done[i + j]; if (x.ok) d.onOk && d.onOk(x.rev); else { refused.push({ kind: x.kind, id: x.id }); d.onNo && d.onNo(); } });
+      // send in bundles of up to 100 records or ~250 KB (farm photos can be big; smaller bundles cope better with weak signal)
+      for (let i = 0; i < items.length;) {
+        let j = i, size = 0; while (j < items.length && j - i < 100 && (j === i || size + JSON.stringify(items[j]).length < 250000)) { size += JSON.stringify(items[j]).length; j++; }
+        const res = await (await sbFetch('/rest/v1/rpc/push_records', { method: 'POST', body: JSON.stringify({ items: items.slice(i, j) }) })).json();
+        res.forEach((x, n) => { const d = done[i + n]; if (x.ok) d.onOk && d.onOk(x.rev); else { refused.push({ kind: x.kind, id: x.id }); d.onNo && d.onNo(); } });
+        i = j; if (items.length > 300) this.set('syncing', `Sending ${Math.min(i, items.length)} of ${items.length}…`);
       }
     } catch (e) { done.forEach((d) => d.onNo && d.onNo()); throw e; }
     if (force && !refused.length) delete D.sync.forceAll;
