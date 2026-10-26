@@ -11,7 +11,7 @@ create table public.staff (
   email            text not null unique check (email = lower(trim(email))),
   full_name        text not null,
   preferred_name   text,
-  initials         text not null check (initials ~ '^[A-Z]{1,4}$'),
+  initials         text not null check (initials ~ '^[A-Z]{1,5}$'),
   role             text not null check (role in ('admin', 'vet', 'vet_tech', 'assistant', 'other')),
   can_reports      boolean not null default false,   -- sales / inventory reports (later modules)
   can_invoices     boolean not null default true,    -- create and edit invoices (later modules)
@@ -21,9 +21,9 @@ create table public.staff (
 );
 
 insert into public.staff (email, full_name, preferred_name, initials, role, can_reports, can_invoices, can_manage_staff) values
-  ('office@bovitech.com.au',         'Bovitech Office',  'Office', 'BVS', 'admin',    true,  true, true),
+  ('office@bovitech.com.au',         'Bovitech Office',  'Office', 'ADMIN', 'admin',    true,  true, true),
   ('jess.shilling@bovitech.com.au',  'Jessica Shilling', 'Jess',   'JS',  'vet',      false, true, false),
-  ('milly.watts@bovitech.com.au',    'Amelia Watts',     'Milly',  'AW',  'vet',      false, true, false),
+  ('milly.watts@bovitech.com.au',    'Amelia Watts',     'Milly',  'MW',  'vet',      false, true, false),
   ('allison.watson@bovitech.com.au', 'Allison Watson',   'Ally',   'AW',  'vet_tech', false, true, false),
   ('rory.nevard@sydney.edu.au',      'Rory Nevard',      'Rory',   'RN',  'vet',      false, true, false);
 

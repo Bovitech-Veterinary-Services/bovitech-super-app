@@ -322,7 +322,7 @@ function staffForm(s) {
   s = s || { full_name: '', preferred_name: '', initials: '', email: '', role: 'vet' };
   return `<div class="f"><label>Full name</label><input id="sf-full" value="${h(s.full_name)}"></div>
   <div class="grid2"><div class="f"><label>Preferred name</label><input id="sf-pref" value="${h(s.preferred_name || '')}"></div>
-  <div class="f"><label>Initials</label><input id="sf-ini" value="${h(s.initials)}" maxlength="4" style="max-width:120px;text-transform:uppercase"><div class="hint">Shown next to everything they add. Best kept different for each person.</div></div></div>
+  <div class="f"><label>Initials</label><input id="sf-ini" value="${h(s.initials)}" maxlength="5" style="max-width:120px;text-transform:uppercase"><div class="hint">Shown next to everything they add. Best kept different for each person.</div></div></div>
   <div class="f"><label>Email (their login)</label><input id="sf-email" type="email" value="${h(s.email)}" ${s.id ? 'disabled' : ''}>${s.id ? '<div class="hint">To change someone\'s email, change it in Supabase (Authentication → Users) and here — ask Claude for help.</div>' : ''}</div>
   <div class="f"><label>Role</label><select id="sf-role">${Object.entries(ROLE_NAMES).map(([v, l]) => `<option value="${v}" ${s.role === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
 }
@@ -330,7 +330,7 @@ function staffFromForm() {
   const v = (id) => (document.getElementById(id).value || '').trim();
   const o = { full_name: v('sf-full'), preferred_name: v('sf-pref') || null, initials: v('sf-ini').toUpperCase(), role: v('sf-role') };
   if (!o.full_name) throw new Error('Enter their full name');
-  if (!/^[A-Z]{1,4}$/.test(o.initials)) throw new Error('Initials must be 1 to 4 letters');
+  if (!/^[A-Z]{1,5}$/.test(o.initials)) throw new Error('Initials must be 1 to 5 letters');
   return o;
 }
 document.addEventListener('change', async (e) => {
