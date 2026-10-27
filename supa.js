@@ -1,6 +1,8 @@
-/* Bovitech Practice — staff sign-in and syncing through the practice database (Supabase, Sydney).
+/* Bovitech Practice — staff sign-in, device checks, app lock and syncing through the practice database (Supabase, Sydney).
    Loaded before app.js. Talks to Supabase directly with fetch (no library), so it also works offline:
-   once someone has signed in on a device, the app opens without signal and syncs when it's back. */
+   once someone has signed in on a device, the app opens without signal and syncs when it's back.
+   Security: password, then a code from an authenticator app the first time on each device (that device is then
+   remembered); a PIN or fingerprint after a few minutes unused; the admin can wipe a device remotely. */
 'use strict';
 
 const SB = {
@@ -12,6 +14,20 @@ const LSJ = {
   set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } },
 };
 const sbErr = (msg, extra) => Object.assign(new Error(msg), extra || {});
+const randHex = (n) => { const a = new Uint8Array(n); crypto.getRandomValues(a); return [...a].map((b) => b.toString(16).padStart(2, '0')).join(''); };
+
+/* each signed-in person gets a secret key on each device; the database remembers devices that passed two-step sign-in */
+const Dev = {
+  key(uid) { const all = LSJ.get('bvp-devkeys') || {}; if (!all[uid]) { all[uid] = randHex(32); LSJ.set('bvp-devkeys', all); } return all[uid]; },
+  k() { return SBAuth.s ? this.key(SBAuth.s.user.id) : null; },
+  label() {
+    const ua = navigator.userAgent; const phone = /Android|iPhone|iPad|Mobile/i.test(ua);
+    const os = /Android/i.test(ua) ? 'Android' : /iPhone|iPad/i.test(ua) ? 'iPhone' : /Windows/i.test(ua) ? 'Windows' : /Mac/i.test(ua) ? 'Mac' : 'Linux';
+    const br = /Edg\//.test(ua) ? 'Edge' : /SamsungBrowser/.test(ua) ? 'Samsung Internet' : /Chrome\//.test(ua) ? 'Chrome' : /Firefox\//.test(ua) ? 'Firefox' : /Safari\//.test(ua) ? 'Safari' : 'browser';
+    let nick = ''; try { nick = localStorage.getItem('bvp-devmodel') || ''; } catch (e) { }
+    return (nick ? nick + ' · ' : '') + `${os} ${phone ? 'phone' : 'computer'} (${br})`;
+  },
+};
 
 /* ---------------- sign-in ---------------- */
 const SBAuth = {
@@ -20,18 +36,43 @@ const SBAuth = {
   list: null,                       // everyone (Settings → Staff & permissions)
   refreshing: null,
   save() { LSJ.set('bvp-session', this.s); LSJ.set('bvp-staff', this.staff); },
-  async auth(path, body, token) {
+  async auth(path, body, token, method) {
     let r;
-    try { r = await fetch(SB.url() + '/auth/v1/' + path, { method: path === 'user' ? 'PUT' : 'POST', headers: { apikey: SB.key(), 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, body: JSON.stringify(body || {}) }); }
+    try { r = await fetch(SB.url() + '/auth/v1/' + path, { method: method || (path === 'user' ? 'PUT' : 'POST'), headers: { apikey: SB.key(), 'Content-Type': 'application/json', ...(token ? { Authorization: 'Bearer ' + token } : {}) }, ...(method === 'GET' || method === 'DELETE' ? {} : { body: JSON.stringify(body || {}) }) }); }
     catch (e) { throw sbErr("Can't reach the practice database — check the internet connection.", { offline: true }); }
     const js = await r.json().catch(() => ({}));
-    if (!r.ok) throw sbErr(js.error_description || js.msg || js.message || ('Sign-in error ' + r.status), { status: r.status, signin: r.status === 400 || r.status === 401 || r.status === 403 });
+    if (!r.ok) throw sbErr(js.error_description || js.msg || js.message || ('Sign-in error ' + r.status), { status: r.status, code: js.error_code || js.code, signin: r.status === 400 || r.status === 401 || r.status === 403 });
     return js;
   },
   keep(js) { this.s = { access_token: js.access_token, refresh_token: js.refresh_token, expires_at: js.expires_at || Math.floor(Date.now() / 1000) + (js.expires_in || 3600), user: { id: js.user.id, email: js.user.email } }; this.save(); },
+  /* step 1: email + password. Returns { done } when this device is already trusted, or what's needed next. */
   async signIn(email, password) {
     const js = await this.auth('token?grant_type=password', { email: email.trim().toLowerCase(), password });
     this.keep(js);
+    return this.afterPassword();
+  },
+  async afterPassword() {
+    let st = await rpc('device_status', { k: Dev.k() });
+    if (st.wipe) { wipeLocal(); st = await rpc('device_status', { k: Dev.k() }); } // this device was wiped by the admin: clear it, then carry on as a new device
+    if (!st.active) { const e = this.s.user.email; await this.signOut(true); throw sbErr(`${e} isn't on the staff list (or has been made inactive). Ask the office.`); }
+    if (st.trusted) { await this.finish(); return { done: true }; }
+    const user = await this.auth('user', null, await this.token(), 'GET');
+    const totp = (user.factors || []).filter((f) => f.factor_type === 'totp');
+    const ok = totp.find((f) => f.status === 'verified');
+    if (ok) return { need: 'code', factorId: ok.id };
+    for (const f of totp) { try { await this.auth('factors/' + f.id, null, await this.token(), 'DELETE'); } catch (e) { } } // half-finished set-ups
+    const en = await this.auth('factors', { factor_type: 'totp', friendly_name: 'Bovitech Practice ' + randHex(3), issuer: 'Bovitech Practice' }, await this.token());
+    return { need: 'enrol', factorId: en.id, qr: en.totp && en.totp.qr_code, secret: en.totp && en.totp.secret };
+  },
+  /* step 2: the 6-digit code from the authenticator app — then this device is remembered */
+  async verifyCode(factorId, code) {
+    const ch = await this.auth('factors/' + factorId + '/challenge', {}, await this.token());
+    const js = await this.auth('factors/' + factorId + '/verify', { challenge_id: ch.id, code: String(code).replace(/\D/g, '') }, await this.token());
+    this.keep(js);
+    await rpc('trust_device', { k: Dev.k(), label: Dev.label() });
+    await this.finish();
+  },
+  async finish() {
     const me = await this.loadMe();
     if (!me) { const e = this.s.user.email; await this.signOut(true); throw sbErr(`${e} isn't on the staff list (or has been made inactive). Ask the office.`); }
     return me;
@@ -62,6 +103,7 @@ const SBAuth = {
     if (!quiet) showLogin();
   },
   can(k) { return !!(this.staff && this.staff[k]); },
+  isAdmin() { return !!(this.staff && this.staff.role === 'admin'); },
 };
 async function sbFetch(path, opt = {}, retried) {
   const t = await SBAuth.token();
@@ -69,47 +111,194 @@ async function sbFetch(path, opt = {}, retried) {
   try { r = await fetch(SB.url() + path, { ...opt, headers: { apikey: SB.key(), Authorization: 'Bearer ' + t, 'Content-Type': 'application/json', ...(opt.headers || {}) } }); }
   catch (e) { throw sbErr("Can't reach the practice database — check the internet connection.", { offline: true }); }
   if (r.status === 401 && !retried) { await SBAuth.token(true); return sbFetch(path, opt, true); }
-  if (!r.ok) { const js = await r.json().catch(() => ({})); const msg = js.message || js.hint || ('Database error ' + r.status);
-    throw sbErr(/not signed in as active staff/i.test(msg) ? "You're not on the active staff list any more — ask the office." : msg, { status: r.status, notStaff: /active staff/i.test(msg), signin: /active staff/i.test(msg) }); }
+  if (!r.ok) {
+    const js = await r.json().catch(() => ({})); const msg = js.message || js.hint || ('Database error ' + r.status);
+    if (/DEVICE_NOT_TRUSTED/.test(msg)) throw sbErr('This device needs to be checked again — please sign in.', { status: r.status, device: true, signin: true });
+    if (/CODE_NEEDED/.test(msg)) throw sbErr('Please enter a new code from your authenticator app.', { status: r.status, codeNeeded: true });
+    throw sbErr(/not signed in as active staff/i.test(msg) ? "You're not on the active staff list any more — ask the office." : msg, { status: r.status, notStaff: /active staff/i.test(msg), signin: /active staff/i.test(msg) });
+  }
   return r;
+}
+const rpc = async (fn, args) => (await sbFetch('/rest/v1/rpc/' + fn, { method: 'POST', body: JSON.stringify(args || {}) })).json();
+
+/* ---------------- remote wipe: the admin removed this device ---------------- */
+function wipeLocal(msg) {
+  try { if (typeof Store !== 'undefined' && Store.db) { Store.db.close(); Store.db = null; } } catch (e) { }
+  try { if (typeof Store !== 'undefined') { Store.open = () => Promise.reject(new Error('wiped')); } } catch (e) { }
+  try { indexedDB.deleteDatabase('bovitech-practice'); } catch (e) { }
+  try { Object.keys(localStorage).filter((x) => x.startsWith('bvp-') || /^sb-/.test(x)).forEach((x) => localStorage.removeItem(x)); } catch (e) { }
+  try { sessionStorage.clear(); } catch (e) { }
+  SBAuth.s = null; SBAuth.staff = null; SBAuth.list = null;
+  if (msg) { try { localStorage.setItem('bvp-wiped-msg', msg); } catch (e) { } setTimeout(() => location.reload(), 300); }
+}
+async function checkWipe(reason) { // called when the database refuses this device
+  try { const st = await rpc('device_status', { k: Dev.k() }); if (st.wipe) { wipeLocal('This device was cleared by the office. Sign in again to use the app.'); return true; } } catch (e) { }
+  return false;
 }
 
 /* ---------------- sign-in screen (covers the app until someone signs in) ---------------- */
+const LG = { mode: 'password', factorId: null, qr: null, secret: null };
 function showLogin(msg) {
   let bg = document.getElementById('loginbox');
   if (!bg) {
     bg = document.createElement('div'); bg.id = 'loginbox';
     bg.style.cssText = 'position:fixed;inset:0;z-index:300;background:var(--bg,#f4f1ea);display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto';
-    bg.innerHTML = `<form class="card" style="width:100%;max-width:400px;margin:auto" autocomplete="on" novalidate>
-      <div style="text-align:center;margin-bottom:6px"><img src="img/icon-192.png" alt="" style="width:76px;height:76px;border-radius:18px"></div>
-      <h2 style="text-align:center;margin:4px 0 2px;font-size:24px">Bovitech Practice</h2>
-      <div class="hint" style="text-align:center;margin-bottom:14px">Sign in with your own login</div>
-      <div class="f"><label for="lg-email">Email</label><input id="lg-email" type="email" autocomplete="username" inputmode="email" style="font-size:17px;width:100%;box-sizing:border-box"></div>
-      <div class="f"><label for="lg-pw">Password</label><input id="lg-pw" type="password" autocomplete="current-password" style="font-size:17px;width:100%;box-sizing:border-box"></div>
+    document.body.appendChild(bg);
+    bg.addEventListener('submit', onLoginSubmit);
+    bg.addEventListener('click', (e) => {
+      if (e.target.id === 'lg-back') { LG.mode = 'password'; SBAuth.signOut(true); drawLogin(''); }
+      if (e.target.id === 'lg-copy' && LG.secret) { try { navigator.clipboard.writeText(LG.secret); e.target.textContent = 'Copied'; } catch (x) { } }
+    });
+    bg.addEventListener('change', (e) => { if (e.target.id === 'lg-show') bg.querySelector('#lg-pw').type = e.target.checked ? 'text' : 'password'; });
+    LG.mode = 'password';
+  }
+  drawLogin(msg || (navigator.onLine ? '' : "You're offline — signing in needs internet the first time on each device."));
+}
+function drawLogin(msg) {
+  const bg = document.getElementById('loginbox'); if (!bg) return;
+  const head = `<div style="text-align:center;margin-bottom:6px"><img src="img/icon-192.png" alt="" style="width:76px;height:76px;border-radius:18px"></div><h2 style="text-align:center;margin:4px 0 2px;font-size:24px">Bovitech Practice</h2>`;
+  const inp = 'font-size:17px;width:100%;box-sizing:border-box';
+  let body;
+  if (LG.mode === 'password') body = `<div class="hint" style="text-align:center;margin-bottom:14px">Sign in with your own login</div>
+      <div class="f"><label for="lg-email">Email</label><input id="lg-email" type="email" autocomplete="username" inputmode="email" style="${inp}"></div>
+      <div class="f"><label for="lg-pw">Password</label><input id="lg-pw" type="password" autocomplete="current-password" style="${inp}"></div>
       <label style="display:flex;gap:6px;align-items:center;font-size:14px;margin:-2px 0 10px"><input type="checkbox" id="lg-show"> Show password</label>
       <button class="btn primary" type="submit" id="lg-go" style="width:100%;font-size:17px;padding:12px">Sign in</button>
       <div id="lg-msg" style="margin-top:10px;color:var(--red,#b42318);font-size:15px"></div>
-      <div class="hint" style="margin-top:12px">Forgotten your password, or don't have a login yet? Ask the office.</div></form>`;
-    document.body.appendChild(bg);
-    bg.querySelector('#lg-show').addEventListener('change', (e) => { bg.querySelector('#lg-pw').type = e.target.checked ? 'text' : 'password'; });
-    bg.querySelector('form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const em = bg.querySelector('#lg-email').value.trim(), pw = bg.querySelector('#lg-pw').value, out = bg.querySelector('#lg-msg'), go = bg.querySelector('#lg-go');
-      if (!em || !pw) { out.textContent = 'Enter your email and password.'; return; }
-      go.disabled = true; go.textContent = 'Signing in…'; out.textContent = '';
-      try {
-        const me = await SBAuth.signIn(em, pw);
-        bg.remove(); if (typeof toast === 'function') toast(`✓ Signed in — hi ${me.preferred_name || me.full_name}`);
-        if (typeof updHi === 'function') updHi();
-        SupaSync.run(true).then(() => { if (typeof renderAll === 'function') renderAll(); });
-      } catch (err) { out.textContent = err.status === 400 ? 'That email and password don’t match. Check them and try again.' : err.message; }
-      finally { go.disabled = false; go.textContent = 'Sign in'; }
-    });
-  }
-  const m = bg.querySelector('#lg-msg'); m.textContent = msg || (navigator.onLine ? '' : "You're offline — signing in needs internet the first time on each device.");
-  if (SBAuth.s && SBAuth.s.user) bg.querySelector('#lg-email').value = SBAuth.s.user.email;
-  setTimeout(() => { const f = bg.querySelector(bg.querySelector('#lg-email').value ? '#lg-pw' : '#lg-email'); if (f) f.focus(); }, 50);
+      <div class="hint" style="margin-top:12px">Forgotten your password, or don't have a login yet? Ask the office.</div>`;
+  else if (LG.mode === 'enrol') body = `<div style="font-weight:700;font-size:17px;margin:6px 0">Set up two-step sign-in (one time)</div>
+      <ol style="margin:4px 0 10px 18px;padding:0;line-height:1.5"><li>Install an authenticator app on your phone — <b>Microsoft Authenticator</b> or <b>Google Authenticator</b>.</li><li>In the app tap <b>+</b> / <b>Add account</b> and scan this code${/Android|iPhone/i.test(navigator.userAgent) ? ' (or, on this phone, copy the key below and choose "Enter a setup key")' : ''}.</li><li>Type the 6-digit code it shows.</li></ol>
+      ${LG.qr ? `<div style="text-align:center;background:#fff;border-radius:10px;padding:8px"><img src="${LG.qr.startsWith('data:') ? LG.qr : 'data:image/svg+xml;utf-8,' + encodeURIComponent(LG.qr)}" alt="QR code" style="width:200px;height:200px"></div>` : ''}
+      ${LG.secret ? `<div class="hint" style="margin:8px 0;word-break:break-all">Key: <b style="font-family:monospace">${h(LG.secret)}</b> <button type="button" class="btn small" id="lg-copy">Copy</button></div>` : ''}
+      <div class="f"><label for="lg-code">6-digit code</label><input id="lg-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" style="${inp};letter-spacing:4px;font-size:22px"></div>
+      <button class="btn primary" type="submit" id="lg-go" style="width:100%;font-size:17px;padding:12px">Confirm</button>
+      <div id="lg-msg" style="margin-top:10px;color:var(--red,#b42318);font-size:15px"></div>
+      <div class="hint" style="margin-top:10px">You'll only be asked for a code the first time you sign in on each phone or computer. <button type="button" class="btn small" id="lg-back">Back</button></div>`;
+  else body = `<div style="font-weight:700;font-size:17px;margin:6px 0">New device — enter your code</div>
+      <div class="hint" style="margin-bottom:10px">Open your authenticator app and type the 6-digit code for <b>Bovitech Practice</b>. This is only needed the first time on this ${/Android|iPhone|Mobile/i.test(navigator.userAgent) ? 'phone' : 'computer'}.</div>
+      <div class="f"><label for="lg-code">6-digit code</label><input id="lg-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" style="${inp};letter-spacing:4px;font-size:22px"></div>
+      <button class="btn primary" type="submit" id="lg-go" style="width:100%;font-size:17px;padding:12px">Confirm</button>
+      <div id="lg-msg" style="margin-top:10px;color:var(--red,#b42318);font-size:15px"></div>
+      <div class="hint" style="margin-top:10px">Lost or changed your phone? Ask the office to reset your two-step sign-in. <button type="button" class="btn small" id="lg-back">Back</button></div>`;
+  bg.innerHTML = `<form class="card" style="width:100%;max-width:400px;margin:auto" autocomplete="on" novalidate>${head}${body}</form>`;
+  bg.querySelector('#lg-msg').textContent = msg || '';
+  let pending = ''; try { pending = localStorage.getItem('bvp-wiped-msg') || ''; if (pending) { localStorage.removeItem('bvp-wiped-msg'); bg.querySelector('#lg-msg').textContent = pending; } } catch (e) { }
+  if (LG.mode === 'password' && SBAuth.s && SBAuth.s.user) bg.querySelector('#lg-email').value = SBAuth.s.user.email;
+  setTimeout(() => { const f = bg.querySelector(LG.mode !== 'password' ? '#lg-code' : bg.querySelector('#lg-email').value ? '#lg-pw' : '#lg-email'); if (f) f.focus(); }, 50);
 }
+async function onLoginSubmit(e) {
+  e.preventDefault();
+  const bg = document.getElementById('loginbox'), out = bg.querySelector('#lg-msg'), go = bg.querySelector('#lg-go'), label = go.textContent;
+  go.disabled = true; go.textContent = LG.mode === 'password' ? 'Signing in…' : 'Checking…'; out.textContent = '';
+  try {
+    if (LG.mode === 'password') {
+      const em = bg.querySelector('#lg-email').value.trim(), pw = bg.querySelector('#lg-pw').value;
+      if (!em || !pw) { out.textContent = 'Enter your email and password.'; return; }
+      const r = await SBAuth.signIn(em, pw);
+      if (!r.done) { Object.assign(LG, { mode: r.need, factorId: r.factorId, qr: r.qr || null, secret: r.secret || null }); drawLogin(''); return; }
+    } else {
+      const code = bg.querySelector('#lg-code').value.replace(/\D/g, '');
+      if (code.length !== 6) { out.textContent = 'Type the 6-digit code from your authenticator app.'; return; }
+      await SBAuth.verifyCode(LG.factorId, code);
+    }
+    signedIn();
+  } catch (err) {
+    out.textContent = LG.mode === 'password' && err.status === 400 ? 'That email and password don’t match. Check them and try again.'
+      : LG.mode !== 'password' && (err.status === 422 || err.status === 400 || /invalid|expired/i.test(err.message)) ? "That code didn't work — codes change every 30 seconds, so type the one showing now." : err.message;
+  } finally { if (go.isConnected) { go.disabled = false; go.textContent = label; } }
+}
+function signedIn() {
+  const me = SBAuth.staff; LG.mode = 'password'; LG.qr = LG.secret = null;
+  const bg = document.getElementById('loginbox'); if (bg) bg.remove();
+  if (typeof toast === 'function') toast(`✓ Signed in — hi ${me.preferred_name || me.full_name}`);
+  if (typeof updHi === 'function') updHi();
+  Lock.afterSignIn();
+  SupaSync.run(true).then(() => { if (typeof renderAll === 'function') renderAll(); });
+}
+
+/* ---------------- app lock: PIN or fingerprint after a few minutes unused ---------------- */
+const Lock = {
+  locked: false, fails: 0,
+  all() { return LSJ.get('bvp-lock') || {}; },
+  mine() { return SBAuth.s ? this.all()[SBAuth.s.user.id] || null : null; },
+  setMine(v) { const a = this.all(); if (v) a[SBAuth.s.user.id] = v; else delete a[SBAuth.s.user.id]; LSJ.set('bvp-lock', a); },
+  minutes() { const m = typeof D !== 'undefined' && D && D.settings && D.settings.appLockMin; return m === 0 ? 0 : m || 10; },
+  last() { return +(localStorage.getItem('bvp-active') || 0); },
+  touch() { if (this.locked) return; const n = Date.now(); if (n - (this._t || 0) > 5000) { this._t = n; try { localStorage.setItem('bvp-active', String(n)); } catch (e) { } } },
+  async hash(pin, salt) {
+    const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(pin), 'PBKDF2', false, ['deriveBits']);
+    const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 150000 }, key, 256);
+    return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, '0')).join('');
+  },
+  async canFinger() { try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch (e) { return false; } },
+  async addFinger() {
+    const me = SBAuth.staff || {}; const uid = new Uint8Array(16); crypto.getRandomValues(uid); const ch = new Uint8Array(32); crypto.getRandomValues(ch);
+    const c = await navigator.credentials.create({ publicKey: { challenge: ch, rp: { name: 'Bovitech Practice' }, user: { id: uid, name: me.email || 'staff', displayName: me.preferred_name || me.full_name || 'Staff' }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }], authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' }, timeout: 60000 } });
+    return btoa(String.fromCharCode(...new Uint8Array(c.rawId)));
+  },
+  async useFinger(id) {
+    const ch = new Uint8Array(32); crypto.getRandomValues(ch);
+    await navigator.credentials.get({ publicKey: { challenge: ch, allowCredentials: [{ type: 'public-key', id: Uint8Array.from(atob(id), (x) => x.charCodeAt(0)) }], userVerification: 'required', timeout: 60000 } });
+  },
+  start() {
+    ['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach((ev) => document.addEventListener(ev, () => this.touch(), { capture: true, passive: true }));
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) this.check(); else this.touch(); });
+    setInterval(() => this.check(), 15000);
+    if (SBAuth.staff && SBAuth.s && !this.mine()) this.show('setup');
+    else this.check(true);
+  },
+  check(atStart) {
+    if (this.locked || !SBAuth.staff || !SBAuth.s || !this.mine() || this.minutes() === 0) return;
+    if (document.getElementById('loginbox')) return;
+    if (Date.now() - this.last() > this.minutes() * 60000 || (atStart && !this.last())) this.show('unlock');
+  },
+  afterSignIn() { this.fails = 0; if (!this.mine()) this.show('setup'); else this.touch(); },
+  hide() { const b = document.getElementById('lockbox'); if (b) b.remove(); this.locked = false; this._t = 0; this.touch(); },
+  async show(mode) {
+    this.locked = true;
+    let b = document.getElementById('lockbox');
+    if (b && b.dataset.mode === mode) return; // already showing
+    if (!b) { b = document.createElement('div'); b.id = 'lockbox'; b.style.cssText = 'position:fixed;inset:0;z-index:290;background:var(--bg,#f4f1ea);display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto'; document.body.appendChild(b); }
+    b.dataset.mode = mode;
+    const me = SBAuth.staff || {}, m = this.mine() || {}, finger = await this.canFinger();
+    const inp = 'font-size:24px;letter-spacing:6px;text-align:center;width:100%;box-sizing:border-box';
+    b.innerHTML = mode === 'setup' ? `<form class="card" style="width:100%;max-width:380px;margin:auto"><h2 style="margin:4px 0 6px;font-size:22px">Choose an app PIN</h2>
+      <div class="hint" style="margin-bottom:10px">The app locks after ${this.minutes()} minute${this.minutes() === 1 ? '' : 's'} without use. Your PIN${finger ? ' or fingerprint' : ''} opens it again. It's only for this app on this device — 4 to 8 numbers.</div>
+      <div class="f"><label for="lk-1">PIN</label><input id="lk-1" type="password" inputmode="numeric" maxlength="8" autocomplete="off" style="${inp}"></div>
+      <div class="f"><label for="lk-2">PIN again</label><input id="lk-2" type="password" inputmode="numeric" maxlength="8" autocomplete="off" style="${inp}"></div>
+      ${finger ? '<label style="display:flex;gap:8px;align-items:center;margin:4px 0 10px"><input type="checkbox" id="lk-fp" checked> Also unlock with my fingerprint / face</label>' : ''}
+      <button class="btn primary" type="submit" style="width:100%;font-size:17px;padding:12px">Save PIN</button><div id="lk-msg" style="margin-top:8px;color:var(--red,#b42318)"></div></form>`
+      : `<form class="card" style="width:100%;max-width:340px;margin:auto;text-align:center"><div style="font-size:42px">🔒</div><h2 style="margin:2px 0 4px;font-size:22px">Hi ${h(me.preferred_name || me.full_name || '')}</h2><div class="hint" style="margin-bottom:12px">Enter your app PIN to carry on</div>
+      <input id="lk-pin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" style="${inp}">
+      <button class="btn primary" type="submit" style="width:100%;font-size:17px;padding:12px;margin-top:10px">Unlock</button>
+      ${m.cred && finger ? '<button class="btn" type="button" id="lk-fpgo" style="width:100%;margin-top:8px;font-size:16px;padding:10px">👆 Use fingerprint / face</button>' : ''}
+      <div id="lk-msg" style="margin-top:8px;color:var(--red,#b42318)"></div>
+      <div class="hint" style="margin-top:10px">Forgotten your PIN? <button type="button" class="btn small" id="lk-out">Sign in again</button></div></form>`;
+    const f = b.querySelector('form'), msg = b.querySelector('#lk-msg');
+    f.onsubmit = async (e) => {
+      e.preventDefault();
+      if (mode === 'setup') {
+        const p1 = b.querySelector('#lk-1').value, p2 = b.querySelector('#lk-2').value;
+        if (!/^\d{4,8}$/.test(p1)) { msg.textContent = 'Use 4 to 8 numbers.'; return; }
+        if (p1 !== p2) { msg.textContent = "The two PINs don't match."; return; }
+        if (/^(\d)\1+$/.test(p1) || '0123456789'.includes(p1) || '9876543210'.includes(p1)) { msg.textContent = 'Too easy to guess — avoid repeated or running numbers.'; return; }
+        const salt = randHex(16); const rec = { salt, hash: await this.hash(p1, salt), cred: null };
+        if (b.querySelector('#lk-fp') && b.querySelector('#lk-fp').checked) { try { rec.cred = await this.addFinger(); } catch (x) { msg.textContent = "Fingerprint wasn't set up — you can add it later in Settings → App lock."; } }
+        this.setMine(rec); setTimeout(() => this.hide(), rec.cred || !b.querySelector('#lk-fp') || !b.querySelector('#lk-fp').checked ? 0 : 1500);
+        if (typeof toast === 'function') toast('✓ App PIN saved');
+      } else {
+        const pin = b.querySelector('#lk-pin').value;
+        if ((await this.hash(pin, m.salt)) === m.hash) { this.fails = 0; this.hide(); return; }
+        this.fails++; b.querySelector('#lk-pin').value = '';
+        if (this.fails >= 5) { this.fails = 0; this.hide(); await SBAuth.signOut(true); showLogin('Too many wrong PINs — please sign in again with your password.'); return; }
+        msg.textContent = `Wrong PIN (${5 - this.fails} more tr${5 - this.fails === 1 ? 'y' : 'ies'} before you need to sign in again).`;
+      }
+    };
+    const fp = b.querySelector('#lk-fpgo'); if (fp) { const go = async () => { try { await this.useFinger(m.cred); this.fails = 0; this.hide(); } catch (x) { msg.textContent = 'Fingerprint not recognised — use your PIN.'; } }; fp.onclick = go; if (mode === 'unlock') setTimeout(go, 300); }
+    const out = b.querySelector('#lk-out'); if (out) out.onclick = async () => { this.hide(); this.setMine(null); await SBAuth.signOut(true); showLogin('Sign in with your password, then choose a new PIN.'); };
+    setTimeout(() => { const i = b.querySelector('#lk-pin, #lk-1'); if (i) i.focus(); }, 50);
+  },
+};
 
 /* ---------------- syncing ----------------
    Every record (contact, business, farm, tag, route) is one row in the database, with a revision number.
@@ -125,6 +314,7 @@ const SupaSync = {
     window.addEventListener('online', () => this.run(false));
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.run(false); });
     setInterval(() => { if (!document.hidden) this.run(false); }, 60 * 1000); window.addEventListener('focus', () => this.run(false));
+    Lock.start();
     if (!SBAuth.staff) { this.set('setup'); showLogin(); return; }
     this.run(false);
   },
@@ -154,7 +344,9 @@ const SupaSync = {
       save(); this.set(D.conflicts.length ? 'conflict' : 'ok');
       if (!this.meChecked || Date.now() - this.meChecked > 15 * 60000) { this.meChecked = Date.now(); SBAuth.loadMe().then((me) => { if (!me) { SBAuth.signOut(true); showLogin("You're not on the active staff list any more — ask the office."); } else if (typeof updHi === 'function') updHi(); }).catch(() => {}); }
     } catch (e) {
-      if (e.signin) { this.set('signin', e.message); if (interactive || e.notStaff) showLogin(e.message); }
+      if (e.device || e.notStaff) { // the database refused this device or person: wiped by the admin, made inactive, or needs a code again
+        if (!(await checkWipe())) { this.set('signin', e.message); if (e.notStaff) await SBAuth.signOut(true); showLogin(e.message); }
+      } else if (e.signin) { this.set('signin', e.message); if (interactive) showLogin(e.message); }
       else if (e.offline) this.set('offline');
       else { this.set('error', e.message); console.error(e); }
     } finally { this.busy = false; save(); if (this.again) { this.again = false; this.soon(); } }
@@ -165,7 +357,7 @@ const SupaSync = {
     const from = new Date(Date.parse(since) - 5 * 60000).toISOString();
     let lastSeq = 0, maxAt = since, changes = 0, rows;
     do {
-      rows = await (await sbFetch(`/rest/v1/records?select=kind,id,data,rev,deleted,seq,updated_at&updated_at=gte.${encodeURIComponent(from)}&seq=gt.${lastSeq}&order=seq.asc&limit=500`)).json();
+      rows = await rpc('pull_records', { k: Dev.k(), since: from, after_seq: lastSeq, lim: 500 });
       rows.forEach((r) => { changes += this.apply(r); lastSeq = r.seq; if (Date.parse(r.updated_at) > Date.parse(maxAt)) maxAt = r.updated_at; });
     } while (rows.length === 500);
     D.sync.since = maxAt;
@@ -174,9 +366,8 @@ const SupaSync = {
   async fetchRows(list) {
     let changes = 0;
     const byKind = {}; list.forEach((x) => (byKind[x.kind] = byKind[x.kind] || []).push(x.id));
-    for (const [k, ids] of Object.entries(byKind)) for (let i = 0; i < ids.length; i += 100) {
-      const q = ids.slice(i, i + 100).map((id) => '"' + String(id).replace(/"/g, '') + '"').join(',');
-      const rows = await (await sbFetch(`/rest/v1/records?select=kind,id,data,rev,deleted,seq,updated_at&kind=eq.${k}&id=in.(${encodeURIComponent(q)})`)).json();
+    for (const [kind, ids] of Object.entries(byKind)) for (let i = 0; i < ids.length; i += 100) {
+      const rows = await rpc('fetch_records', { k: Dev.k(), kind_: kind, ids: ids.slice(i, i + 100) });
       rows.forEach((r) => (changes += this.apply(r)));
     }
     return changes;
@@ -261,7 +452,7 @@ const SupaSync = {
       // send in bundles of up to 100 records or ~250 KB (farm photos can be big; smaller bundles cope better with weak signal)
       for (let i = 0; i < items.length;) {
         let j = i, size = 0; while (j < items.length && j - i < 100 && (j === i || size + JSON.stringify(items[j]).length < 250000)) { size += JSON.stringify(items[j]).length; j++; }
-        const res = await (await sbFetch('/rest/v1/rpc/push_records', { method: 'POST', body: JSON.stringify({ items: items.slice(i, j) }) })).json();
+        const res = await rpc('push_records', { items: items.slice(i, j), k: Dev.k() });
         res.forEach((x, n) => { const d = done[i + n]; if (x.ok) d.onOk && d.onOk(x.rev); else { refused.push({ kind: x.kind, id: x.id }); d.onNo && d.onNo(); } });
         i = j; if (items.length > 300) this.set('syncing', `Sending ${Math.min(i, items.length)} of ${items.length}…`);
       }
@@ -280,7 +471,7 @@ const SupaSync = {
     D.sync.forceAll = true; D.sync.gotSettings = true;
   },
 };
-window.SBAuth = SBAuth; window.SupaSync = SupaSync;
+window.SBAuth = SBAuth; window.SupaSync = SupaSync; window.Lock = Lock;
 
 /* ---------------- Settings: sync & sign-in, staff & permissions ---------------- */
 const ROLE_NAMES = { admin: 'Admin', vet: 'Vet', vet_tech: 'Vet technician', assistant: 'Vet assistant', other: 'Other' };
@@ -306,12 +497,13 @@ function staffBoxHtml() {
   ${list.map((s) => `<div class="card" style="padding:10px;margin:6px 0${s.active ? '' : ';opacity:.6'}">
     <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:180px"><b>${h(s.preferred_name || s.full_name)}</b>${s.preferred_name && s.preferred_name !== s.full_name ? ` <span class="hint">(${h(s.full_name)})</span>` : ''} · ${h(s.initials)}${initialsSeen[s.initials] > 1 && s.active ? ' <span style="color:var(--red);font-size:13px">same initials as someone else</span>' : ''}<br><span class="hint">${h(ROLE_NAMES[s.role] || s.role)} · ${h(s.email)}${s.user_id ? '' : ' · <b>no login yet</b>'}</span></div>
     ${mgr ? `<button class="btn small" data-act="staff-edit" data-id="${s.id}">✏️ Edit</button>` : ''}</div>
-    <div class="checks" style="margin-top:6px">${PERMS.map(([k, l]) => `<label><input type="checkbox" data-staffperm="${k}" data-id="${s.id}" ${s[k] ? 'checked' : ''} ${mgr ? '' : 'disabled'}>${l}</label>`).join('')}</div></div>`).join('')}
+    <div class="checks" style="margin-top:6px">${PERMS.map(([k, l]) => `<label><input type="checkbox" data-staffperm="${k}" data-id="${s.id}" ${s[k] ? 'checked' : ''} ${mgr ? '' : 'disabled'}>${l}</label>`).join('')}</div>${SBAuth.isAdmin() ? Admin.personHtml(s) : ''}</div>`).join('')}
   ${mgr ? `<div class="actions" style="margin-top:8px"><button class="btn small" data-act="staff-add">➕ Add a person</button><a class="btn small" href="https://supabase.com/dashboard/project/${(SB.url() || '').replace(/^https:\/\/|\.supabase\.co.*$/g, '')}/auth/users" target="_blank" rel="noopener">Logins and passwords (Supabase) ↗</a></div>
   <div class="hint" style="margin-top:6px">To give someone a login: add them here, then in Supabase go to <b>Authentication → Users → Add user → Create new user</b>, enter the same email and a starting password, tick <b>Auto Confirm User</b>, and tell them the password (they can change it in Settings → Sync &amp; sign-in). Forgotten passwords are reset in the same place. Untick <b>Can sign in</b> to stop someone syncing straight away.</div>` : ''}`;
 }
 async function fillStaffBox(force) {
   const box = document.getElementById('staff-box'); if (!box) return;
+  if (SBAuth.isAdmin() && (!Admin.devices || force) && navigator.onLine) { box.dataset.filled = '1'; try { Admin.devices = await rpc('list_devices', { k: Dev.k() }); } catch (e) { Admin.devices = []; } }
   if (!SBAuth.s) { box.innerHTML = '<div class="hint">Sign in to see the staff list.</div>'; return; }
   if (SBAuth.list && !force) { box.innerHTML = staffBoxHtml(); box.dataset.filled = '1'; return; }
   if (!navigator.onLine) { box.innerHTML = '<div class="hint">Connect to the internet to see the staff list.</div>'; return; }
@@ -342,9 +534,12 @@ document.addEventListener('change', async (e) => {
   const s = (SBAuth.list || []).find((x) => x.id === id);
   if (s && SBAuth.staff && s.id === SBAuth.staff.id && !on && (k === 'can_manage_staff' || k === 'active') && !(await ask(k === 'active' ? "Stop yourself signing in? You'll be signed out on every device." : "Remove your own permission to manage staff? Someone else will have to give it back.", 'Yes — remove'))) { t.checked = true; return; }
   try {
-    await sbFetch('/rest/v1/staff?id=eq.' + id, { method: 'PATCH', body: JSON.stringify({ [k]: on }), headers: { Prefer: 'return=minimal' } });
+    await rpc('staff_update', { k: Dev.k(), staff_id: id, patch: { [k]: on } });
     toast(`✓ ${s ? s.preferred_name || s.full_name : 'Staff'}: ${PERMS.find((p) => p[0] === k)[1]} ${on ? 'on' : 'off'}`);
     await SBAuth.loadList(); if (s && SBAuth.staff && s.id === SBAuth.staff.id) await SBAuth.loadMe();
+    if (k === 'active' && !on && SBAuth.isAdmin() && s && s.id !== SBAuth.staff.id && await ask(`Also wipe ${s.preferred_name || s.full_name}'s phones and computers? The app and its copy of the data are cleared from each one the next time it's online.`, 'Yes — wipe their devices')) {
+      const n = await rpc('wipe_devices', { k: Dev.k(), staff_id_: s.id }); toast(`✓ ${n} device${n === 1 ? '' : 's'} will be wiped`); Admin.devices = null;
+    }
   } catch (err) { t.checked = !on; toast(/manage staff/.test(err.message) ? 'At least one active person must be able to manage staff' : err.message); }
   fillStaffBox();
 });
@@ -369,12 +564,71 @@ document.addEventListener('click', async (e) => {
       const clash = (SBAuth.list || []).find((x) => x.active && x.initials === o.initials && (!s || x.id !== s.id));
       if (clash && !(await ask(`${clash.preferred_name || clash.full_name} already uses ${o.initials}. Use the same initials anyway?`, 'Yes — keep'))) return false;
       try {
-        if (s) await sbFetch('/rest/v1/staff?id=eq.' + s.id, { method: 'PATCH', body: JSON.stringify(o), headers: { Prefer: 'return=minimal' } });
+        if (s) await rpc('staff_update', { k: Dev.k(), staff_id: s.id, patch: o });
         else { const em = (document.getElementById('sf-email').value || '').trim().toLowerCase(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast('Enter their email'); return false; }
-          await sbFetch('/rest/v1/staff', { method: 'POST', body: JSON.stringify({ ...o, email: em }), headers: { Prefer: 'return=minimal' } }); }
+          await rpc('staff_add', { k: Dev.k(), person: { ...o, email: em } }); }
         await SBAuth.loadList(); if (s && SBAuth.staff && s.id === SBAuth.staff.id) await SBAuth.loadMe();
         toast(s ? '✓ Saved' : '✓ Added — now create their login in Supabase (see the steps below the list)'); setTimeout(() => fillStaffBox(), 50); return true;
       } catch (err) { toast(/duplicate key/.test(err.message) ? 'Someone with that email is already on the list' : err.message); return false; }
     });
+  }
+});
+
+/* ---------------- admin only: devices, remote wipe, two-step reset, security log ---------------- */
+const Admin = {
+  devices: null, log: null,
+  when(t) { return t ? new Date(t).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) : '—'; },
+  personHtml(s) {
+    if (!s.user_id) return '';
+    const mine = (this.devices || []).filter((d) => d.staff_id === s.id && !d.revoked_at);
+    return `<details style="margin-top:6px"><summary class="hint" style="cursor:pointer">📱 Devices (${mine.length}) · security</summary>
+      ${mine.length ? mine.map((d) => `<div class="kv" style="align-items:center"><div class="v">${h(d.label || 'Device')}${d.this ? ' <span class="hint">(this one)</span>' : ''}<br><span class="hint">Added ${this.when(d.created_at)} · last used ${this.when(d.last_seen)}</span></div>${d.this ? '' : `<button class="btn small" data-act="adm-rmdev" data-id="${d.id}" data-who="${h(s.preferred_name || s.full_name)}" data-label="${h(d.label || 'this device')}">Remove &amp; wipe</button>`}</div>`).join('') : '<div class="hint">No devices signed in yet.</div>'}
+      <div class="actions" style="margin-top:6px">${mine.some((d) => !d.this) ? `<button class="btn small" data-act="adm-wipe" data-id="${s.id}" data-who="${h(s.preferred_name || s.full_name)}">🧹 Wipe all their devices</button>` : ''}<button class="btn small" data-act="adm-reset2" data-id="${s.id}" data-who="${h(s.preferred_name || s.full_name)}">🔑 Reset two-step sign-in</button></div>
+      <div class="hint" style="margin-top:4px">A removed device clears the app and its copy of the data the next time it's online. Reset two-step sign-in if they lose or change phones — they set up their authenticator app again when they next sign in.</div></details>`;
+  },
+  card() {
+    if (!SBAuth.isAdmin()) return '';
+    return `<div class="card"><h3>Security log</h3><div class="hint" style="margin-bottom:6px">Sign-ins on new devices, wipes, two-step resets, staff changes and backups. Each of these is also emailed to the office (once the email alerts are set up). Admin only.</div><div id="seclog-box"><div class="hint">Loading…</div></div></div>`;
+  },
+  kindText: { new_device: '📱 Signed in on a new device', device_wiped: '🧹 Device removed and wiped', devices_wiped: '🧹 All devices wiped', two_step_reset: '🔑 Two-step sign-in reset', staff_changed: '👤 Staff details or permissions changed', staff_added: '👤 Person added', backup_ok: '💾 Nightly backup saved', backup_failed: '⚠️ Nightly backup failed' },
+  async fillLog() {
+    const box = document.getElementById('seclog-box'); if (!box || box.dataset.filled) return; box.dataset.filled = '1';
+    if (!navigator.onLine) { box.innerHTML = '<div class="hint">Connect to the internet to see the log.</div>'; return; }
+    try { this.log = await rpc('security_log', { k: Dev.k(), lim: 200 }); } catch (e) { box.innerHTML = `<div class="hint" style="color:var(--red)">${h(e.message)}</div>`; return; }
+    const det = (e) => { const d = e.detail || {}; if (e.kind === 'staff_changed') return Object.entries(d).map(([k, v]) => `${({ can_reports: 'Reports', can_invoices: 'Invoices', can_manage_staff: 'Manage staff', active: 'Can sign in', full_name: 'Name', preferred_name: 'Preferred name', initials: 'Initials', role: 'Role' })[k] || k}: ${v === true ? 'on' : v === false ? 'off' : v}`).join(', ');
+      if (d.device) return d.device; if (d.devices != null) return d.devices + ' device' + (d.devices === 1 ? '' : 's'); if (d.file) return d.file + (d.size ? ` (${Math.round(d.size / 1024)} KB)` : ''); if (d.error) return d.error; return ''; };
+    box.innerHTML = this.log.length ? this.log.map((e) => `<div class="kv"><div class="k" style="min-width:140px">${this.when(e.at)}</div><div class="v"><b>${h(this.kindText[e.kind] || e.kind)}</b>${e.about ? ' — ' + h(e.about_pref || e.about) : ''}${e.by && e.by !== e.about ? ` <span class="hint">by ${h(e.by_pref || e.by)}</span>` : ''}${det(e) ? `<br><span class="hint">${h(det(e))}</span>` : ''}</div></div>`).join('') : '<div class="hint">Nothing yet.</div>';
+  },
+};
+new MutationObserver(() => { const b = document.getElementById('seclog-box'); if (b && !b.dataset.filled) Admin.fillLog(); const l = document.getElementById('lock-box'); if (l && !l.dataset.filled) fillLockBox(); }).observe(document.documentElement, { childList: true, subtree: true });
+
+/* Settings → App lock */
+function lockCard() { return `<div class="card"><h3>App lock</h3><div id="lock-box"></div></div>`; }
+async function fillLockBox() {
+  const box = document.getElementById('lock-box'); if (!box) return; box.dataset.filled = '1';
+  const m = Lock.mine(), finger = await Lock.canFinger(), min = Lock.minutes();
+  box.innerHTML = `<div class="hint" style="margin-bottom:6px">The app locks after <b>${min === 0 ? 'never' : min + ' minute' + (min === 1 ? '' : 's')}</b> without use, and asks for your PIN${m && m.cred ? ' or fingerprint' : ''}. Your PIN is only for this app on this device.</div>
+  <div class="actions"><button class="btn small" data-act="lk-change">Change my PIN</button>${finger ? (m && m.cred ? '<button class="btn small" data-act="lk-fpoff">Stop using fingerprint</button>' : '<button class="btn small" data-act="lk-fpon">👆 Use fingerprint / face too</button>') : ''}<button class="btn small" data-act="lk-now">🔒 Lock now</button></div>
+  ${SBAuth.isAdmin() ? `<div class="f" style="margin-top:10px"><label>Lock after (everyone, admin only)</label><select data-act="lk-min">${[1, 2, 5, 10, 15, 30, 60].map((v) => `<option value="${v}" ${min === v ? 'selected' : ''}>${v} minute${v === 1 ? '' : 's'}</option>`).join('')}</select></div>` : ''}`;
+}
+document.addEventListener('change', (e) => {
+  if (e.target.dataset && e.target.dataset.act === 'lk-min' && SBAuth.isAdmin()) { D.settings.appLockMin = +e.target.value; touch(D.settings); save(); SupaSync.soon(); toast(`✓ The app now locks after ${e.target.value} minute${e.target.value === '1' ? '' : 's'} on every device`); const b = document.getElementById('lock-box'); if (b) fillLockBox(); }
+});
+document.addEventListener('click', async (e) => {
+  const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return;
+  const a = el.dataset.act;
+  if (a === 'lk-now') Lock.show('unlock');
+  else if (a === 'lk-change') Lock.show('setup');
+  else if (a === 'lk-fpon') { try { const m = Lock.mine(); m.cred = await Lock.addFinger(); Lock.setMine(m); toast('✓ Fingerprint / face unlock turned on'); } catch (x) { toast("Fingerprint wasn't set up"); } fillLockBox(); }
+  else if (a === 'lk-fpoff') { const m = Lock.mine(); m.cred = null; Lock.setMine(m); toast('Fingerprint unlock turned off'); fillLockBox(); }
+  else if (a === 'adm-rmdev' && SBAuth.isAdmin()) {
+    if (!(await ask(`Remove ${el.dataset.label} (${el.dataset.who})? The app and its copy of the data are wiped from it the next time it's online, and it will need a new code to sign in again.`, 'Yes — remove and wipe', true))) return;
+    try { await rpc('remove_device', { k: Dev.k(), device_id: el.dataset.id }); toast('✓ Device removed — it wipes itself next time it goes online'); fillStaffBox(true); } catch (x) { toast(x.message); }
+  } else if (a === 'adm-wipe' && SBAuth.isAdmin()) {
+    if (!(await ask(`Wipe all of ${el.dataset.who}'s phones and computers? The app and its copy of the data are cleared from each one the next time it's online. They can sign in again with their password and a code.`, 'Yes — wipe them', true))) return;
+    try { const n = await rpc('wipe_devices', { k: Dev.k(), staff_id_: el.dataset.id }); toast(`✓ ${n} device${n === 1 ? '' : 's'} will be wiped`); fillStaffBox(true); } catch (x) { toast(x.message); }
+  } else if (a === 'adm-reset2' && SBAuth.isAdmin()) {
+    if (!(await ask(`Reset ${el.dataset.who}'s two-step sign-in? Their devices are wiped and they set up their authenticator app again when they next sign in. Use this if they've lost or changed their phone.`, 'Yes — reset', true))) return;
+    try { await rpc('reset_two_step', { k: Dev.k(), staff_id_: el.dataset.id }); toast('✓ Reset — they set it up again at their next sign-in'); fillStaffBox(true); } catch (x) { toast(x.message); }
   }
 });
