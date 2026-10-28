@@ -2,7 +2,7 @@
    Loaded before app.js. Talks to Supabase directly with fetch (no library), so it also works offline:
    once someone has signed in on a device, the app opens without signal and syncs when it's back.
    Security: password, then a code from an authenticator app the first time on each device (that device is then
-   remembered); a PIN or fingerprint after a few minutes unused; the admin can wipe a device remotely. */
+   remembered); the shared app PIN after a few minutes unused; the admin can wipe a device remotely. */
 'use strict';
 
 const SB = {
@@ -156,7 +156,7 @@ function showLogin(msg) {
 }
 function drawLogin(msg) {
   const bg = document.getElementById('loginbox'); if (!bg) return;
-  const head = `<div style="text-align:center;margin-bottom:6px"><img src="img/icon-192.png" alt="" style="width:76px;height:76px;border-radius:18px"></div><h2 style="text-align:center;margin:4px 0 2px;font-size:24px">Bovitech Practice</h2>`;
+  const head = `<div style="text-align:center;margin-bottom:6px"><img src="img/icon-192.png" alt="" style="width:76px;height:76px;border-radius:18px"></div><h2 style="text-align:center;margin:4px 0 2px;font-size:24px">Bovitech Super App</h2>`;
   const inp = 'font-size:17px;width:100%;box-sizing:border-box';
   let body;
   if (LG.mode === 'password') body = `<div class="hint" style="text-align:center;margin-bottom:14px">Sign in with your own login</div>
@@ -210,19 +210,18 @@ async function onLoginSubmit(e) {
 function signedIn() {
   const me = SBAuth.staff; LG.mode = 'password'; LG.qr = LG.secret = null;
   const bg = document.getElementById('loginbox'); if (bg) bg.remove();
-  if (typeof toast === 'function') toast(`✓ Signed in — hi ${me.preferred_name || me.full_name}`);
+  if (typeof toast === 'function') toast(`✓ Signed in — hi ${typeof niceName === 'function' ? niceName(me.preferred_name || me.full_name) : me.preferred_name || me.full_name}`);
   if (typeof updHi === 'function') updHi();
   Lock.afterSignIn();
   SupaSync.run(true).then(() => { if (typeof renderAll === 'function') renderAll(); });
 }
 
-/* ---------------- app lock: PIN or fingerprint after a few minutes unused ---------------- */
+/* ---------------- app lock: one shared practice PIN after a few minutes unused (set by the admin, same for everyone) ---------------- */
+const LOCK_DEFAULT = { salt: 'bovitech-app-pin', pin: '2015' };
 const Lock = {
   locked: false, fails: 0,
-  all() { return LSJ.get('bvp-lock') || {}; },
-  mine() { return SBAuth.s ? this.all()[SBAuth.s.user.id] || null : null; },
-  setMine(v) { const a = this.all(); if (v) a[SBAuth.s.user.id] = v; else delete a[SBAuth.s.user.id]; LSJ.set('bvp-lock', a); },
   minutes() { const m = typeof D !== 'undefined' && D && D.settings && D.settings.appLockMin; return m === 0 ? 0 : m || 10; },
+  rec() { return (typeof D !== 'undefined' && D && D.settings && D.settings.appPin) || null; }, // {salt, hash}; none yet = the starting PIN
   last() { return +(localStorage.getItem('bvp-active') || 0); },
   touch() { if (this.locked) return; const n = Date.now(); if (n - (this._t || 0) > 5000) { this._t = n; try { localStorage.setItem('bvp-active', String(n)); } catch (e) { } } },
   async hash(pin, salt) {
@@ -230,73 +229,44 @@ const Lock = {
     const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: new TextEncoder().encode(salt), iterations: 150000 }, key, 256);
     return [...new Uint8Array(bits)].map((b) => b.toString(16).padStart(2, '0')).join('');
   },
-  async canFinger() { try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch (e) { return false; } },
-  async addFinger() {
-    const me = SBAuth.staff || {}; const uid = new Uint8Array(16); crypto.getRandomValues(uid); const ch = new Uint8Array(32); crypto.getRandomValues(ch);
-    const c = await navigator.credentials.create({ publicKey: { challenge: ch, rp: { name: 'Bovitech Practice' }, user: { id: uid, name: me.email || 'staff', displayName: me.preferred_name || me.full_name || 'Staff' }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }], authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' }, timeout: 60000 } });
-    return btoa(String.fromCharCode(...new Uint8Array(c.rawId)));
-  },
-  async useFinger(id) {
-    const ch = new Uint8Array(32); crypto.getRandomValues(ch);
-    await navigator.credentials.get({ publicKey: { challenge: ch, allowCredentials: [{ type: 'public-key', id: Uint8Array.from(atob(id), (x) => x.charCodeAt(0)) }], userVerification: 'required', timeout: 60000 } });
-  },
+  async ok(pin) { const r = this.rec(); if (!r) return pin === LOCK_DEFAULT.pin; return (await this.hash(pin, r.salt)) === r.hash; },
+  async setPin(pin) { const salt = randHex(16); D.settings.appPin = { salt, hash: await this.hash(pin, salt), at: Date.now(), by: SBAuth.staff && SBAuth.staff.id }; touch(D.settings); save(); SupaSync.soon(); },
   start() {
+    try { localStorage.removeItem('bvp-lock'); } catch (e) { } // the old per-person PINs and fingerprints
     ['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach((ev) => document.addEventListener(ev, () => this.touch(), { capture: true, passive: true }));
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.check(); else this.touch(); });
     setInterval(() => this.check(), 15000);
-    if (SBAuth.staff && SBAuth.s && !this.mine()) this.show('setup');
-    else this.check(true);
+    this.check(true);
   },
   check(atStart) {
-    if (this.locked || !SBAuth.staff || !SBAuth.s || !this.mine() || this.minutes() === 0) return;
+    if (this.locked || !SBAuth.staff || !SBAuth.s || this.minutes() === 0) return;
     if (document.getElementById('loginbox')) return;
-    if (Date.now() - this.last() > this.minutes() * 60000 || (atStart && !this.last())) this.show('unlock');
+    if (Date.now() - this.last() > this.minutes() * 60000 || (atStart && !this.last())) this.show();
   },
-  afterSignIn() { this.fails = 0; if (!this.mine()) this.show('setup'); else this.touch(); },
+  afterSignIn() { this.fails = 0; this.touch(); },
   hide() { const b = document.getElementById('lockbox'); if (b) b.remove(); this.locked = false; this._t = 0; this.touch(); },
-  async show(mode) {
+  show() {
     this.locked = true;
-    let b = document.getElementById('lockbox');
-    if (b && b.dataset.mode === mode) return; // already showing
-    if (!b) { b = document.createElement('div'); b.id = 'lockbox'; b.style.cssText = 'position:fixed;inset:0;z-index:290;background:var(--bg,#f4f1ea);display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto'; document.body.appendChild(b); }
-    b.dataset.mode = mode;
-    const me = SBAuth.staff || {}, m = this.mine() || {}, finger = await this.canFinger();
+    let b = document.getElementById('lockbox'); if (b) return; // already showing
+    b = document.createElement('div'); b.id = 'lockbox'; b.style.cssText = 'position:fixed;inset:0;z-index:290;background:var(--bg,#f4f1ea);display:flex;align-items:center;justify-content:center;padding:16px;overflow:auto'; document.body.appendChild(b);
+    const me = SBAuth.staff || {};
     const inp = 'font-size:24px;letter-spacing:6px;text-align:center;width:100%;box-sizing:border-box';
-    b.innerHTML = mode === 'setup' ? `<form class="card" style="width:100%;max-width:380px;margin:auto"><h2 style="margin:4px 0 6px;font-size:22px">Choose an app PIN</h2>
-      <div class="hint" style="margin-bottom:10px">The app locks after ${this.minutes()} minute${this.minutes() === 1 ? '' : 's'} without use. Your PIN${finger ? ' or fingerprint' : ''} opens it again. It's only for this app on this device — 4 to 8 numbers.</div>
-      <div class="f"><label for="lk-1">PIN</label><input id="lk-1" type="password" inputmode="numeric" maxlength="8" autocomplete="off" style="${inp}"></div>
-      <div class="f"><label for="lk-2">PIN again</label><input id="lk-2" type="password" inputmode="numeric" maxlength="8" autocomplete="off" style="${inp}"></div>
-      ${finger ? '<label style="display:flex;gap:8px;align-items:center;margin:4px 0 10px"><input type="checkbox" id="lk-fp" checked> Also unlock with my fingerprint / face</label>' : ''}
-      <button class="btn primary" type="submit" style="width:100%;font-size:17px;padding:12px">Save PIN</button><div id="lk-msg" style="margin-top:8px;color:var(--red,#b42318)"></div></form>`
-      : `<form class="card" style="width:100%;max-width:340px;margin:auto;text-align:center"><div style="font-size:42px">🔒</div><h2 style="margin:2px 0 4px;font-size:22px">Hi ${h(me.preferred_name || me.full_name || '')}</h2><div class="hint" style="margin-bottom:12px">Enter your app PIN to carry on</div>
-      <input id="lk-pin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" style="${inp}">
+    b.innerHTML = `<form class="card" style="width:100%;max-width:340px;margin:auto;text-align:center"><div style="font-size:42px">🔒</div><h2 style="margin:2px 0 4px;font-size:22px">Hi ${h(me.preferred_name || me.full_name || '')}</h2><div class="hint" style="margin-bottom:12px">Enter the app PIN to carry on</div>
+      <input id="lk-pin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" aria-label="App PIN" style="${inp}">
       <button class="btn primary" type="submit" style="width:100%;font-size:17px;padding:12px;margin-top:10px">Unlock</button>
-      ${m.cred && finger ? '<button class="btn" type="button" id="lk-fpgo" style="width:100%;margin-top:8px;font-size:16px;padding:10px">👆 Use fingerprint / face</button>' : ''}
       <div id="lk-msg" style="margin-top:8px;color:var(--red,#b42318)"></div>
-      <div class="hint" style="margin-top:10px">Forgotten your PIN? <button type="button" class="btn small" id="lk-out">Sign in again</button></div></form>`;
+      <div class="hint" style="margin-top:10px">Forgotten the PIN? Ask the office, or <button type="button" class="btn small" id="lk-out">sign out</button></div></form>`;
     const f = b.querySelector('form'), msg = b.querySelector('#lk-msg');
     f.onsubmit = async (e) => {
       e.preventDefault();
-      if (mode === 'setup') {
-        const p1 = b.querySelector('#lk-1').value, p2 = b.querySelector('#lk-2').value;
-        if (!/^\d{4,8}$/.test(p1)) { msg.textContent = 'Use 4 to 8 numbers.'; return; }
-        if (p1 !== p2) { msg.textContent = "The two PINs don't match."; return; }
-        if (/^(\d)\1+$/.test(p1) || '0123456789'.includes(p1) || '9876543210'.includes(p1)) { msg.textContent = 'Too easy to guess — avoid repeated or running numbers.'; return; }
-        const salt = randHex(16); const rec = { salt, hash: await this.hash(p1, salt), cred: null };
-        if (b.querySelector('#lk-fp') && b.querySelector('#lk-fp').checked) { try { rec.cred = await this.addFinger(); } catch (x) { msg.textContent = "Fingerprint wasn't set up — you can add it later in Settings → App lock."; } }
-        this.setMine(rec); setTimeout(() => this.hide(), rec.cred || !b.querySelector('#lk-fp') || !b.querySelector('#lk-fp').checked ? 0 : 1500);
-        if (typeof toast === 'function') toast('✓ App PIN saved');
-      } else {
-        const pin = b.querySelector('#lk-pin').value;
-        if ((await this.hash(pin, m.salt)) === m.hash) { this.fails = 0; this.hide(); return; }
-        this.fails++; b.querySelector('#lk-pin').value = '';
-        if (this.fails >= 5) { this.fails = 0; this.hide(); await SBAuth.signOut(true); showLogin('Too many wrong PINs — please sign in again with your password.'); return; }
-        msg.textContent = `Wrong PIN (${5 - this.fails} more tr${5 - this.fails === 1 ? 'y' : 'ies'} before you need to sign in again).`;
-      }
+      const pin = b.querySelector('#lk-pin').value;
+      if (await this.ok(pin)) { this.fails = 0; this.hide(); return; }
+      this.fails++; b.querySelector('#lk-pin').value = '';
+      if (this.fails >= 5) { this.fails = 0; this.hide(); await SBAuth.signOut(true); showLogin('Too many wrong PINs — please sign in again with your password.'); return; }
+      msg.textContent = `Wrong PIN (${5 - this.fails} more tr${5 - this.fails === 1 ? 'y' : 'ies'} before you need to sign in again).`;
     };
-    const fp = b.querySelector('#lk-fpgo'); if (fp) { const go = async () => { try { await this.useFinger(m.cred); this.fails = 0; this.hide(); } catch (x) { msg.textContent = 'Fingerprint not recognised — use your PIN.'; } }; fp.onclick = go; if (mode === 'unlock') setTimeout(go, 300); }
-    const out = b.querySelector('#lk-out'); if (out) out.onclick = async () => { this.hide(); this.setMine(null); await SBAuth.signOut(true); showLogin('Sign in with your password, then choose a new PIN.'); };
-    setTimeout(() => { const i = b.querySelector('#lk-pin, #lk-1'); if (i) i.focus(); }, 50);
+    b.querySelector('#lk-out').onclick = async () => { this.hide(); await SBAuth.signOut(true); showLogin(''); };
+    setTimeout(() => { const i = b.querySelector('#lk-pin'); if (i) i.focus(); }, 50);
   },
 };
 
@@ -557,10 +527,18 @@ document.addEventListener('change', async (e) => {
 document.addEventListener('click', async (e) => {
   const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return;
   const a = el.dataset.act;
+  if (a === 'me-menu') {
+    const st = SBAuth.staff; if (!st) { showLogin(); return; }
+    const r = await askBox('Signed in', `<p style="margin:0 0 4px"><b>${h(st.full_name)}</b>${st.role === 'admin' ? ' (office / admin)' : ''}</p><p class="hint" style="margin:0">${h((SBAuth.s && SBAuth.s.user && SBAuth.s.user.email) || st.email || '')}</p><p class="hint">Signing out hides the app on this device until someone signs in again with their password. To change your password, go to Settings → Sync &amp; sign-in.</p>`, 'Sign out', false, 'Close', '🔒 Lock now');
+    if (r === 'alt') { Lock.show(); return; }
+    if (r) { if (pendingCount() && !(await ask(`${pendingCount()} change${pendingCount() === 1 ? " hasn't" : "s haven't"} synced yet. Sign out anyway? They'll sync when someone signs in again on this device.`, 'Yes — sign out'))) return;
+      await SBAuth.signOut(); if (typeof updHi === 'function') updHi(); renderAll(); }
+    return;
+  }
   if (a === 'sb-signin') showLogin();
   else if (a === 'sb-signout') {
     if (pendingCount() && !(await ask(`${pendingCount()} change${pendingCount() === 1 ? " hasn't" : "s haven't"} synced yet. Sign out anyway? They'll sync when someone signs in again on this device.`, 'Yes — sign out'))) return;
-    if (await ask('Sign out on this device? The app will be hidden until someone signs in again.', 'Yes — sign out')) { await SBAuth.signOut(); renderAll(); }
+    if (await ask('Sign out on this device? The app will be hidden until someone signs in again.', 'Yes — sign out')) { await SBAuth.signOut(); if (typeof updHi === 'function') updHi(); renderAll(); }
   } else if (a === 'sb-pw') {
     openSheet('Change my password', `<div class="f"><label>New password</label><input id="pw-1" type="password" autocomplete="new-password"><div class="hint">At least 8 characters.</div></div><div class="f"><label>New password again</label><input id="pw-2" type="password" autocomplete="new-password"></div>`, async () => {
       const p1 = document.getElementById('pw-1').value, p2 = document.getElementById('pw-2').value;
@@ -617,10 +595,10 @@ new MutationObserver(() => { const b = document.getElementById('seclog-box'); if
 function lockCard() { return `<div class="card"><h3>App lock</h3><div id="lock-box"></div></div>`; }
 async function fillLockBox() {
   const box = document.getElementById('lock-box'); if (!box) return; box.dataset.filled = '1';
-  const m = Lock.mine(), finger = await Lock.canFinger(), min = Lock.minutes();
-  box.innerHTML = `<div class="hint" style="margin-bottom:6px">The app locks after <b>${min === 0 ? 'never' : min + ' minute' + (min === 1 ? '' : 's')}</b> without use, and asks for your PIN${m && m.cred ? ' or fingerprint' : ''}. Your PIN is only for this app on this device.</div>
-  <div class="actions"><button class="btn small" data-act="lk-change">Change my PIN</button>${finger ? (m && m.cred ? '<button class="btn small" data-act="lk-fpoff">Stop using fingerprint</button>' : '<button class="btn small" data-act="lk-fpon">👆 Use fingerprint / face too</button>') : ''}<button class="btn small" data-act="lk-now">🔒 Lock now</button></div>
-  ${SBAuth.isAdmin() ? `<div class="f" style="margin-top:10px"><label>Lock after (everyone, admin only)</label><select data-act="lk-min">${[1, 2, 5, 10, 15, 30, 60].map((v) => `<option value="${v}" ${min === v ? 'selected' : ''}>${v} minute${v === 1 ? '' : 's'}</option>`).join('')}</select></div>` : ''}`;
+  const min = Lock.minutes(), r = Lock.rec();
+  box.innerHTML = `<div class="hint" style="margin-bottom:6px">The app locks after <b>${min === 0 ? 'never' : min + ' minute' + (min === 1 ? '' : 's')}</b> without use and asks for the app PIN. Everyone uses the same PIN, set by the admin.${SBAuth.isAdmin() ? (r ? ` Last changed ${new Date(r.at || 0).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}.` : ' It is still the starting PIN (2015).') : ''}</div>
+  <div class="actions"><button class="btn small" data-act="lk-now">🔒 Lock now</button>${SBAuth.isAdmin() ? '<button class="btn small" data-act="lk-change">Change the app PIN (everyone)</button>' : ''}</div>
+  ${SBAuth.isAdmin() ? `<div class="f" style="margin-top:10px"><label for="lk-minsel">Lock after (everyone, admin only)</label><select id="lk-minsel" data-act="lk-min">${[1, 2, 5, 10, 15, 30, 60].map((v) => `<option value="${v}" ${min === v ? 'selected' : ''}>${v} minute${v === 1 ? '' : 's'}</option>`).join('')}</select></div>` : ''}`;
 }
 document.addEventListener('change', (e) => {
   if (e.target.dataset && e.target.dataset.act === 'lk-min' && SBAuth.isAdmin()) { D.settings.appLockMin = +e.target.value; touch(D.settings); save(); SupaSync.soon(); toast(`✓ The app now locks after ${e.target.value} minute${e.target.value === '1' ? '' : 's'} on every device`); const b = document.getElementById('lock-box'); if (b) fillLockBox(); }
@@ -628,10 +606,14 @@ document.addEventListener('change', (e) => {
 document.addEventListener('click', async (e) => {
   const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return;
   const a = el.dataset.act;
-  if (a === 'lk-now') Lock.show('unlock');
-  else if (a === 'lk-change') Lock.show('setup');
-  else if (a === 'lk-fpon') { try { const m = Lock.mine(); m.cred = await Lock.addFinger(); Lock.setMine(m); toast('✓ Fingerprint / face unlock turned on'); } catch (x) { toast("Fingerprint wasn't set up"); } fillLockBox(); }
-  else if (a === 'lk-fpoff') { const m = Lock.mine(); m.cred = null; Lock.setMine(m); toast('Fingerprint unlock turned off'); fillLockBox(); }
+  if (a === 'lk-now') Lock.show();
+  else if (a === 'lk-change' && SBAuth.isAdmin()) {
+    const ok = await askBox('Change the app PIN', `<div class="hint" style="margin-bottom:8px">This changes the PIN for everyone, on every device (after their next sync). 4 to 8 numbers.</div><div class="f"><label for="lk-1">New PIN</label><input id="lk-1" data-ask="p1" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></div><div class="f"><label for="lk-2">New PIN again</label><input id="lk-2" data-ask="p2" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></div>`, 'Change the PIN', false, 'Cancel');
+    if (!ok) return; const p1 = ASK_FORM.p1 || '', p2 = ASK_FORM.p2 || '';
+    if (!/^\d{4,8}$/.test(p1)) { toast('Use 4 to 8 numbers — the PIN was not changed'); return; }
+    if (p1 !== p2) { toast("The two PINs don't match — the PIN was not changed"); return; }
+    await Lock.setPin(p1); toast('✓ App PIN changed for everyone'); fillLockBox();
+  }
   else if (a === 'adm-rmdev' && SBAuth.isAdmin()) {
     if (!(await ask(`Remove ${el.dataset.label} (${el.dataset.who})? The app and its copy of the data are wiped from it the next time it's online, and it will need a new code to sign in again.`, 'Yes — remove and wipe', true))) return;
     try { await rpc('remove_device', { k: Dev.k(), device_id: el.dataset.id }); toast('✓ Device removed — it wipes itself next time it goes online'); fillStaffBox(true); } catch (x) { toast(x.message); }

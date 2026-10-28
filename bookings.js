@@ -32,16 +32,21 @@ const BK_DEFAULTS = [
   { id: 'type-inhouse', cfg: 'type', order: 2, name: 'In-house', colour: '#3a6ea5', where: 'base', fixedMins: null },
   { id: 'type-phone', cfg: 'type', order: 3, name: 'Phone', colour: '#8a5a9e', where: 'phone', fixedMins: 15 },
   { id: 'type-fec', cfg: 'type', order: 4, name: 'In-house FEC', colour: '#b5791c', where: 'base', fixedMins: 15 },
-  { id: 'svc-preg', cfg: 'service', order: 1, name: 'Preg testing', mode: 'perhead', setup: 20, hph: 150 },
-  { id: 'svc-bull', cfg: 'service', order: 2, name: 'Bull testing', mode: 'perhead', setup: 20, hph: 6 },
-  { id: 'svc-ai', cfg: 'service', order: 3, name: 'Artificial insemination', mode: 'perhead', setup: 20, hph: 40 },
-  { id: 'svc-labour', cfg: 'service', order: 4, name: 'Additional labour', mode: 'fixed', mins: 120 },
+  { id: 'svc-preg', cfg: 'service', order: 1, name: 'Preg testing', mode: 'perhead', setup: 20, hph: 150, askLabour: true, yard: 'preg' },
+  { id: 'svc-bull', cfg: 'service', order: 2, name: 'Bull testing', mode: 'perhead', setup: 20, hph: 6, askLabour: true, yard: 'bull' },
+  { id: 'svc-ai', cfg: 'service', order: 3, name: 'Artificial insemination', mode: 'perhead', setup: 20, hph: 40, askLabour: true },
+  { id: 'svc-labour', cfg: 'service', order: 4, name: 'Additional labour', mode: 'fixed', mins: 120, alongside: true },
   { id: 'svc-sample', cfg: 'service', order: 5, name: 'Blood sampling (trace elements / BVD)', mode: 'perhead', setup: 20, hph: 60 },
   { id: 'svc-hh', cfg: 'service', order: 6, name: 'Herd health visit', mode: 'fixed', mins: 90 },
   { id: 'svc-pm', cfg: 'service', order: 7, name: 'Post-mortem', mode: 'fixed', mins: 90 },
   { id: 'svc-consult', cfg: 'service', order: 8, name: 'Consult / treatment', mode: 'fixed', mins: 60 },
   { id: 'svc-fec', cfg: 'service', order: 9, name: 'Faecal egg count', mode: 'fixed', mins: 15 },
   { id: 'svc-phone', cfg: 'service', order: 10, name: 'Phone consult', mode: 'fixed', mins: 15 },
+  { id: 'svc-bruc', cfg: 'service', order: 11, name: 'Brucellosis testing', mode: 'perhead', setup: 20, hph: 60, askLabour: true },
+  { id: 'svc-vasec', cfg: 'service', order: 12, name: 'Vasectomies', mode: 'perhead', setup: 30, hph: 3, askLabour: true },
+  { id: 'svc-trace', cfg: 'service', order: 13, name: 'Trace element testing', mode: 'perhead', setup: 20, hph: 60, askLabour: true },
+  { id: 'svc-mischalf', cfg: 'service', order: 14, name: 'Misc procedures — half day', mode: 'fixed', mins: 240, askLabour: true },
+  { id: 'svc-miscfull', cfg: 'service', order: 15, name: 'Misc procedures — full day', mode: 'fixed', mins: 480, askLabour: true },
   { id: 'bt-meeting', cfg: 'blocktype', order: 1, name: 'Morning meeting', colour: '#64748b' },
   { id: 'bt-admin', cfg: 'blocktype', order: 2, name: 'Admin time', colour: '#7c8a6e' },
   { id: 'bt-rounds', cfg: 'blocktype', order: 3, name: 'Clinical rounds', colour: '#6f7fb0' },
@@ -57,6 +62,9 @@ const BK_DEFAULTS = [
   { id: 'sms-reminder', cfg: 'sms', order: 2, use: 'reminder', name: 'Reminder (5 days before)', text: 'Hi {first}, a reminder of your appointment with Bovitech Veterinary Services on {day} {date} at {time}{at_farm}. Please reply YES to confirm, or call 0499 489 919 to change it.' },
   { id: 'sms-proposal', cfg: 'sms', order: 3, use: 'proposal', name: 'New time suggested', text: 'Hi {first}, could we move your appointment from {old_date} to {day} {date} at {time}? Please reply YES to accept, or call 0499 489 919.' },
 ];
+const BK_MIG = 2; // settings added after the first version: new services, and the "ask about additional labour" / "runs alongside" / yard flags
+const BK_NEW_V2 = ['svc-bruc', 'svc-vasec', 'svc-trace', 'svc-mischalf', 'svc-miscfull'];
+const BK_USE = { '': 'Preg and bull testing', preg: 'Preg testing only (no bull testing)', bull: 'Bull testing only (no preg testing)', individual: 'Individual animal assessments only', none: 'Do not service' };
 const BK_DEFAULT_BLOCKS = [{ id: 'blk-meeting', type: 'bt-meeting', staff: 'all', date: '2026-01-05', start: '08:00', end: '08:30', repeat: { every: 'weekdays' }, on: true, note: 'At homebase' }];
 const BK_PERMS = [['book', 'Add, change and move bookings'], ['blocks', 'Add and change blocks (meetings, RDOs, leave…)'], ['roster', 'Change the on-call roster'], ['settings', 'Change appointment types, services, block types and SMS templates']];
 
@@ -72,16 +80,26 @@ const Bk = {
   seed() {
     if (!D || !D.sync || !D.sync.last) return;
     let n = 0; const have = new Set(Bk.list('bkcfg').map((x) => x.id));
-    if (!Bk.list('bkcfg').length) BK_DEFAULTS.forEach((d) => { if (!have.has(d.id)) { const r = { ...d }; touch(r); D.bkcfg.push(r); n++; } });
+    if (!Bk.list('bkcfg').length) { BK_DEFAULTS.forEach((d) => { if (!have.has(d.id)) { const r = { ...d }; touch(r); D.bkcfg.push(r); n++; } }); D.sync.bkMig = BK_MIG; }
     if (!Bk.list('blocks').length && !(D.sync.bkSeeded)) BK_DEFAULT_BLOCKS.forEach((d) => { const r = JSON.parse(JSON.stringify(d)); touch(r); D.blocks.push(r); n++; });
+    if ((D.sync.bkMig || 1) < 2) { // add the newer services and flags to an existing set (same fixed ids on every device, so nothing doubles up)
+      BK_DEFAULTS.filter((d) => d.cfg === 'service').forEach((d) => { let r = Bk.get(d.id);
+        if (!r) { if (BK_NEW_V2.includes(d.id)) { r = { ...d }; touch(r); D.bkcfg.push(r); n++; } return; }
+        let ch = false; ['askLabour', 'alongside', 'yard'].forEach((k) => { if (d[k] != null && r[k] === undefined) { r[k] = d[k]; ch = true; } }); if (ch) { touch(r); n++; } });
+      D.sync.bkMig = 2; save();
+    }
     if (n) { D.sync.bkSeeded = true; save(); }
   },
   /* ---- people ---- */
   people() {
     let l = (window.SBAuth && SBAuth.list) || null;
     if (l) { try { localStorage.setItem('bvp-stafflist', JSON.stringify(l)); } catch (e) { } } else { try { l = JSON.parse(localStorage.getItem('bvp-stafflist') || '[]'); } catch (e) { l = []; } }
-    return l.filter((s) => s.active && s.role !== 'admin').sort((a, b) => (a.role === 'vet_tech') - (b.role === 'vet_tech') || (a.preferred_name || a.full_name).localeCompare(b.preferred_name || b.full_name));
+    l = l.filter((s) => s.active && s.role !== 'admin').sort((a, b) => (a.role === 'vet_tech') - (b.role === 'vet_tech') || (a.preferred_name || a.full_name).localeCompare(b.preferred_name || b.full_name));
+    const o = Bk.order(); if (o.length) { const ix = (s) => { const i = o.indexOf(s.id); return i < 0 ? 999 : i; }; l = l.map((s, i) => [s, i]).sort((a, b) => ix(a[0]) - ix(b[0]) || a[1] - b[1]).map((x) => x[0]); }
+    return l;
   },
+  order() { try { return JSON.parse(localStorage.getItem('bvp-bkorder') || '[]'); } catch (e) { return []; } }, // who comes first on the calendar — this device only
+  setOrder(ids) { try { localStorage.setItem('bvp-bkorder', JSON.stringify(ids)); } catch (e) { } },
   person(id) { return Bk.people().find((s) => s.id === id) || ((window.SBAuth && SBAuth.list) || []).find((s) => s.id === id) || null; },
   pname(id) { const s = Bk.person(id); return s ? s.preferred_name || s.full_name.split(' ')[0] : '?'; },
   pini(id) { const s = Bk.person(id); return s ? s.initials : '?'; },
@@ -127,9 +145,15 @@ const Bk = {
     const bz = b.bid && IDX.biz && IDX.biz.get(b.bid); const c = b.cid && D.contacts.find((x) => x.id === b.cid);
     return bz ? bz.name : c ? fullName(c) : b.clientText || 'No client';
   },
-  farm(b) { return b.fid && IDX.farms ? IDX.farms.get(b.fid) : null; },
-  farmName(b) { const f = Bk.farm(b); return f ? f.name || f.address || 'Farm' : ''; },
-  svcText(b) { return (b.svcs || []).map((x) => Bk.svc(x.svc).name + (x.head ? ' ×' + x.head : '')).join(', '); },
+  fids(b) { return b.fids && b.fids.length ? b.fids : b.fid ? [b.fid] : []; }, // farms / yards in the order they're visited
+  farms(b) { return IDX.farms ? Bk.fids(b).map((id) => IDX.farms.get(id)).filter(Boolean) : []; },
+  farm(b) { return Bk.farms(b)[0] || null; },
+  farmName(b) { return Bk.farms(b).map((f) => f.name || f.address || 'Farm').join(' + '); },
+  sstaff(b, x) { return Array.isArray(x.staff) ? x.staff : b.staff || []; }, // who is doing one service on a booking (older bookings: everyone on it)
+  svcText(b, sid) { const all = b.svcs || []; const l = sid ? all.filter((x) => Bk.sstaff(b, x).includes(sid)) : all; return (l.length ? l : all).map((x) => Bk.svc(x.svc).name + (x.head ? ' ×' + x.head : '')).join(', '); },
+  fsched(fid) { return (fid && Bk.get('fsched:' + fid)) || {}; }, // a farm's booking rules (set on the business page)
+  bsched(bid) { return (bid && Bk.get('bsched:' + bid)) || {}; },
+  pidText(b) { return (b.pids || []).map((p) => p.value).join(', '); },
 };
 Bk.sms = (bookingId) => ((D && D.smsLog) || []).filter((x) => x.booking_id === bookingId);
 Bk.smsOk = (row) => row && ['queued', 'sending', 'sent', 'delivered'].includes(row.status);
@@ -140,7 +164,9 @@ window.Bk = Bk;
 const Travel = {
   home() { const h0 = (D.settings && D.settings.home) || {}; return h0.lat != null ? { lat: +h0.lat, lng: +h0.lng, home: true } : null; },
   pt(f) { if (!f) return null; if (f.turn && f.turn.lat != null) return { lat: +f.turn.lat, lng: +f.turn.lng, f }; if (f.lat != null) return { lat: +f.lat, lng: +f.lng, f }; return null; },
-  loc(b) { const t = Bk.type(b.type); if (t.where === 'phone') return null; if (t.where === 'base') return Travel.home(); return Travel.pt(Bk.farm(b)) || null; },
+  loc(b) { const t = Bk.type(b.type); if (t.where === 'phone') return null; if (t.where === 'base') return Travel.home(); return Travel.pt(Bk.farm(b)) || null; }, // where it starts
+  locOut(b) { const t = Bk.type(b.type); if (t.where !== 'farm') return Travel.loc(b); const fs = Bk.farms(b); return Travel.pt(fs[fs.length - 1]) || null; }, // where it finishes (the last farm)
+  between(fids) { let m = 0; for (let i = 1; i < fids.length; i++) m += Travel.mins(Travel.pt(IDX.farms.get(fids[i - 1])), Travel.pt(IDX.farms.get(fids[i]))); return m; }, // driving between the farms on one booking
   km(a, b) { const R = 6371, r = Math.PI / 180; const dLa = (b.lat - a.lat) * r, dLo = (b.lng - a.lng) * r; const x = Math.sin(dLa / 2) ** 2 + Math.cos(a.lat * r) * Math.cos(b.lat * r) * Math.sin(dLo / 2) ** 2; return 2 * R * Math.asin(Math.sqrt(x)); },
   mins(a, b) { // drive minutes between two places (null = phone call, no travel)
     if (!a || !b) return 0;
@@ -154,13 +180,13 @@ const Travel = {
 window.Travel = Travel;
 
 /* ---------------- calendar ---------------- */
-const BK_START = 7 * 60, BK_END = 19 * 60, BK_PX = 1.1; // 7am–7pm, pixels per minute
+const BK_START = 0, BK_END = 24 * 60, BK_PX = 1.1, BK_SCROLL_TO = 7 * 60; // the whole day (after-hours work too), pixels per minute; opens at about 7am
 function bkColumns(date) {
   return Bk.people().filter((s) => BK.showAll || Bk.hours(s, date) || Bk.bookingsFor(date, s.id).length);
 }
 function bkRender() {
   Bk.seed();
-  if (BK.page === 'settings') return bkSettingsHtml();
+  if (BK.page === 'settings') BK.page = 'cal'; // booking settings live in Settings → Scheduling now
   if (BK.page === 'jobs') return bkJobsHtml();
   if (BK.page === 'roster') return bkRosterHtml();
   if (BK.page === 'followups') return bkFollowupsHtml();
@@ -170,8 +196,10 @@ function bkRender() {
       <input type="date" id="bk-date" value="${BK.date}" data-act="bk-date"><b class="bk-title">${bkTitle()}</b></div>
     <div class="bk-nav"><span class="bk-seg">${[['day', 'Day'], ['week', 'Week'], ['month', 'Month']].map(([v, l]) => `<button class="btn small ${BK.view === v ? 'on' : ''}" data-act="bk-view" data-v="${v}">${l}</button>`).join('')}</span>
       ${Bk.can('book') ? '<button class="btn small primary" data-act="bk-new">➕ Booking</button>' : ''}${Bk.can('blocks') ? '<button class="btn small" data-act="bk-newblock">➕ Block</button>' : ''}
-      <button class="btn small ${nj ? 'bk-jobsbtn' : ''}" data-act="bk-page" data-v="jobs">Jobs${nj ? ` <span class="badge">${nj}</span>` : ''}</button><button class="btn small" data-act="bk-page" data-v="roster">On call</button><button class="btn small" data-act="bk-page" data-v="settings">⚙ Settings</button></div></div>`;
+      ${nj ? `<button class="btn small bk-jobsbtn" data-act="bk-page" data-v="jobs">Jobs <span class="badge">${nj}</span></button>` : ''}<button class="btn small" data-act="bk-page" data-v="settings" aria-label="Scheduling settings" title="Scheduling settings">⚙</button></div></div>`;
   const body = BK.view === 'month' ? bkMonthHtml() : BK.view === 'week' ? bkWeekHtml() : bkDayHtml();
+  if (BK.view === 'day') setTimeout(() => { const el = document.querySelector('.bk-dayscroll.v'); if (!el) return; el.scrollTop = BK._yDate === BK.date && BK._y != null ? BK._y : Math.max(0, (BK_SCROLL_TO - BK_START) * BK_PX - 6); BK._yDate = BK.date;
+    el.onscroll = () => { BK._y = el.scrollTop; BK._yDate = BK.date; }; }, 0);
   return `<div class="d-wrap bk-wrap">${head}${body}<label class="bk-opt"><input type="checkbox" data-act="bk-showall" ${BK.showAll ? 'checked' : ''}> Show everyone, even on days they don't work</label></div>`;
 }
 function bkTitle() {
@@ -201,18 +229,18 @@ function bkDayHtml() {
     const bks = Bk.bookingsFor(date, s.id); let prev = null;
     const items = bks.map((b) => { const t = Bk.type(b.type); const top = y(b.start), ht = Math.max(18, b.mins * BK_PX); let gap = '';
       const loc = Travel.loc(b);
-      if (prev) { const need = Travel.mins(Travel.loc(prev), loc), have = bkMin(b.start) - (bkMin(prev.start) + prev.mins); if (need > 0 || have < 0) gap = `<div class="bk-drive ${have < need ? 'bad' : ''}" style="top:${y(bkHHMM(bkMin(prev.start) + prev.mins))}px;height:${Math.max(10, Math.max(have, 0) * BK_PX)}px"><span>🚗 ~${need} min${have < need ? ' — not enough time' : ''}</span></div>`; }
+      if (prev) { const need = Travel.mins(Travel.locOut(prev), loc), have = bkMin(b.start) - (bkMin(prev.start) + prev.mins); if (need > 0 || have < 0) gap = `<div class="bk-drive ${have < need ? 'bad' : ''}" style="top:${y(bkHHMM(bkMin(prev.start) + prev.mins))}px;height:${Math.max(10, Math.max(have, 0) * BK_PX)}px"><span>🚗 ~${need} min${have < need ? ' — not enough time' : ''}</span></div>`; }
       prev = b;
       return gap + `<div class="bk-appt ${b.status === 'confirmed' ? '' : 'unconf'} ${b.urgent ? 'urgent' : ''}" data-act="bk-open" data-id="${b.id}" style="top:${top}px;height:${ht}px;--c:${t.colour}">
         <div class="bk-at">${bkTime(b.start)}–${bkTime(bkHHMM(bkMin(b.start) + b.mins))} · ${h(t.name)}${b.status === 'confirmed' ? ' ✓' : ' <i>unconfirmed</i>'}</div>
-        <div class="bk-aw">${b.urgent ? '⚡ ' : ''}${h(Bk.who(b))}${Bk.farmName(b) ? ' — ' + h(Bk.farmName(b)) : ''}</div><div class="bk-as">${h(Bk.svcText(b))}${(b.staff || []).length > 1 ? ' · with ' + b.staff.filter((x) => x !== s.id).map(Bk.pname).join(', ') : ''}${b.proposal ? ' · <b>new time suggested</b>' : ''}</div></div>`; }).join('');
+        <div class="bk-aw">${b.urgent ? '⚡ ' : ''}${h(Bk.who(b))}${Bk.farmName(b) ? ' — ' + h(Bk.farmName(b)) : ''}</div><div class="bk-as">${h(Bk.svcText(b, s.id))}${(b.pids || []).length ? ' · ' + h(Bk.pidText(b)) : ''}${(b.staff || []).length > 1 ? ' · with ' + b.staff.filter((x) => x !== s.id).map(Bk.pname).join(', ') : ''}${b.proposal ? ' · <b>new time suggested</b>' : ''}</div></div>`; }).join('');
     const props = Bk.proposalsFor(date, s.id).map((b) => `<div class="bk-prop" data-act="bk-open" data-id="${b.id}" style="top:${y(b.proposal.start)}px;height:${Math.max(18, (b.proposal.mins || b.mins) * BK_PX)}px"><b>Held — new time suggested</b><br>${h(Bk.who(b))} · waiting for client (from ${bkDate(b.date)} ${bkTime(b.start)})</div>`).join('');
     return `<div class="bk-col" data-staff="${s.id}" style="height:${H}px">${shade}${blocks}${items}${props}</div>`;
   };
   if (!cols.length) return `<div class="card bk-empty">Nobody is working on ${bkDate(date, { weekday: 'long', day: 'numeric', month: 'long' })}.${Bk.people().length ? ' Tick "Show everyone" below to book anyway.' : ' The staff list loads the first time you sign in with internet.'}<div class="hint" style="margin-top:6px">On call: ${bkOncallText(date)}</div></div>`;
   return `<div class="bk-oncall" data-act="bk-page" data-v="roster">📟 On call: ${bkOncallText(date)}</div>
-  <div class="bk-dayscroll"><div class="bk-day" style="grid-template-columns:44px repeat(${cols.length}, minmax(150px, 1fr))">
-    <div></div>${cols.map((s) => { const hr = Bk.hours(s, date); const c = Bk.scfg(s); return `<div class="bk-colh"><b>${h(s.preferred_name || s.full_name)}</b><span class="hint">${hr ? `${bkTime(hr[0])}–${bkTime(hr[1])}` : c.mode === 'locum' ? 'locum' : 'off'}</span>${c.mode === 'locum' && Bk.can('roster') ? `<button class="btn small" data-act="bk-avail" data-staff="${s.id}">${hr ? 'Make unavailable' : 'Make available'}</button>` : ''}</div>`; }).join('')}
+  <div class="bk-dayscroll v"><div class="bk-day" style="grid-template-columns:44px repeat(${cols.length}, minmax(150px, 1fr))">
+    <div class="bk-colh bk-corner"></div>${cols.map((s, ci) => { const hr = Bk.hours(s, date); const c = Bk.scfg(s); return `<div class="bk-colh" draggable="true" data-colstaff="${s.id}"><div class="bk-colord">${ci ? `<button class="btn small" data-act="bk-colmove" data-staff="${s.id}" data-v="-1" aria-label="Move ${h(s.preferred_name || s.full_name)} left" title="Move left">‹</button>` : ''}<b>${h(s.preferred_name || s.full_name)}</b>${ci < cols.length - 1 ? `<button class="btn small" data-act="bk-colmove" data-staff="${s.id}" data-v="1" aria-label="Move ${h(s.preferred_name || s.full_name)} right" title="Move right">›</button>` : ''}</div><span class="hint">${hr ? `${bkTime(hr[0])}–${bkTime(hr[1])}` : c.mode === 'locum' ? 'locum' : 'off'}</span>${c.mode === 'locum' && Bk.can('roster') ? `<button class="btn small" data-act="bk-avail" data-staff="${s.id}">${hr ? 'Make unavailable' : 'Make available'}</button>` : ''}</div>`; }).join('')}
     <div class="bk-times" style="height:${H}px">${hrs.map((m) => `<span style="top:${(m - BK_START) * BK_PX}px">${bkTime(bkHHMM(m))}</span>`).join('')}</div>
     ${cols.map(colHtml).join('')}
   </div></div>`;
@@ -235,7 +263,7 @@ function bkMonthHtml() {
 function bkRosterHtml() {
   const vets = Bk.people().filter((s) => s.role === 'vet'); const a = bkWeekStart(BK.date); const days = [...Array(28)].map((_, i) => bkAdd(a, i)); const ed = Bk.can('roster');
   const sel = (d, slot, v) => `<select data-act="bk-oc" data-d="${d}" data-slot="${slot}" ${ed ? '' : 'disabled'}><option value="">—</option>${vets.map((s) => `<option value="${s.id}" ${v === s.id ? 'selected' : ''}>${h(s.preferred_name || s.full_name)}</option>`).join('')}</select>`;
-  return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><button class="btn small" data-act="bk-page" data-v="cal">‹ Calendar</button><b class="bk-title">On-call roster</b></div>
+  return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><b class="bk-title">On-call roster</b></div>
     <div class="bk-nav"><button class="btn small" data-act="bk-rgo" data-v="-28">‹ 4 weeks</button><button class="btn small" data-act="bk-rgo" data-v="28">4 weeks ›</button>${ed ? '<button class="btn small" data-act="bk-rcopy">Copy the week before into empty days</button>' : ''}</div></div>
   <div class="hint" style="margin-bottom:8px">Weekdays: overnight (12am–8am) and evening (6pm–12am). Weekends: one vet for the whole day.${ed ? '' : ' You can see the roster but not change it.'}</div>
   <div class="bk-dayscroll"><table class="bk-roster"><thead><tr><th>Day</th><th>12am–8am</th><th>6pm–12am</th></tr></thead><tbody>
@@ -244,52 +272,85 @@ function bkRosterHtml() {
 }
 
 /* ---------------- how long: set times, per head, or the speed of these particular yards ---------------- */
-function bkYard(fid, svc) { return fid ? Bk.get('yard:' + fid + ':' + svc) : null; }
-function bkSuggestMins(typeId, svcs, fid) {
-  const t = Bk.type(typeId);
+function bkYard(fid, svc) { const y = fid ? Bk.get('yard:' + fid + ':' + svc) : null; return y && !y.gone ? y : null; }
+function bkSuggestMins(typeId, svcs, fids) {
+  const t = Bk.type(typeId); const fl = Array.isArray(fids) ? fids.filter(Boolean) : fids ? [fids] : [];
   if (t.fixedMins) return { mins: t.fixedMins, why: `${t.name}: set time of ${bkDur(t.fixedMins)}` };
-  let setup = 0, mins = 0; const why = [];
-  (svcs || []).forEach((x) => { const sv = Bk.svc(x.svc); if (!sv) return;
-    if (sv.mode === 'perhead') { const y = bkYard(fid, x.svc); const hph = x.hph || (y && y.hph) || sv.hph || 60; const head = +x.head || 0;
-      setup = Math.max(setup, (y && y.setup != null ? y.setup : sv.setup) || 0); const m = head ? (head / hph) * 60 : 0; mins += m;
+  const all = (svcs || []).filter((x) => x.svc && Bk.get(x.svc)); const main = all.filter((x) => !Bk.svc(x.svc).alongside);
+  const use = main.length ? main : all; // additional labour runs alongside the other work, so it doesn't make the booking longer
+  const setups = {}; let mins = 0; const why = [];
+  use.forEach((x) => { const sv = Bk.svc(x.svc); const at = (t.where === 'farm' && (x.fid || fl[0])) || null;
+    if (sv.mode === 'perhead') { const y = bkYard(at, x.svc); const hph = x.hph || (y && y.hph) || sv.hph || 60; const head = +x.head || 0;
+      setups[at || '-'] = Math.max(setups[at || '-'] || 0, (y && y.setup != null ? y.setup : sv.setup) || 0); const m = head ? (head / hph) * 60 : 0; mins += m;
       why.push(`${sv.name}: ${head || '?'} head at ${hph}/hour${y ? ' (these yards)' : ''} = ${bkDur(Math.round(m))}`); }
     else { mins += +sv.mins || 0; why.push(`${sv.name}: ${bkDur(+sv.mins || 0)}`); } });
-  if (setup) why.push(`set-up ${setup} min`);
-  const total = Math.max(15, Math.ceil((mins + setup) / 15) * 15);
+  all.filter((x) => main.length && Bk.svc(x.svc).alongside).forEach((x) => why.push(`${Bk.svc(x.svc).name}: alongside`));
+  const setup = Object.values(setups).reduce((a, b) => a + b, 0); if (setup) why.push(`set-up ${setup} min`);
+  const drive = t.where === 'farm' && fl.length > 1 ? Travel.between(fl) : 0; if (drive) why.push(`driving between farms ~${drive} min`);
+  const total = Math.max(15, Math.ceil((mins + setup + drive) / 15) * 15);
   return { mins: total, why: why.join(' + ') || 'No services chosen' };
+}
+
+/* ---------------- a farm's booking rules (do not service, individual animals only…) ---------------- */
+function bkFarmIssues(fid, svcs, firstFid) {
+  const f = fid && IDX.farms && IDX.farms.get(fid); if (!f) return [];
+  const nm = f.name || f.address || 'This farm', fs = Bk.fsched(fid), sf = f.safety || {}; const out = [];
+  if (fs.use === 'none') out.push({ hard: true, msg: `${nm} is marked DO NOT SERVICE${fs.note ? ' — ' + fs.note : ''}` });
+  if (sf.status === 'stop') out.push({ hard: true, msg: `${nm}: no routine work until the safety problem is fixed${sf.note ? ' — ' + sf.note : ''}` });
+  if (fs.use === 'individual' || fs.use === 'preg' || fs.use === 'bull') (svcs || []).forEach((x) => { const y = x.svc && Bk.svc(x.svc).yard; if (!y || (x.fid || firstFid || fid) !== fid) return;
+    if (fs.use === 'individual' || fs.use !== y) out.push({ msg: `${nm} is set to "${BK_USE[fs.use]}" — not ${Bk.svc(x.svc).name.toLowerCase()}` }); });
+  return out;
+}
+function bkFarmTag(fid) { const f = IDX.farms && IDX.farms.get(fid); const fs = Bk.fsched(fid); return (fs.use === 'none' ? ' — ⛔ DO NOT SERVICE' : fs.use ? ' — ' + BK_USE[fs.use] : '') + (f && (f.safety || {}).status === 'stop' ? ' — ⛔ safety stop' : ''); }
+function bkNeedsLabour(f) { // ask about additional labour: some services always ask, and some clients always need it
+  const svcs = (f.svcs || []).filter((x) => x.svc); if (svcs.some((x) => Bk.svc(x.svc).alongside)) return null;
+  if (f.bid && Bk.bsched(f.bid).labour) return 'always';
+  return svcs.some((x) => Bk.svc(x.svc).askLabour) ? 'ask' : null;
 }
 
 /* ---------------- what's wrong with a time (clashes, hours, travel) ---------------- */
 function bkBusy(date, staffId, skipId) {
   const out = [];
   Bk.blocksFor(date, staffId).forEach((b) => out.push({ s: b.allDay ? 0 : bkMin(b.start), e: b.allDay ? 1440 : bkMin(b.end), loc: Travel.home(), what: Bk.btype(b.type).name, block: b }));
-  Bk.bookingsFor(date, staffId).filter((b) => b.id !== skipId).forEach((b) => out.push({ s: bkMin(b.start), e: bkMin(b.start) + b.mins, loc: Travel.loc(b), what: Bk.who(b), b }));
-  Bk.proposalsFor(date, staffId).filter((b) => b.id !== skipId).forEach((b) => out.push({ s: bkMin(b.proposal.start), e: bkMin(b.proposal.start) + (b.proposal.mins || b.mins), loc: Travel.loc(b), what: 'held for ' + Bk.who(b), b, held: true }));
+  Bk.bookingsFor(date, staffId).filter((b) => b.id !== skipId).forEach((b) => out.push({ s: bkMin(b.start), e: bkMin(b.start) + b.mins, loc: Travel.loc(b), locOut: Travel.locOut(b), what: Bk.who(b), b }));
+  Bk.proposalsFor(date, staffId).filter((b) => b.id !== skipId).forEach((b) => out.push({ s: bkMin(b.proposal.start), e: bkMin(b.proposal.start) + (b.proposal.mins || b.mins), loc: Travel.loc(b), locOut: Travel.locOut(b), what: 'held for ' + Bk.who(b), b, held: true }));
   return out.sort((a, b) => a.s - b.s);
 }
 function bkProblems(bk, alt) { // bk: booking-like {type, fid, date, start, mins, staff, svcs, id}; alt: check the proposal instead
   const date = alt ? alt.date : bk.date, start = alt ? alt.start : bk.start, mins = alt ? alt.mins || bk.mins : bk.mins, staff = alt ? alt.staff || bk.staff : bk.staff;
-  const out = []; if (!date || !start || !mins) return out;
-  const s0 = bkMin(start), e0 = s0 + mins; const me = Travel.loc(bk);
+  const out = []; if (!date || !start || !mins) return [...new Set(bkRuleProblems(bk))];
+  const s0 = bkMin(start), e0 = s0 + mins; const me = Travel.loc(bk), meOut = Travel.locOut(bk);
   (staff || []).forEach((sid) => { const p = Bk.person(sid); if (!p) return; const nm = Bk.pname(sid); const hr = Bk.hours(p, date); const c = Bk.scfg(p);
     if (!hr) out.push(`${nm} ${c.mode === 'locum' ? "isn't marked available" : "doesn't work"} on ${bkDate(date)}`);
     else { if (s0 < bkMin(hr[0])) out.push(`Starts before ${nm}'s day (${bkTime(hr[0])})`);
-      const back = e0 + Travel.mins(me, Travel.home()); if (back > bkMin(hr[1])) out.push(`${nm} wouldn't be back at the office until ${bkTime(bkHHMM(back))} (finishes ${bkTime(hr[1])})`);
+      const back = e0 + Travel.mins(meOut, Travel.home()); if (back > bkMin(hr[1])) out.push(`${nm} wouldn't be back at the office until ${bkTime(bkHHMM(back))} (finishes ${bkTime(hr[1])})`);
       else if (c.endBuffer && back > bkMin(hr[1]) - c.endBuffer) out.push(`Uses ${nm}'s end-of-day time for records and restocking`); }
-    (bk.svcs || []).forEach((x) => { if (!Bk.canDo(p, x.svc)) out.push(`${nm} isn't set up to be booked for ${Bk.svc(x.svc).name}`); });
+    (bk.svcs || []).forEach((x) => { if (x.svc && Bk.sstaff(bk, x).includes(sid) && !Bk.canDo(p, x.svc)) out.push(`${nm} isn't set up to be booked for ${Bk.svc(x.svc).name}`); });
     const busy = bkBusy(date, sid, bk.id);
     busy.forEach((x) => { if (x.s < e0 && x.e > s0) out.push(`Clashes with ${x.what} (${bkTime(bkHHMM(x.s))}–${bkTime(bkHHMM(x.e))}) for ${nm}`); });
     const before = busy.filter((x) => x.e <= s0 && !x.block).pop(), after = busy.find((x) => x.s >= e0 && !x.block);
-    if (before) { const need = Travel.mins(before.loc, me); if (s0 - before.e < need) out.push(`Only ${s0 - before.e} min to drive from ${before.what} (needs about ${need}) — ${nm}`); }
-    if (after) { const need = Travel.mins(me, after.loc); if (after.s - e0 < need) out.push(`Only ${after.s - e0} min to get to ${after.what} afterwards (needs about ${need}) — ${nm}`); } });
-  if (Bk.type(bk.type).where === 'farm' && !bk.fid) out.push('No farm chosen — travel can\'t be worked out');
-  return [...new Set(out)];
+    if (before) { const need = Travel.mins(before.locOut || before.loc, me); if (s0 - before.e < need) out.push(`Only ${s0 - before.e} min to drive from ${before.what} (needs about ${need}) — ${nm}`); }
+    if (after) { const need = Travel.mins(meOut, after.loc); if (after.s - e0 < need) out.push(`Only ${after.s - e0} min to get to ${after.what} afterwards (needs about ${need}) — ${nm}`); } });
+  if (Bk.type(bk.type).where === 'farm' && !Bk.fids(bk).length) out.push('No farm chosen — travel can\'t be worked out');
+  return [...new Set([...out, ...bkRuleProblems(bk)])];
+}
+
+function bkRuleProblems(bk) { // farm rules, people, herds / flocks, labour — these don't depend on the time
+  const out = [];
+  const fl = Bk.fids(bk), isFarm = Bk.type(bk.type).where === 'farm';
+  if (isFarm) fl.forEach((fid) => bkFarmIssues(fid, bk.svcs, fl[0]).forEach((x) => out.push((x.hard ? '⛔ ' : '') + x.msg)));
+  (bk.svcs || []).forEach((x) => { if (x.svc && !Bk.sstaff(bk, x).length) out.push(`Nobody chosen for ${Bk.svc(x.svc).name}`); });
+  const bz = bk.bid && IDX.biz && IDX.biz.get(bk.bid);
+  if (bz && (bz.patientIds || []).length && !(bk.pids || []).length) out.push('No herd / flock chosen');
+  if (bkNeedsLabour(bk) === 'always' && !bk.noLabour) out.push(`${Bk.who(bk)} always needs additional labour — none booked`);
+  return out;
 }
 
 /* ---------------- suggest the best day and person: by nearby farms, or the soonest when urgent ---------------- */
-function bkSuggest(o) { // o: { type, fid, mins, svcs, urgent, skipId, from, staff (only these people) }
-  const t = Bk.type(o.type), home = Travel.home();
-  const target = t.where === 'phone' ? null : t.where === 'base' ? home : Travel.pt(o.fid && IDX.farms.get(o.fid));
+function bkSuggest(o) { // o: { type, fids, mins, svcs, urgent, skipId, from, staff (only these people) }
+  const t = Bk.type(o.type), home = Travel.home(); const fl = o.fids || (o.fid ? [o.fid] : []);
+  const target = t.where === 'phone' ? null : t.where === 'base' ? home : Travel.pt(fl[0] && IDX.farms.get(fl[0]));
+  const targetOut = t.where === 'farm' ? Travel.pt(fl[fl.length - 1] && IDX.farms.get(fl[fl.length - 1])) || target : target;
   const ppl = Bk.people().filter((s) => (!o.staff || !o.staff.length || o.staff.includes(s.id)) && (o.svcs || []).every((x) => Bk.canDo(s, x.svc)));
   const today = bkToday(), now = new Date(), nowMin = now.getHours() * 60 + now.getMinutes();
   const from = o.from && o.from > today ? o.from : today; const res = [];
@@ -302,10 +363,10 @@ function bkSuggest(o) { // o: { type, fid, mins, svcs, urgent, skipId, from, sta
       let prev = { e: dayS, loc: home }; let best = null;
       const stops = [...busy, { s: dayE, e: dayE, loc: home, end: true }];
       for (const nx of stops) {
-        if (nx.s > prev.e) { const tIn = Travel.mins(prev.loc, target), tOut = Travel.mins(target, nx.loc), base = Travel.mins(prev.loc, nx.loc);
+        if (nx.s > prev.e) { const tIn = Travel.mins(prev.loc, target), tOut = Travel.mins(targetOut, nx.loc), base = Travel.mins(prev.loc, nx.loc);
           const st = Math.ceil((prev.e + tIn) / 15) * 15;
           if (st + o.mins + tOut <= nx.s && st + o.mins <= dayE + (nx.end ? 0 : 0)) { const extra = Math.max(0, tIn + tOut - base); if (!best || extra < best.extra) best = { date: d, staff: s.id, start: bkHHMM(st), extra, tIn }; } }
-        if (nx.e > prev.e) prev = { e: nx.e, loc: nx.loc || prev.loc };
+        if (nx.e > prev.e) prev = { e: nx.e, loc: nx.locOut || nx.loc || prev.loc };
       }
       if (best) { best.near = near && near.m <= 20 ? near : null; best.days = i; res.push(best); }
     } }
@@ -328,31 +389,41 @@ function bkClientResults(q) {
 function bkFarmsOf(bid) { const b = bid && IDX.biz.get(bid); return b ? b.farmLinks.filter((l) => !l.past).map((l) => IDX.farms.get(l.fid)).filter(Boolean) : []; }
 function bkContactsOf(bid) { return bid ? IDX.bizContacts.get(bid) || [] : []; }
 function bkMobile(c) { return c && ((c.mobiles || [])[0] || {}).value; }
+function bkPidsOf(bid) { const b = bid && IDX.biz && IDX.biz.get(bid); return b ? (b.patientIds || []).filter((p) => p && p.value) : []; }
 function bkFormHtml() {
   const f = BKF, types = Bk.cfg('type'), svcs = Bk.cfg('service'), t = Bk.type(f.type);
   const farms = bkFarmsOf(f.bid), cons = bkContactsOf(f.bid); const isNew = !Bk.list('bookings').includes(f._orig);
-  const sug = bkSuggestMins(f.type, f.svcs, f.fid);
-  const ppl = Bk.people();
+  const sug = bkSuggestMins(f.type, f.svcs, f.fids);
+  const ppl = Bk.people(), pids = bkPidsOf(f.bid), bz = f.bid && IDX.biz.get(f.bid), multi = t.where === 'farm' && f.fids.length > 1;
+  const need = bkNeedsLabour(f), labourSvc = svcs.find((x) => x.alongside);
+  const farmOpts = (sel) => `<option value="">${farms.length ? 'Choose…' : 'No farms saved for this client'}</option>${farms.map((x) => `<option value="${x.id}" ${x.id === sel ? 'selected' : ''}>${h(x.name || x.address || 'Farm')}${h(bkFarmTag(x.id))}${x.driveMin != null ? ` (${Math.round(x.driveMin)} min from base)` : ''}</option>`).join('')}`;
   return `<div class="grid2"><div class="f"><label for="bkf-type">Appointment type</label><select id="bkf-type">${types.map((x) => `<option value="${x.id}" ${x.id === f.type ? 'selected' : ''}>${h(x.name)}</option>`).join('')}</select></div>
     <div class="f"><label>Status</label><div class="bk-seg">${[['unconfirmed', 'Unconfirmed'], ['confirmed', 'Confirmed']].map(([v, l]) => `<label class="bk-radio"><input type="radio" name="bkf-status" value="${v}" ${f.status === v ? 'checked' : ''}> ${l}</label>`).join('')}</div></div></div>
   <div class="f"><label for="bkf-q">Client</label>${f.bid || f.cid ? `<div class="bk-picked"><b>${h(Bk.who(f))}</b> <button type="button" class="btn small" data-act="bkf-clear">Change</button></div>` : `<div class="search"><input id="bkf-q" placeholder="Search a business, person or mobile" autocomplete="off"></div><div id="bkf-res"></div>`}</div>
-  ${f.bid || f.cid ? `<div class="grid2">${t.where === 'farm' ? `<div class="f"><label for="bkf-farm">Farm / yards</label><select id="bkf-farm"><option value="">${farms.length ? 'Choose…' : 'No farms saved for this client'}</option>${farms.map((x) => `<option value="${x.id}" ${x.id === f.fid ? 'selected' : ''}>${h(x.name || x.address || 'Farm')}${x.driveMin != null ? ` (${Math.round(x.driveMin)} min from base)` : ''}</option>`).join('')}</select></div>` : ''}
-    <div class="f"><label for="bkf-con">SMS goes to</label><select id="bkf-con"><option value="">Nobody</option>${cons.map((c) => `<option value="${c.id}" ${c.id === f.cid ? 'selected' : ''} ${bkMobile(c) ? '' : 'disabled'}>${h(fullName(c))}${bkMobile(c) ? ' · ' + h(bkMobile(c)) : ' (no mobile)'}</option>`).join('')}</select></div></div>` : ''}
-  <div class="f"><label>What's being done</label>${(f.svcs.length ? f.svcs : [{}]).map((x, i) => { const sv = x.svc && Bk.svc(x.svc); const y = sv && sv.mode === 'perhead' ? bkYard(f.fid, x.svc) : null;
-    return `<div class="bk-svcrow"><select data-bksvc="${i}"><option value="">Choose…</option>${svcs.map((s) => `<option value="${s.id}" ${s.id === x.svc ? 'selected' : ''}>${h(s.name)}</option>`).join('')}</select>${sv && sv.mode === 'perhead' ? `<input type="number" min="0" inputmode="numeric" data-bkhead="${i}" value="${x.head || ''}" aria-label="Head"><span class="hint">head</span>${f.fid ? `<input type="number" min="1" inputmode="numeric" data-bkhph="${i}" value="${x.hph || (y && y.hph) || sv.hph || ''}" aria-label="Head per hour"><span class="hint">per hour here</span>` : ''}` : ''}<button type="button" class="x" data-act="bkf-svcdel" data-i="${i}" aria-label="Remove">×</button></div>`; }).join('')}
-    <button type="button" class="btn small" data-act="bkf-svcadd">➕ Another service</button>${f.fid && f.svcs.some((x) => x.svc && Bk.svc(x.svc).mode === 'perhead') ? '<div class="hint">Change the "per hour here" number to match how fast these yards run — tick below to remember it for this farm.</div>' : ''}</div>
+  ${f.bid || f.cid ? `${t.where === 'farm' ? `<div class="f"><label for="bkf-farm0">Farm / yards${multi ? ' (in the order you\'ll visit them)' : ''}</label>${(f.fids.length ? f.fids : ['']).map((fid, i) => `<div class="bk-svcrow"><select id="bkf-farm${i}" data-bkfarm="${i}" aria-label="Farm ${i + 1}">${farmOpts(fid)}</select>${f.fids.length > 1 ? `<button type="button" class="x" data-act="bkf-farmdel" data-i="${i}" aria-label="Remove this farm">×</button>` : ''}</div>`).join('')}
+      ${farms.length > 1 && f.fids.length && f.fids.length < farms.length ? '<button type="button" class="btn small" data-act="bkf-farmadd">➕ Another farm / yards</button>' : ''}${multi ? '<div class="hint">Travel is worked out to the first farm and home from the last; driving between them is added to the length.</div>' : ''}</div>` : ''}
+    <div class="grid2"><div class="f"><label for="bkf-con">SMS goes to</label><select id="bkf-con"><option value="">Nobody</option>${cons.map((c) => `<option value="${c.id}" ${c.id === f.cid ? 'selected' : ''} ${bkMobile(c) ? '' : 'disabled'}>${h(fullName(c))}${bkMobile(c) ? ' · ' + h(bkMobile(c)) : ' (no mobile)'}</option>`).join('')}</select></div>
+    <div class="f"><label>Herds / flocks</label>${pids.length ? `<div class="checks">${pids.map((p, i) => `<label><input type="checkbox" data-bkpid="${i}" ${f.pids.some((q) => q.value === p.value) ? 'checked' : ''}> ${typeof pidEmo === 'function' ? pidEmo(p) : ''}${h(p.value)}${p.label ? ` <span class="hint">${h(p.label)}</span>` : ''}</label>`).join('')}</div><div class="hint">Tick each one this visit is for — each gets its own clinical record.</div>` : `<div class="hint">${bz ? 'No herd or flock IDs saved for this business yet — add them under Patient IDs on the business page.' : 'Choose a business to pick the herd or flock.'}</div>`}</div></div>` : ''}
+  <div class="f"><label>What's being done, and who</label>${(f.svcs.length ? f.svcs : [{ staff: [] }]).map((x, i) => { const sv = x.svc && Bk.svc(x.svc); const at = x.fid || f.fids[0]; const y = sv && sv.mode === 'perhead' ? bkYard(at, x.svc) : null; const who = x.staff || [];
+    return `<div class="bk-svcblk ${sv && sv.alongside ? 'along' : ''}"><div class="bk-svcrow"><select data-bksvc="${i}" aria-label="Service ${i + 1}"><option value="">Choose…</option>${svcs.map((s) => `<option value="${s.id}" ${s.id === x.svc ? 'selected' : ''}>${h(s.name)}</option>`).join('')}</select>${sv && sv.mode === 'perhead' ? `<input type="number" min="0" inputmode="numeric" data-bkhead="${i}" value="${x.head || ''}" aria-label="Head"><span class="hint">head</span>${at ? `<input type="number" min="1" inputmode="numeric" data-bkhph="${i}" value="${x.hph || (y && y.hph) || sv.hph || ''}" aria-label="Head per hour"><span class="hint">per hour here</span>` : ''}` : ''}${sv && sv.alongside ? '<span class="hint">runs alongside — doesn\'t add time</span>' : ''}<button type="button" class="x" data-act="bkf-svcdel" data-i="${i}" aria-label="Remove">×</button></div>
+      ${multi && sv && !sv.alongside ? `<div class="bk-svcrow"><span class="hint">At</span><select data-bksfarm="${i}" aria-label="Which farm">${f.fids.map((fid) => { const fm = IDX.farms.get(fid); return `<option value="${fid}" ${fid === at ? 'selected' : ''}>${h(fm ? fm.name || fm.address || 'Farm' : 'Farm')}</option>`; }).join('')}</select></div>` : ''}
+      <div class="bk-who"><span class="hint">Who:</span>${ppl.map((s) => { const bad = x.svc && !Bk.canDo(s, x.svc); return `<label class="bk-pp ${bad ? 'bad' : ''}" title="${bad ? 'Not set up for ' + h(sv.name) : ''}"><input type="checkbox" data-bkwho="${i}" data-staff="${s.id}" ${who.includes(s.id) ? 'checked' : ''}> ${h(s.preferred_name || s.full_name)}</label>`; }).join('') || '<span class="hint">The staff list loads the first time you sign in with internet.</span>'}</div></div>`; }).join('')}
+    <button type="button" class="btn small" data-act="bkf-svcadd">➕ Another service</button>${labourSvc && !f.svcs.some((x) => x.svc && Bk.svc(x.svc).alongside) ? ` <button type="button" class="btn small" data-act="bkf-labour">➕ ${h(labourSvc.name)}</button>` : ''}
+    ${need && !f.noLabour ? `<div class="bk-warnbox bk-labour">${need === 'always' ? `⚠ <b>${h(Bk.who(f))}</b> always needs ${h((labourSvc || { name: 'additional labour' }).name.toLowerCase())}.` : `Do you want ${h((labourSvc || { name: 'additional labour' }).name.toLowerCase())} booked for this?`}<div class="actions" style="margin-top:6px"><button type="button" class="btn small primary" data-act="bkf-labour">Yes — add it</button><button type="button" class="btn small" data-act="bkf-nolabour">${need === 'always' ? 'Not this time' : 'No'}</button></div></div>` : ''}
+    ${need === 'always' && f.noLabour ? `<div class="hint">No additional labour this time (this client usually needs it). <button type="button" class="btn small" data-act="bkf-labour">Add it</button></div>` : ''}
+    ${t.where === 'farm' && f.fids.length && f.svcs.some((x) => x.svc && Bk.svc(x.svc).mode === 'perhead') ? '<div class="hint">Change the "per hour here" number to match how fast these yards run — tick below to remember it for this farm.</div>' : ''}</div>
   <div class="grid2"><div class="f"><label for="bkf-mins">How long (minutes)</label><input id="bkf-mins" type="number" min="5" step="5" inputmode="numeric" value="${f.mins}"><div class="hint" id="bkf-why">Suggested ${bkDur(sug.mins)} — ${h(sug.why)} ${f.mins !== sug.mins ? `<button type="button" class="btn small" data-act="bkf-usesug">Use ${bkDur(sug.mins)}</button>` : ''}</div></div>
-    <div class="f"><label>&nbsp;</label>${f.fid && f.svcs.some((x) => x.svc && Bk.svc(x.svc).mode === 'perhead') ? `<label class="bk-radio"><input type="checkbox" id="bkf-rememberyard" ${f.rememberYard ? 'checked' : ''}> Remember the speed for these yards</label>` : ''}</div></div>
-  <div class="f"><label>Who</label><div class="checks">${ppl.map((s) => { const bad = f.svcs.filter((x) => x.svc && !Bk.canDo(s, x.svc)).map((x) => Bk.svc(x.svc).name); return `<label title="${bad.length ? 'Not set up for ' + h(bad.join(', ')) : ''}"><input type="checkbox" data-bkstaff="${s.id}" ${f.staff.includes(s.id) ? 'checked' : ''}> ${h(s.preferred_name || s.full_name)}${bad.length ? ' <span class="hint">(not for ' + h(bad.join(', ')) + ')</span>' : ''}</label>`; }).join('')}</div></div>
+    <div class="f"><label>&nbsp;</label>${t.where === 'farm' && f.fids.length && f.svcs.some((x) => x.svc && Bk.svc(x.svc).mode === 'perhead') ? `<label class="bk-radio"><input type="checkbox" id="bkf-rememberyard" ${f.rememberYard ? 'checked' : ''}> Remember the speed for these yards</label>` : ''}</div></div>
   <div class="grid2"><div class="f"><label for="bkf-date">Date</label><input id="bkf-date" type="date" value="${f.date || ''}"></div><div class="f"><label for="bkf-start">Start time</label><input id="bkf-start" type="time" step="900" value="${f.start || ''}"></div></div>
   <div class="actions"><button type="button" class="btn" data-act="bkf-suggest">🔎 Suggest days and people</button><label class="bk-radio"><input type="checkbox" id="bkf-urgent" ${f.urgent ? 'checked' : ''}> ⚡ Urgent — soonest first, nearby farms don't matter</label></div>
-  <div id="bkf-sugg"></div><div id="bkf-warn">${bkWarnHtml(bkProblems(f))}</div>
+  <div id="bkf-sugg"></div><div id="bkf-warn">${bkWarnHtml(bkProblems(bkFormStaff(f)))}</div>
   ${isNew ? `<label class="bk-radio" style="margin:8px 0"><input type="checkbox" id="bkf-sms" ${f.sms.send ? 'checked' : ''}> Send the "booking made" SMS${f.cid && bkMobile(D.contacts.find((c) => c.id === f.cid)) ? '' : ' <span class="hint">(choose who it goes to above)</span>'}</label>` : `<div class="hint" style="margin:8px 0">${bkSmsStatus(f)}</div>`}
   <label class="bk-radio" style="margin:0 0 8px"><input type="checkbox" id="bkf-rem" ${f.sms.noReminder ? '' : 'checked'}> Send a reminder SMS 5 days before (8:30am)</label>
   ${!isNew ? bkTextsHtml(f) : ''}
   <div class="f"><label for="bkf-notes">Notes</label><textarea id="bkf-notes" rows="3">${h(f.notes || '')}</textarea></div>
   ${!isNew ? bkExistingActions(f) : ''}`;
 }
+function bkFormStaff(f) { f.staff = [...new Set((f.svcs || []).flatMap((x) => x.staff || []))]; return f; } // everyone on the booking = everyone on any of its services
 function bkWarnHtml(list) { return list.length ? `<div class="bk-warnbox">${list.map((x) => `<div>⚠ ${h(x)}</div>`).join('')}</div>` : ''; }
 function bkSmsStatus(b) {
   const s = b.sms || {}; if (!s.send) return 'No "booking made" SMS for this booking.';
@@ -379,7 +450,7 @@ async function bkTextOpen(d) {
   const ok = await askBox('Send a text', `<div class="f"><label for="bt-to">To</label><select id="bt-to" data-ask="to">${opts.map((o) => `<option value="${h(o.v)}" data-cid="${o.cid}" ${o.cid === (b && b.cid) ? 'selected' : ''}>${h(o.l)}</option>`).join('')}</select>${opts.length ? '' : '<div class="hint">No mobile number saved for this client.</div>'}</div>
     <div class="f"><label for="bt-tpl">Start from</label><select id="bt-tpl"><option value="">A blank message</option>${tpls.map((t) => `<option value="${t.id}">${h(t.name)}</option>`).join('')}</select></div>
     <div class="f"><label for="bt-body">Message</label><textarea id="bt-body" data-ask="body" rows="5"></textarea><div class="hint" id="bt-n">0 characters</div></div>
-    <div class="hint">Sent from the office phone (0499 489 919). Replies show in Bookings → Jobs.</div>`, 'Send', false, 'Cancel');
+    <div class="hint">Sent from the office phone (0499 489 919). Replies show in Scheduling → Jobs.</div>`, 'Send', false, 'Cancel');
   if (!ok) return; const to = ASK_FORM.to, body = (ASK_FORM.body || '').trim(); if (!to || !body) { toast('Choose who to text and write the message'); return; }
   const c = cons.find((x) => bkMobile(x) === to);
   try { await rpc('sms_queue', { k: Dev.k(), phone: to, body, contact_id: c ? c.id : d.cid || null, business_id: d.bid || null, booking_id: b ? b.id : null }); toast('Text queued — it goes from the office phone in a moment'); SupaSync.smsAt = 0; SupaSync.soon(); }
@@ -399,12 +470,19 @@ function bkFormRead() {
   const f = BKF, q = (id) => document.getElementById(id); if (!q('bkf-type')) return;
   const oldType = f.type; f.type = q('bkf-type').value;
   const st = document.querySelector('input[name=bkf-status]:checked'); if (st) f.status = st.value;
-  if (q('bkf-farm')) f.fid = q('bkf-farm').value || null; if (q('bkf-con')) f.cid = q('bkf-con').value || null;
-  document.querySelectorAll('[data-bksvc]').forEach((el) => { const i = +el.dataset.bksvc; f.svcs[i] = f.svcs[i] || {}; f.svcs[i].svc = el.value; });
+  const fe = [...document.querySelectorAll('[data-bkfarm]')]; if (fe.length) f.fids = [...new Set(fe.map((el) => el.value).filter(Boolean))];
+  f.fid = f.fids[0] || null; if (q('bkf-con')) f.cid = q('bkf-con').value || null;
+  const pids = bkPidsOf(f.bid); if (document.querySelector('[data-bkpid]')) f.pids = [...document.querySelectorAll('[data-bkpid]:checked')].map((el) => pids[+el.dataset.bkpid]).filter(Boolean).map((p) => ({ value: p.value, label: p.label || '' }));
+  document.querySelectorAll('[data-bksvc]').forEach((el) => { const i = +el.dataset.bksvc; f.svcs[i] = f.svcs[i] || { staff: [] }; f.svcs[i].svc = el.value; });
   document.querySelectorAll('[data-bkhead]').forEach((el) => { f.svcs[+el.dataset.bkhead].head = +el.value || 0; });
   document.querySelectorAll('[data-bkhph]').forEach((el) => { f.svcs[+el.dataset.bkhph].hph = +el.value || null; });
+  document.querySelectorAll('[data-bksfarm]').forEach((el) => { f.svcs[+el.dataset.bksfarm].fid = el.value === f.fids[0] ? null : el.value; });
+  const who = {}; document.querySelectorAll('[data-bkwho]').forEach((el) => { const i = +el.dataset.bkwho; who[i] = who[i] || []; if (el.checked) who[i].push(el.dataset.staff); });
+  Object.keys(who).forEach((i) => { if (f.svcs[i]) f.svcs[i].staff = who[i]; });
+  f.svcs.forEach((x) => { if (x.fid && !f.fids.includes(x.fid)) x.fid = null; });
   f.svcs = f.svcs.filter((x, i, a) => x.svc || a.length === 1);
-  f.mins = +q('bkf-mins').value || f.mins; f.staff = [...document.querySelectorAll('[data-bkstaff]:checked')].map((el) => el.dataset.bkstaff);
+  bkFormStaff(f);
+  f.mins = +q('bkf-mins').value || f.mins;
   f.date = q('bkf-date').value; f.start = q('bkf-start').value; f.urgent = q('bkf-urgent').checked; f.notes = q('bkf-notes').value;
   if (q('bkf-sms')) f.sms.send = q('bkf-sms').checked; if (q('bkf-rem')) f.sms.noReminder = !q('bkf-rem').checked; if (q('bkf-rememberyard')) f.rememberYard = q('bkf-rememberyard').checked;
   return oldType !== f.type;
@@ -413,8 +491,8 @@ function bkFormRefresh(full) {
   const form = document.querySelector('#sheet .form'); if (!form || !BKF) return;
   if (full) { const y = form.scrollTop; form.innerHTML = bkFormHtml(); form.scrollTop = y; bkFormBindSearch(); return; }
   const mi = document.getElementById('bkf-mins'); if (mi && +mi.value !== BKF.mins) mi.value = BKF.mins;
-  const w = document.getElementById('bkf-warn'); if (w) w.innerHTML = bkWarnHtml(bkProblems(BKF));
-  const sug = bkSuggestMins(BKF.type, BKF.svcs, BKF.fid); const why = document.getElementById('bkf-why');
+  const w = document.getElementById('bkf-warn'); if (w) w.innerHTML = bkWarnHtml(bkProblems(bkFormStaff(BKF)));
+  const sug = bkSuggestMins(BKF.type, BKF.svcs, BKF.fids); const why = document.getElementById('bkf-why');
   if (why) why.innerHTML = `Suggested ${bkDur(sug.mins)} — ${h(sug.why)} ${BKF.mins !== sug.mins ? `<button type="button" class="btn small" data-act="bkf-usesug">Use ${bkDur(sug.mins)}</button>` : ''}`;
 }
 function bkFormBindSearch() {
@@ -422,31 +500,56 @@ function bkFormBindSearch() {
   q.addEventListener('input', () => { const r = bkClientResults(q.value); document.getElementById('bkf-res').innerHTML = r.map((x, i) => `<button type="button" class="bk-res" data-act="bkf-client" data-bid="${x.bid || ''}" data-cid="${x.cid || ''}"><b>${h(x.label)}</b><span class="hint">${h(x.sub || '')}</span></button>`).join('') || (q.value.trim().length > 1 ? '<div class="hint">No match</div>' : ''); });
   setTimeout(() => q.focus(), 50);
 }
+function bkAutoMins() { if (!BKF._minsTouched) BKF.mins = bkSuggestMins(BKF.type, BKF.svcs, BKF.fids).mins; }
+async function bkFarmCheck(fid) { // pop up a warning straight away when a do-not-service (or safety-stop) farm is chosen
+  const hard = bkFarmIssues(fid, BKF.svcs, BKF.fids[0]).filter((x) => x.hard); if (!hard.length) return;
+  const ok = await askBox('⛔ Check this farm', `${hard.map((x) => `<p style="font-size:16px;font-weight:600;color:var(--red)">${h(x.msg)}</p>`).join('')}<p class="hint">You can still book it if you've checked it's OK.</p>`, 'Book it anyway', true, 'Remove this farm');
+  if (ok) { BKF._farmOk = true; return; }
+  BKF.fids = BKF.fids.filter((x) => x !== fid); BKF.fid = BKF.fids[0] || null; bkAutoMins(); bkFormRefresh(true);
+}
 function bkOpen(b, preset) {
   if (!b && !Bk.need('book')) return;
   const types = Bk.cfg('type'); if (!types.length) { toast('Booking settings are still loading — sync, then try again'); return; }
-  const orig = b || null;
-  BKF = b ? JSON.parse(JSON.stringify(b)) : { id: uid('bk'), type: types[0].id, status: 'unconfirmed', staff: [], svcs: [], mins: 60, date: BK.date, start: '', sms: { send: true }, notes: '', ...(preset || {}) };
-  BKF._orig = orig; BKF.sms = BKF.sms || { send: true }; BKF.svcs = BKF.svcs || [];
+  const orig = b || null; preset = preset || {};
+  BKF = b ? JSON.parse(JSON.stringify(b)) : { id: uid('bk'), type: types[0].id, status: 'unconfirmed', staff: [], svcs: [{ staff: [...(preset.staff || [])] }], mins: 60, date: BK.date, start: '', sms: { send: true }, notes: '', ...preset };
+  BKF._orig = orig; BKF.sms = BKF.sms || { send: true }; delete BKF.suggestNow;
+  BKF.fids = Bk.fids(BKF).slice(); BKF.fid = BKF.fids[0] || null; BKF.pids = BKF.pids || [];
+  BKF.svcs = (BKF.svcs && BKF.svcs.length ? BKF.svcs : [{ staff: [...(BKF.staff || [])] }]).map((x) => ({ ...x, staff: [...Bk.sstaff(BKF, x)] }));
+  if (!b) { if (BKF.bid && !BKF.fids.length) { const fs = bkFarmsOf(BKF.bid); if (fs.length === 1) BKF.fids = [fs[0].id]; BKF.fid = BKF.fids[0] || null; } const ps = bkPidsOf(BKF.bid); if (ps.length === 1 && !BKF.pids.length) BKF.pids = [{ value: ps[0].value, label: ps[0].label || '' }]; }
+  bkFormStaff(BKF);
   openSheet(b ? 'Booking — ' + Bk.who(b) : 'New booking', bkFormHtml(), async () => bkSaveForm());
   const form = document.querySelector('#sheet .form');
-  form.addEventListener('change', (e) => { const typeChanged = bkFormRead(); const id = e.target.id || ''; const full = typeChanged || id === 'bkf-farm' || id === 'bkf-con' || e.target.dataset.bksvc != null || e.target.name === 'bkf-status';
-    if (typeChanged || e.target.dataset.bksvc != null || e.target.dataset.bkhead != null || e.target.dataset.bkhph != null || id === 'bkf-farm') { const sg = bkSuggestMins(BKF.type, BKF.svcs.map((x) => ({ ...x })), BKF.fid); if (!BKF._minsTouched) BKF.mins = sg.mins; }
+  form.addEventListener('change', (e) => { const before = [...BKF.fids]; const typeChanged = bkFormRead(); const id = e.target.id || ''; const dd = e.target.dataset;
+    const full = typeChanged || dd.bkfarm != null || dd.bksfarm != null || id === 'bkf-con' || dd.bksvc != null || e.target.name === 'bkf-status' || dd.bkwho != null;
+    if (typeChanged || dd.bksvc != null || dd.bkhead != null || dd.bkhph != null || dd.bkfarm != null || dd.bksfarm != null) bkAutoMins();
     if (id === 'bkf-mins') BKF._minsTouched = true;
-    bkFormRefresh(full); });
+    bkFormRefresh(full);
+    if (dd.bkfarm != null && e.target.value && !before.includes(e.target.value)) bkFarmCheck(e.target.value); });
   form.addEventListener('input', (e) => { if (e.target.dataset.bkhph != null) { const i = +e.target.dataset.bkhph; BKF.svcs[i].hph = +e.target.value || null; BKF.rememberYard = true; const cb = document.getElementById('bkf-rememberyard'); if (cb) cb.checked = true; } });
   bkFormBindSearch();
-  if (preset && preset.suggestNow) setTimeout(() => document.querySelector('[data-act=bkf-suggest]') && document.querySelector('[data-act=bkf-suggest]').click(), 100);
+  if (preset.suggestNow) setTimeout(() => document.querySelector('[data-act=bkf-suggest]') && document.querySelector('[data-act=bkf-suggest]').click(), 100);
 }
-function bkSaveForm() {
-  bkFormRead(); const f = BKF;
+function bkAddLabour() { const l = Bk.cfg('service').find((x) => x.alongside); if (!l) { toast('Add a service that runs alongside (Settings → Scheduling) first'); return false; } BKF.svcs = BKF.svcs.filter((x) => x.svc); BKF.svcs.push({ svc: l.id, staff: [] }); BKF.noLabour = false; bkFormRefresh(true); return true; }
+async function bkSaveForm(skipRead) { // skipRead: the caller has already read the form and then changed BKF (moving it, cancelling…) — reading again would undo that
+  if (!skipRead) bkFormRead(); const f = BKF; bkFormStaff(f);
   if (!f.bid && !f.cid) { toast('Choose the client'); return false; }
   if (!f.svcs.some((x) => x.svc) && !Bk.type(f.type).fixedMins) { toast("Choose what's being done"); return false; }
+  const nobody = f.svcs.find((x) => x.svc && !(x.staff || []).length); if (nobody) { toast(`Choose who's doing ${Bk.svc(nobody.svc).name}`); return false; }
   if (!f.staff.length) { toast('Choose who'); return false; }
   if (!f.date || !f.start) { toast('Choose the date and start time'); return false; }
-  // remember the yard speed for this farm
-  if (f.fid && f.rememberYard) f.svcs.forEach((x) => { if (!x.svc || !x.hph || Bk.svc(x.svc).mode !== 'perhead') return; const id = 'yard:' + f.fid + ':' + x.svc; let y = Bk.get(id); if (!y) { y = { id, cfg: 'yard', fid: f.fid, svc: x.svc }; D.bkcfg.push(y); } if (y.hph !== x.hph) { y.hph = x.hph; touch(y); } });
-  const rec = { ...f }; delete rec._orig; delete rec.rememberYard; delete rec._minsTouched; rec.svcs = f.svcs.filter((x) => x.svc).map((x) => ({ svc: x.svc, head: x.head || 0 }));
+  if (!skipRead && bkPidsOf(f.bid).length && !f.pids.length) { toast('Choose which herd or flock this is for'); return false; }
+  if (f.status !== 'cancelled' && !skipRead) {
+    const need = bkNeedsLabour(f);
+    if (need && !f.noLabour) { const r = await askBox('Additional labour?', `<p style="font-size:16px">${need === 'always' ? `<b>${h(Bk.who(f))}</b> always needs additional labour. Book someone for it?` : 'Do you want additional labour booked for this?'}</p>`, 'Yes — add additional labour', false, '‹ Back to the booking', 'No — not needed');
+      if (r === true) { if (bkAddLabour()) toast('Choose who is doing the additional labour, then Save'); return false; } if (r !== 'alt') return false; f.noLabour = true; }
+    const hard = Bk.type(f.type).where === 'farm' ? f.fids.flatMap((fid) => bkFarmIssues(fid, f.svcs, f.fids[0])).filter((x) => x.hard) : [];
+    if (hard.length && !f._farmOk && !(await ask(hard.map((x) => '⛔ ' + x.msg).join('\n') + '\n\nBook it anyway?', 'Yes — book anyway', true))) return false;
+  }
+  // remember the yard speed for each farm
+  if (f.rememberYard) f.svcs.forEach((x) => { const at = x.fid || f.fids[0]; if (!at || !x.svc || !x.hph || Bk.svc(x.svc).mode !== 'perhead') return; const id = 'yard:' + at + ':' + x.svc; let y = Bk.get(id); if (!y) { y = { id, cfg: 'yard', fid: at, svc: x.svc }; D.bkcfg.push(y); } if (y.hph !== x.hph || y.gone) { y.hph = x.hph; delete y.gone; touch(y); } });
+  const rec = { ...f }; ['_orig', 'rememberYard', '_minsTouched', '_farmOk'].forEach((k) => delete rec[k]);
+  rec.svcs = f.svcs.filter((x) => x.svc).map((x) => { const o = { svc: x.svc, head: x.head || 0, staff: [...(x.staff || [])] }; if (x.fid) o.fid = x.fid; return o; });
+  rec.fid = f.fids[0] || null; rec.fids = [...f.fids]; if (!rec.noLabour) delete rec.noLabour;
   if (f._orig) { Object.keys(f._orig).forEach((k) => delete f._orig[k]); Object.assign(f._orig, rec); touch(f._orig); }
   else { rec.createdAt = Date.now(); rec.by = SBAuth.staff && SBAuth.staff.id; touch(rec); Bk.list('bookings').push(rec); }
   BK.date = f.date; save(); Sync.soon(); setTimeout(renderAll, 0); return true;
@@ -463,7 +566,7 @@ function bkProposeForm() {
     if (!pr.date || !pr.start || !pr.staff.length) { toast('Choose the new date, time and who'); return; }
     f.proposal = pr; bkFormRefresh(true); toast('New time held — tap Save to keep it'); });
   setTimeout(() => { const g = (id) => document.getElementById(id); const sb = g('bkp-suggest'); if (!sb) return;
-    sb.onclick = () => { const list = bkSuggest({ type: f.type, fid: f.fid, mins: f.mins, svcs: f.svcs.filter((x) => x.svc), urgent: f.urgent, skipId: f.id });
+    sb.onclick = () => { const list = bkSuggest({ type: f.type, fids: f.fids, mins: f.mins, svcs: f.svcs.filter((x) => x.svc && !Bk.svc(x.svc).alongside), urgent: f.urgent, skipId: f.id });
       g('bkp-sugg').innerHTML = list.length ? `<div class="bk-sugg">${list.map((r, i) => `<button type="button" class="bk-sopt" data-i="${i}"><b>${bkDate(r.date)} ${bkTime(r.start)}</b> · ${h(Bk.pname(r.staff))}<span class="hint">${r.near ? 'near ' + h(r.near.x.what) + ' · ' : ''}adds ~${r.extra} min driving</span></button>`).join('')}</div>` : '<div class="hint">Nothing free found.</div>';
       g('bkp-sugg').querySelectorAll('.bk-sopt').forEach((b) => (b.onclick = () => { const r = list[+b.dataset.i]; g('bkp-date').value = r.date; g('bkp-start').value = r.start; document.querySelectorAll('[data-askchk^="ps_"]').forEach((el) => (el.checked = el.dataset.askchk === 'ps_' + r.staff)); })); }; }, 80);
 }
@@ -473,7 +576,7 @@ function bkBlockOpen(b, preset) {
   if (!Bk.need('blocks')) return;
   const isNew = !b; const f = b ? JSON.parse(JSON.stringify(b)) : { id: uid('blk'), type: (Bk.cfg('blocktype')[0] || {}).id, staff: [], date: BK.date, start: '12:00', end: '13:00', allDay: false, repeat: { every: 'none', days: [] }, on: true, note: '', ...(preset || {}) };
   const r = f.repeat || { every: 'none' }; const ppl = Bk.people();
-  openSheet(isNew ? 'New block' : 'Block — ' + Bk.btype(f.type).name, `<div class="grid2"><div class="f"><label for="bb-type">Type</label><select id="bb-type">${Bk.cfg('blocktype').map((t) => `<option value="${t.id}" ${t.id === f.type ? 'selected' : ''}>${h(t.name)}</option>`).join('')}</select><div class="hint">Add your own types in Bookings → ⚙ Settings.</div></div>
+  openSheet(isNew ? 'New block' : 'Block — ' + Bk.btype(f.type).name, `<div class="grid2"><div class="f"><label for="bb-type">Type</label><select id="bb-type">${Bk.cfg('blocktype').map((t) => `<option value="${t.id}" ${t.id === f.type ? 'selected' : ''}>${h(t.name)}</option>`).join('')}</select><div class="hint">Add your own types in Settings → Scheduling.</div></div>
     <div class="f"><label class="bk-radio" style="margin-top:22px"><input type="checkbox" id="bb-on" ${f.on ? 'checked' : ''}> On (untick to turn it off without deleting it)</label></div></div>
   <div class="f"><label>Who</label><div class="checks"><label><input type="checkbox" id="bb-all" ${f.staff === 'all' ? 'checked' : ''}> Everyone</label>${ppl.map((s) => `<label><input type="checkbox" data-bbstaff="${s.id}" ${f.staff !== 'all' && f.staff.includes(s.id) ? 'checked' : ''}> ${h(s.preferred_name || s.full_name)}</label>`).join('')}</div></div>
   <div class="grid2"><div class="f"><label for="bb-date">${r.every === 'none' ? 'Date' : 'Starting'}</label><input id="bb-date" type="date" value="${f.date}"></div><div class="f"><label for="bb-to">Until (several days in a row)</label><input id="bb-to" type="date" value="${f.toDate || ''}"></div></div>
@@ -498,10 +601,10 @@ function bkSettingsHtml() {
   const ed = Bk.can('settings'), adm = window.SBAuth && SBAuth.isAdmin(), ppl = Bk.people();
   const row = (x, extra) => `<div class="kv" style="align-items:center">${x.colour ? `<span class="bk-dot" style="--c:${x.colour}"></span>` : ''}<div class="v"><b>${h(x.name)}</b>${extra ? `<br><span class="hint">${extra}</span>` : ''}</div>${ed ? `<button class="btn small" data-act="bks-edit" data-id="${x.id}">✏️</button>` : ''}</div>`;
   const where = { farm: 'On a farm (travel worked out)', base: 'At homebase', phone: 'Phone — no travel' };
-  return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><button class="btn small" data-act="bk-page" data-v="cal">‹ Calendar</button><b class="bk-title">Booking settings</b></div></div>
+  return `<div class="bk-setwrap">
   ${ed ? '' : '<div class="hint" style="margin-bottom:8px">You can see these but not change them — ask the office.</div>'}
   <div class="card"><h3><span class="sp">Appointment types</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="type">➕ New</button>' : ''}</h3>${Bk.cfg('type').map((x) => row(x, `${where[x.where] || ''}${x.fixedMins ? ' · always ' + bkDur(x.fixedMins) : ' · length from what\'s being done'}`)).join('')}</div>
-  <div class="card"><h3><span class="sp">Services (what's being done)</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="service">➕ New</button>' : ''}</h3><div class="hint" style="margin-bottom:6px">Per-head services work out the length from the head count; each farm's own yard speed is remembered when you tick "Remember the speed for these yards" on a booking.</div>${Bk.cfg('service').map((x) => row(x, x.mode === 'perhead' ? `${x.hph} head an hour + ${x.setup || 0} min set-up` : `set time ${bkDur(+x.mins || 0)}`)).join('')}
+  <div class="card"><h3><span class="sp">Services (what's being done)</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="service">➕ New</button>' : ''}</h3><div class="hint" style="margin-bottom:6px">Per-head services work out the length from the head count; each farm's own yard speed is remembered when you tick "Remember the speed for these yards" on a booking.</div>${Bk.cfg('service').map((x) => row(x, (x.mode === 'perhead' ? `${x.hph} head an hour + ${x.setup || 0} min set-up` : `set time ${bkDur(+x.mins || 0)}`) + (x.alongside ? ' · runs alongside' : '') + (x.askLabour ? ' · asks about additional labour' : '') + (x.yard ? ` · counts as ${x.yard === 'preg' ? 'preg' : 'bull'} testing` : ''))).join('')}
     ${Bk.cfg('yard').length ? `<details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Remembered yard speeds (${Bk.cfg('yard').length})</summary>${Bk.cfg('yard').map((y) => { const f = IDX.farms && IDX.farms.get(y.fid); return `<div class="kv" style="align-items:center"><div class="v">${h(f ? farmLabel(f) : 'Farm')} — ${h(Bk.svc(y.svc).name)}: <b>${y.hph}/hour</b></div>${ed ? `<button class="btn small" data-act="bks-yarddel" data-id="${y.id}">Forget</button>` : ''}</div>`; }).join('')}</details>` : ''}</div>
   <div class="card"><h3>People — hours and what they can be booked for</h3><div class="hint" style="margin-bottom:6px">Working hours, the time kept at the end of the day for records and restocking, and locums (only bookable on days marked available).${adm ? '' : ' Only the admin can change what each person can be booked for.'}</div>
     ${ppl.map((s) => { const c = Bk.scfg(s); return `<div class="kv" style="align-items:center"><div class="v"><b>${h(s.preferred_name || s.full_name)}</b><br><span class="hint">${c.mode === 'locum' ? 'Locum — available on chosen days' : [1, 2, 3, 4, 5, 6, 0].filter((d) => c.hours[d]).map((d) => DOW_NAMES[d]).join(', ') + ' ' + (Object.values(c.hours)[0] ? `${bkTime(Object.values(c.hours)[0][0])}–${bkTime(Object.values(c.hours)[0][1])}` : '')}${c.endBuffer ? ` · ${c.endBuffer} min end of day` : ''} · ${c.canDo ? 'only ' + c.canDo.map((x) => Bk.svc(x).name).join(', ') : 'all services'}</span></div>${ed || adm ? `<button class="btn small" data-act="bks-staff" data-id="${s.id}">✏️</button>` : ''}</div>`; }).join('') || '<div class="hint">The staff list loads when you are online and signed in.</div>'}</div>
@@ -519,7 +622,10 @@ function bkCfgOpen(x, cfgType) {
   if (t === 'type' || t === 'blocktype') body += `<div class="f"><label for="bc-colour">Colour</label><input id="bc-colour" type="color" value="${x.colour || '#3a6ea5'}"></div>`;
   if (t === 'type') body += `<div class="f"><label for="bc-where">Where</label><select id="bc-where">${[['farm', 'On a farm'], ['base', 'At homebase'], ['phone', 'Phone']].map(([v, l]) => `<option value="${v}" ${x.where === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div><div class="f"><label for="bc-fixed">Always this long (minutes)</label><input id="bc-fixed" type="number" min="0" step="5" value="${x.fixedMins || ''}"><div class="hint">Leave empty to work it out from what's being done.</div></div>`;
   if (t === 'service') body += `<div class="f"><label for="bc-mode">How long</label><select id="bc-mode"><option value="fixed" ${x.mode !== 'perhead' ? 'selected' : ''}>Set time</option><option value="perhead" ${x.mode === 'perhead' ? 'selected' : ''}>Depends on head count</option></select></div>
-    <div class="grid2"><div class="f"><label for="bc-mins">Set time (minutes)</label><input id="bc-mins" type="number" min="0" step="5" value="${x.mins || ''}"></div><div class="f"><label for="bc-hph">Head per hour (usual)</label><input id="bc-hph" type="number" min="1" value="${x.hph || ''}"></div></div><div class="f"><label for="bc-setup">Set-up time for per-head (minutes)</label><input id="bc-setup" type="number" min="0" step="5" value="${x.setup || ''}"></div>`;
+    <div class="grid2"><div class="f"><label for="bc-mins">Set time (minutes)</label><input id="bc-mins" type="number" min="0" step="5" value="${x.mins || ''}"></div><div class="f"><label for="bc-hph">Head per hour (usual)</label><input id="bc-hph" type="number" min="1" value="${x.hph || ''}"></div></div><div class="f"><label for="bc-setup">Set-up time for per-head (minutes)</label><input id="bc-setup" type="number" min="0" step="5" value="${x.setup || ''}"></div>
+    <label class="bk-radio" style="margin:4px 0"><input type="checkbox" id="bc-asklab" ${x.askLabour ? 'checked' : ''}> Ask whether additional labour is needed when this is booked</label>
+    <label class="bk-radio" style="margin:4px 0"><input type="checkbox" id="bc-along" ${x.alongside ? 'checked' : ''}> Runs alongside the other work (like additional labour) — a separate person, doesn't make the booking longer</label>
+    <div class="f" style="margin-top:6px"><label for="bc-yard">Farm rules on the business page</label><select id="bc-yard"><option value="">Not affected</option><option value="preg" ${x.yard === 'preg' ? 'selected' : ''}>Counts as preg testing</option><option value="bull" ${x.yard === 'bull' ? 'selected' : ''}>Counts as bull testing</option></select><div class="hint">Farms set to "individual animal assessments only" warn when preg or bull testing is booked there.</div></div>`;
   if (t === 'sms') body += `<div class="f"><label for="bc-use">When it's used</label><select id="bc-use">${[['booked', 'When a booking is made'], ['reminder', 'Reminder 5 days before'], ['proposal', 'When a new time is suggested'], ['other', 'Sent by hand']].map(([v, l]) => `<option value="${v}" ${x.use === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div><div class="f"><label for="bc-text">Message</label><textarea id="bc-text" rows="5">${h(x.text || '')}</textarea><div class="hint">Fill-ins: {first} {name} {business} {type} {day} {date} {time} {farm} {at_farm} {vet} {old_date}</div></div>`;
   if (t === 'futype') body += `<div class="f"><label for="bc-days">Due how many days after</label><input id="bc-days" type="number" min="0" value="${x.days || ''}"></div>`;
   if (!isNew) body += `<div class="actions"><button type="button" class="btn" data-act="bks-del" data-id="${x.id}" style="color:var(--red)">Remove</button></div>`;
@@ -527,7 +633,8 @@ function bkCfgOpen(x, cfgType) {
     const g = (id) => (document.getElementById(id) || {}).value; x.name = (g('bc-name') || '').trim(); if (!x.name) { toast('Enter a name'); return false; }
     if (t === 'type' || t === 'blocktype') x.colour = g('bc-colour');
     if (t === 'type') { x.where = g('bc-where'); x.fixedMins = +g('bc-fixed') || null; }
-    if (t === 'service') { x.mode = g('bc-mode'); x.mins = +g('bc-mins') || null; x.hph = +g('bc-hph') || null; x.setup = +g('bc-setup') || 0; if (x.mode === 'perhead' && !x.hph) { toast('Enter the usual head per hour'); return false; } if (x.mode === 'fixed' && !x.mins) { toast('Enter the set time'); return false; } }
+    if (t === 'service') { x.mode = g('bc-mode'); x.mins = +g('bc-mins') || null; x.hph = +g('bc-hph') || null; x.setup = +g('bc-setup') || 0; if (x.mode === 'perhead' && !x.hph) { toast('Enter the usual head per hour'); return false; } if (x.mode === 'fixed' && !x.mins) { toast('Enter the set time'); return false; }
+      x.askLabour = document.getElementById('bc-asklab').checked; x.alongside = document.getElementById('bc-along').checked; x.yard = g('bc-yard') || null; }
     if (t === 'sms') { x.use = g('bc-use'); x.text = (g('bc-text') || '').trim(); if (!x.text) { toast('Write the message'); return false; } }
     if (t === 'futype') x.days = +g('bc-days') || 0;
     const ex = Bk.get(x.id); if (ex) { Object.keys(ex).forEach((k) => delete ex[k]); Object.assign(ex, x); touch(ex); } else { touch(x); D.bkcfg.push(x); }
@@ -547,6 +654,39 @@ function bkStaffOpen(s) {
     touch(r); save(); Sync.soon(); setTimeout(renderAll, 0); return true; });
 }
 
+/* ---------------- the business page: how this client's farms are booked ---------------- */
+function bkYardSvc(kind) { return Bk.cfg('service').find((x) => x.yard === kind) || Bk.get(kind === 'preg' ? 'svc-preg' : 'svc-bull'); }
+function bkBizCard(b) {
+  if (!Bk.on() || (typeof isClientBiz === 'function' && !isClientBiz(b))) return '';
+  const bs = Bk.bsched(b.id), ed = Bk.can('book'), fs = bkFarmsOf(b.id);
+  const sp = (fid, kind) => { const sv = bkYardSvc(kind); if (!sv) return '—'; const y = bkYard(fid, sv.id); return y && y.hph && !y.gone ? `<b>${y.hph}/hour</b>` : `${sv.hph || '?'}/hour (usual)`; };
+  return `<div class="card bk-bizcard"><h3><span class="sp">📅 Scheduling</span>${ed ? `<button class="btn small" data-act="bks-bsched" data-id="${b.id}" aria-label="Edit scheduling">✏️</button>` : ''}</h3>
+    <div class="kv"><div class="k">Additional labour</div><div class="v">${bs.labour ? '<b>Needed at every appointment</b> — you\'re reminded when booking' : 'Only when asked for'}${bs.note ? `<br><span class="hint">${h(bs.note)}</span>` : ''}</div></div>
+    ${fs.map((f) => { const x = Bk.fsched(f.id), stop = (f.safety || {}).status === 'stop', use = x.use || '';
+      return `<div class="kv" style="align-items:center"><div class="k">${h(f.name || f.address || 'Farm')}</div><div class="v">${use === 'none' ? '<b style="color:var(--red)">⛔ Do not service</b>' : h(BK_USE[use])}${stop ? '<br><b style="color:var(--red)">⛔ Safety: no routine work until fixed</b>' : ''}${use !== 'none' && use !== 'individual' ? `<br><span class="hint">${use !== 'bull' ? 'Preg testing ' + sp(f.id, 'preg') : ''}${use === '' ? ' · ' : ''}${use !== 'preg' ? 'Bull testing ' + sp(f.id, 'bull') : ''}</span>` : ''}${x.note ? `<br><span class="hint">${h(x.note)}</span>` : ''}</div>${ed ? `<button class="btn small" data-act="bks-fsched" data-id="${f.id}" data-bid="${b.id}" aria-label="Edit ${h(f.name || 'farm')} scheduling">✏️</button>` : ''}</div>`; }).join('') || '<div class="hint">No farms saved for this business yet.</div>'}
+    <div class="hint" style="margin-top:4px">Used when booking: the speeds set how long preg and bull testing take at each farm, and the farm rules warn you if a booking doesn't fit.</div></div>`;
+}
+function bkBschedOpen(bid) {
+  const b = IDX.biz.get(bid); if (!b || !Bk.need('book')) return; const x = Bk.bsched(bid);
+  openSheet('Scheduling — ' + b.name, `<label class="bk-radio" style="margin:4px 0 10px"><input type="checkbox" id="bz-lab" ${x.labour ? 'checked' : ''}> Always needs additional labour (you're reminded every time they're booked)</label>
+    <div class="f"><label for="bz-note">Booking note</label><input id="bz-note" value="${h(x.note || '')}"><div class="hint">Shown on the business page, e.g. who usually helps in the yards.</div></div>`, async () => {
+    const id = 'bsched:' + bid; let r = Bk.get(id); if (!r) { r = { id, cfg: 'bsched', bid, name: b.name }; D.bkcfg.push(r); }
+    r.labour = document.getElementById('bz-lab').checked; r.note = document.getElementById('bz-note').value.trim(); delete r.gone; touch(r); save(); Sync.soon(); setTimeout(renderAll, 0); return true; });
+}
+function bkFschedOpen(fid) {
+  const f = IDX.farms.get(fid); if (!f || !Bk.need('book')) return; const x = Bk.fsched(fid); const ps = bkYardSvc('preg'), bs = bkYardSvc('bull');
+  const yv = (sv) => { const y = sv && bkYard(fid, sv.id); return y && !y.gone && y.hph ? y.hph : ''; };
+  openSheet('Scheduling — ' + (f.name || f.address || 'Farm'), `<div class="f"><label for="fz-use">What can be booked here</label><select id="fz-use">${Object.entries(BK_USE).map(([k, l]) => `<option value="${k}" ${(x.use || '') === k ? 'selected' : ''}>${h(l)}</option>`).join('')}</select><div class="hint">"Do not service" pops up a warning if anyone tries to book these yards.</div></div>
+    <div class="grid2">${ps ? `<div class="f"><label for="fz-preg">Preg testing — head per hour here</label><input id="fz-preg" type="number" min="1" inputmode="numeric" value="${yv(ps)}"><div class="hint">Usual is ${ps.hph}/hour. Leave empty to use that.</div></div>` : ''}${bs ? `<div class="f"><label for="fz-bull">Bull testing — head per hour here</label><input id="fz-bull" type="number" min="1" inputmode="numeric" value="${yv(bs)}"><div class="hint">Usual is ${bs.hph}/hour. Leave empty to use that.</div></div>` : ''}</div>
+    <div class="f"><label for="fz-note">Note</label><input id="fz-note" value="${h(x.note || '')}"><div class="hint">e.g. why it's not serviced, or which yards to use.</div></div>`, async () => {
+    const id = 'fsched:' + fid; let r = Bk.get(id); if (!r) { r = { id, cfg: 'fsched', fid, name: f.name || '' }; D.bkcfg.push(r); }
+    r.use = document.getElementById('fz-use').value; r.note = document.getElementById('fz-note').value.trim(); delete r.gone; touch(r);
+    [[ps, 'fz-preg'], [bs, 'fz-bull']].forEach(([sv, el]) => { if (!sv || !document.getElementById(el)) return; const v = +document.getElementById(el).value || null; const yid = 'yard:' + fid + ':' + sv.id; let y = Bk.get(yid);
+      if (v) { if (!y) { y = { id: yid, cfg: 'yard', fid, svc: sv.id }; D.bkcfg.push(y); } if (y.hph !== v || y.gone) { y.hph = v; delete y.gone; touch(y); } } else if (y && !y.gone) { y.gone = true; touch(y); } });
+    save(); Sync.soon(); setTimeout(renderAll, 0); return true; });
+}
+window.bkBizCard = bkBizCard;
+
 /* ---------------- follow-ups ---------------- */
 function bkFuOpen(fu, preset) {
   const isNew = !fu; const f = fu ? JSON.parse(JSON.stringify(fu)) : { id: uid('fu'), type: (Bk.cfg('futype')[0] || {}).id, due: '', staff: SBAuth.staff && SBAuth.staff.role !== 'admin' ? SBAuth.staff.id : '', animal: '', notes: '', status: 'open', ...(preset || {}) };
@@ -564,7 +704,7 @@ function bkFuOpen(fu, preset) {
 function bkFollowupsHtml() {
   const all = Bk.list('followups').filter((f) => !f.gone); const open = all.filter((f) => f.status === 'open').sort((a, b) => a.due.localeCompare(b.due)); const t = bkToday();
   const row = (f) => `<div class="kv bk-fu ${f.status === 'open' && f.due < t ? 'over' : ''}" style="align-items:center"><div class="v"><b>${h(Bk.get(f.type) ? Bk.get(f.type).name : 'Follow-up')}</b> — ${h(Bk.who(f))}${f.animal ? ' · ' + h(f.animal) : ''}<br><span class="hint">Due ${bkDate(f.due)}${f.due < t && f.status === 'open' ? ' (overdue)' : ''}${f.staff ? ' · ' + h(Bk.pname(f.staff)) : ''}${f.notes ? ' · ' + h(f.notes.slice(0, 80)) : ''}</span></div>${f.status === 'open' ? `<button class="btn small" data-act="fu-done" data-id="${f.id}">✓ Done</button>` : ''}<button class="btn small" data-act="fu-open" data-id="${f.id}">Open</button></div>`;
-  return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><button class="btn small" data-act="bk-page" data-v="cal">‹ Calendar</button><b class="bk-title">Follow-ups</b></div></div>
+  return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><b class="bk-title">Follow-ups</b></div></div>
   <div class="hint" style="margin-bottom:8px">Add a follow-up from any booking (open the booking → ➕ Follow-up). Clinical records and lab requests will add them too, once that part is built.</div>
   <div class="card">${open.map(row).join('') || '<div class="hint">No follow-ups waiting.</div>'}</div>
   ${all.some((f) => f.status !== 'open') ? `<details><summary class="hint" style="cursor:pointer">Done (${all.filter((f) => f.status !== 'open').length})</summary><div class="card">${all.filter((f) => f.status !== 'open').sort((a, b) => b.due.localeCompare(a.due)).slice(0, 50).map(row).join('')}</div></details>` : ''}</div>`;
@@ -607,16 +747,27 @@ function bkJobsHtml() {
       return `${pr ? `<button class="btn small primary" data-act="bkj-replyprop" data-id="${pr.id}" data-sms="${x.id}">✓ Agree new time (${bkDate(pr.proposal.date)})</button>` : ''}${un && !pr ? `<button class="btn small primary" data-act="bkj-replyconf" data-id="${un.id}" data-sms="${x.id}">✓ Confirm ${bkDate(un.date)} booking</button>` : ''}<button class="btn small" data-act="bk-text" data-cid="${x.contact_id || ''}" data-bid="${x.business_id || ''}" data-phone="${h(x.phone || '')}">Reply…</button><button class="btn small" data-act="bkj-replydone" data-sms="${x.id}">Done</button>`; }
   } return ''; };
   const groups = Object.keys(BK_JOB_NAMES).map((k) => [k, list.filter((j) => j.k === k)]).filter(([, l]) => l.length);
-  return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><button class="btn small" data-act="bk-page" data-v="cal">‹ Calendar</button><b class="bk-title">Bookings jobs</b><button class="btn small" data-act="bk-page" data-v="followups">Follow-ups</button></div></div>
+  return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><b class="bk-title">Scheduling jobs</b><button class="btn small" data-act="bk-page" data-v="followups">Follow-ups</button></div></div>
   <div class="search" style="margin-bottom:8px"><input id="bkj-q" placeholder="Search jobs" value="${h(BK.jobFilter || '')}" data-act="bkj-q"></div>
   ${groups.length ? groups.map(([k, l]) => `<details class="card bk-jobs" open><summary><b>${BK_JOB_NAMES[k]}</b> <span class="badge">${l.length}</span></summary>${l.map((j) => `<div class="bk-job"><div class="v"><div>${h(j.d)}</div></div><div class="actions">${btns(j)}${j.b ? `<button class="btn small" data-act="bk-open" data-id="${j.b.id}">Open</button>` : ''}${j.f ? `<button class="btn small" data-act="fu-open" data-id="${j.f.id}">Open</button>` : ''}</div></div>`).join('')}</details>`).join('') : '<div class="card"><div class="hint">Nothing to do — all bookings are sorted.</div></div>'}
   <div class="hint">Texts go from the office phone automatically once it's set up (see the manual). If a text was sent another way, use "Mark as sent".</div></div>`;
 }
 
+/* ---------------- who comes first on the calendar (this device only): arrows, or drag a name ---------------- */
+function bkColMove(id, target, after) { const ids = Bk.people().map((x) => x.id).filter((x) => x !== id); let i = ids.indexOf(target); if (i < 0) return; if (after) i++; ids.splice(i, 0, id); Bk.setOrder(ids); renderAll(); }
+document.addEventListener('dragstart', (e) => { const c = e.target.closest && e.target.closest('[data-colstaff]'); if (!c) return; BK._drag = c.dataset.colstaff; try { e.dataTransfer.setData('text/plain', c.dataset.colstaff); e.dataTransfer.effectAllowed = 'move'; } catch (x) { } });
+document.addEventListener('dragover', (e) => { const c = BK._drag && e.target.closest && e.target.closest('[data-colstaff]'); if (c) { e.preventDefault(); document.querySelectorAll('.bk-colh.dropto').forEach((x) => x.classList.remove('dropto')); c.classList.add('dropto'); } });
+document.addEventListener('drop', (e) => { const c = BK._drag && e.target.closest && e.target.closest('[data-colstaff]'); const id = BK._drag; BK._drag = null; document.querySelectorAll('.bk-colh.dropto').forEach((x) => x.classList.remove('dropto')); if (!c || c.dataset.colstaff === id) return; e.preventDefault(); const r = c.getBoundingClientRect(); bkColMove(id, c.dataset.colstaff, e.clientX > r.left + r.width / 2); });
+document.addEventListener('dragend', () => { BK._drag = null; document.querySelectorAll('.bk-colh.dropto').forEach((x) => x.classList.remove('dropto')); });
+
 /* ---------------- taps and changes ---------------- */
 function bkRec(id) { return Bk.list('bookings').find((b) => b.id === id); }
 function bkDone(msg) { save(); Sync.soon(); renderAll(); if (msg) toast(msg); }
-function bkMove(b) { const p = b.proposal; if (!p) return; b.date = p.date; b.start = p.start; b.mins = p.mins || b.mins; b.staff = p.staff || b.staff; b.status = 'confirmed'; b.moved = (b.moved || 0) + 1; delete b.proposal; touch(b); }
+function bkMove(b) { const p = b.proposal; if (!p) return; b.date = p.date; b.start = p.start; b.mins = p.mins || b.mins;
+  if (p.staff && p.staff.length) { const keep = new Set(p.staff), added = p.staff.filter((x) => !(b.staff || []).includes(x)); // people swapped on the new time: take them off their services, put newcomers on the main work
+    b.svcs = (b.svcs || []).map((x) => { const al = x.svc && Bk.svc(x.svc).alongside; let st = Bk.sstaff(b, x).filter((id) => keep.has(id)); if (!al) st = [...new Set([...st, ...added])]; return { ...x, staff: st.length ? st : [...p.staff] }; });
+    b.staff = [...p.staff]; }
+  b.status = 'confirmed'; b.moved = (b.moved || 0) + 1; delete b.proposal; touch(b); }
 document.addEventListener('click', async (e) => {
   const col = e.target.closest && e.target.closest('.bk-col');
   if (col && !e.target.closest('.bk-appt, .bk-block, .bk-prop, .bk-drive')) { if (!Bk.can('book')) return; const r = col.getBoundingClientRect(); const m = Math.floor((BK_START + (e.clientY - r.top) / BK_PX) / 15) * 15; bkOpen(null, { staff: [col.dataset.staff], date: BK.date, start: bkHHMM(Math.max(BK_START, Math.min(BK_END - 15, m))) }); return; }
@@ -625,8 +776,9 @@ document.addEventListener('click', async (e) => {
   switch (a) {
     case 'bk-go': { const n = +d.v; BK.date = BK.view === 'month' ? (() => { const x = new Date(BK.date + 'T12:00'); x.setDate(1); x.setMonth(x.getMonth() + n); return bkD(x); })() : bkAdd(BK.date, BK.view === 'week' ? 7 * n : n); renderAll(); break; }
     case 'bk-today': BK.date = bkToday(); renderAll(); break;
+    case 'bk-colmove': { const cols = bkColumns(BK.date).map((x) => x.id), ci = cols.indexOf(d.staff), nb = cols[ci + +d.v]; if (!nb) return; bkColMove(d.staff, nb, +d.v > 0); break; }
     case 'bk-view': BK.view = d.v; try { localStorage.setItem('bvp-bkview', JSON.stringify({ view: d.v })); } catch (x) { } renderAll(); break;
-    case 'bk-page': BK.page = d.v; renderAll(); window.scrollTo(0, 0); break;
+    case 'bk-page': if (d.v === 'settings') { S.tab = 'settings'; S.setSub = 'sched'; } else BK.page = d.v; renderAll(); window.scrollTo(0, 0); { const l = document.getElementById('list'); if (l) l.scrollTop = 0; } break;
     case 'bk-openday': if (e.target.closest('[data-act=bk-open]') && e.target.closest('[data-act=bk-open]') !== el) return; BK.date = d.v; BK.view = 'day'; BK.page = 'cal'; renderAll(); break;
     case 'bk-new': bkOpen(null, { date: BK.date }); break;
     case 'bk-newblock': bkBlockOpen(null, { date: BK.date }); break;
@@ -636,18 +788,26 @@ document.addEventListener('click', async (e) => {
     case 'bk-rgo': BK.date = bkAdd(BK.date, +d.v); renderAll(); break;
     case 'bk-rcopy': { if (!Bk.need('roster')) return; const a0 = bkWeekStart(BK.date); let n = 0; for (let i = 0; i < 28; i++) { const day = bkAdd(a0, i), prev = Bk.oncall(bkAdd(day, -7)); if (!prev) continue; let o = Bk.oncall(day); if (!o) { o = { id: day, date: day }; D.oncall.push(o); } let ch = false; ['night', 'evening', 'all'].forEach((k) => { if (!o[k] && prev[k]) { o[k] = prev[k]; ch = true; } }); if (ch) { touch(o); n++; } } bkDone(n ? `Filled ${n} day${n === 1 ? '' : 's'} from the week before` : 'Nothing to copy'); break; }
     // booking form
-    case 'bkf-client': BKF.bid = d.bid || null; BKF.cid = d.cid || null; if (BKF.bid && !BKF.cid) { const c = bkContactsOf(BKF.bid).find(bkMobile); BKF.cid = c ? c.id : null; } { const fs = bkFarmsOf(BKF.bid); if (fs.length === 1) BKF.fid = fs[0].id; } bkFormRefresh(true); break;
-    case 'bkf-clear': BKF.bid = BKF.cid = BKF.fid = null; bkFormRefresh(true); break;
-    case 'bkf-svcadd': bkFormRead(); BKF.svcs.push({}); bkFormRefresh(true); break;
-    case 'bkf-svcdel': bkFormRead(); BKF.svcs.splice(+d.i, 1); if (!BKF._minsTouched) BKF.mins = bkSuggestMins(BKF.type, BKF.svcs, BKF.fid).mins; bkFormRefresh(true); break;
-    case 'bkf-usesug': bkFormRead(); BKF.mins = bkSuggestMins(BKF.type, BKF.svcs, BKF.fid).mins; BKF._minsTouched = false; bkFormRefresh(true); break;
-    case 'bkf-suggest': { bkFormRead(); if (Bk.type(BKF.type).where === 'farm' && !BKF.fid) { toast('Choose the client and farm first'); return; } const o = { type: BKF.type, fid: BKF.fid, mins: BKF.mins, svcs: BKF.svcs.filter((x) => x.svc), urgent: BKF.urgent, skipId: BKF.id }; BK._sugg = bkSuggest(o); document.getElementById('bkf-sugg').innerHTML = bkSuggHtml(BK._sugg, o); break; }
-    case 'bk-pick': { const r = BK._sugg && BK._sugg[+d.i]; if (!r) return; bkFormRead(); BKF.date = r.date; BKF.start = r.start; BKF.staff = [r.staff, ...BKF.staff.filter((x) => x !== r.staff && (Bk.person(x) || {}).role === 'vet_tech')]; bkFormRefresh(true); toast(`${bkDate(r.date)} ${bkTime(r.start)} with ${Bk.pname(r.staff)} — tap Save to book`); break; }
+    case 'bkf-client': { BKF.bid = d.bid || null; BKF.cid = d.cid || null; if (BKF.bid && !BKF.cid) { const c = bkContactsOf(BKF.bid).find(bkMobile); BKF.cid = c ? c.id : null; }
+      const fs = bkFarmsOf(BKF.bid); BKF.fids = fs.length === 1 ? [fs[0].id] : []; BKF.fid = BKF.fids[0] || null; const ps = bkPidsOf(BKF.bid); BKF.pids = ps.length === 1 ? [{ value: ps[0].value, label: ps[0].label || '' }] : []; BKF.noLabour = false;
+      bkAutoMins(); bkFormRefresh(true); if (BKF.fids[0]) bkFarmCheck(BKF.fids[0]); break; }
+    case 'bkf-clear': BKF.bid = BKF.cid = BKF.fid = null; BKF.fids = []; BKF.pids = []; bkFormRefresh(true); break;
+    case 'bkf-svcadd': bkFormRead(); BKF.svcs.push({ staff: [...((BKF.svcs.find((x) => !x.svc || !Bk.svc(x.svc).alongside) || {}).staff || [])] }); bkFormRefresh(true); break;
+    case 'bkf-labour': bkFormRead(); if (bkAddLabour()) toast('Tick who is doing the additional labour'); break;
+    case 'bkf-nolabour': bkFormRead(); BKF.noLabour = true; bkFormRefresh(true); break;
+    case 'bkf-farmadd': bkFormRead(); { const left = bkFarmsOf(BKF.bid).filter((x) => !BKF.fids.includes(x.id)); if (!left.length) return; bkFormRefresh(true);
+      const box = document.querySelector('[data-act=bkf-farmadd]'); if (box) box.insertAdjacentHTML('beforebegin', `<div class="bk-svcrow"><select data-bkfarm="${BKF.fids.length}" aria-label="Farm ${BKF.fids.length + 1}"><option value="">Choose the next farm…</option>${left.map((x) => `<option value="${x.id}">${h(x.name || x.address || 'Farm')}${h(bkFarmTag(x.id))}</option>`).join('')}</select></div>`); } break;
+    case 'bkf-farmdel': bkFormRead(); BKF.fids.splice(+d.i, 1); BKF.fid = BKF.fids[0] || null; bkAutoMins(); bkFormRefresh(true); break;
+    case 'bkf-svcdel': bkFormRead(); BKF.svcs.splice(+d.i, 1); if (!BKF.svcs.length) BKF.svcs.push({ staff: [] }); bkAutoMins(); bkFormRefresh(true); break;
+    case 'bkf-usesug': bkFormRead(); BKF.mins = bkSuggestMins(BKF.type, BKF.svcs, BKF.fids).mins; BKF._minsTouched = false; bkFormRefresh(true); break;
+    case 'bkf-suggest': { bkFormRead(); if (Bk.type(BKF.type).where === 'farm' && !BKF.fids.length) { toast('Choose the client and farm first'); return; } const o = { type: BKF.type, fids: BKF.fids, mins: BKF.mins, svcs: BKF.svcs.filter((x) => x.svc && !Bk.svc(x.svc).alongside), urgent: BKF.urgent, skipId: BKF.id }; BK._sugg = bkSuggest(o); document.getElementById('bkf-sugg').innerHTML = bkSuggHtml(BK._sugg, o); break; }
+    case 'bk-pick': { const r = BK._sugg && BK._sugg[+d.i]; if (!r) return; bkFormRead(); BKF.date = r.date; BKF.start = r.start;
+      const main = BKF.svcs.filter((x) => !x.svc || !Bk.svc(x.svc).alongside); main.forEach((x) => (x.staff = [r.staff])); bkFormStaff(BKF); bkFormRefresh(true); toast(`${bkDate(r.date)} ${bkTime(r.start)} with ${Bk.pname(r.staff)} — tap Save to book`); break; }
     case 'bkf-propose': bkProposeForm(); break;
-    case 'bkf-propyes': bkFormRead(); bkMove(BKF); if (bkSaveForm()) { closeSheet(); toast('Moved to the new time and confirmed'); } break;
-    case 'bkf-propno': bkFormRead(); delete BKF.proposal; if (bkSaveForm()) { closeSheet(); toast('Kept the original time — the held time is free again'); } break;
-    case 'bkf-cancel': { bkFormRead(); const ok = await askBox('Cancel this booking?', '<div class="f"><label for="bkc-why">Reason (optional)</label><input id="bkc-why" data-ask="why"></div>', 'Yes — cancel it', true, 'No — keep it'); if (!ok) return; BKF.status = 'cancelled'; BKF.cancelReason = ASK_FORM.why || ''; BKF.cancelledAt = Date.now(); delete BKF.proposal; if (bkSaveForm()) { closeSheet(); toast('Booking cancelled'); } break; }
-    case 'bkf-fu': { bkFormRead(); const f = BKF; if (bkSaveForm()) { closeSheet(); setTimeout(() => bkFuOpen(null, { bid: f.bid, cid: f.cid, bookingId: f.id, staff: f.staff[0] }), 350); } break; }
+    case 'bkf-propyes': bkFormRead(); bkMove(BKF); if (await bkSaveForm(true)) { closeSheet(); toast('Moved to the new time and confirmed'); } break;
+    case 'bkf-propno': bkFormRead(); delete BKF.proposal; if (await bkSaveForm(true)) { closeSheet(); toast('Kept the original time — the held time is free again'); } break;
+    case 'bkf-cancel': { bkFormRead(); const ok = await askBox('Cancel this booking?', '<div class="f"><label for="bkc-why">Reason (optional)</label><input id="bkc-why" data-ask="why"></div>', 'Yes — cancel it', true, 'No — keep it'); if (!ok) return; BKF.status = 'cancelled'; BKF.cancelReason = ASK_FORM.why || ''; BKF.cancelledAt = Date.now(); delete BKF.proposal; if (await bkSaveForm(true)) { closeSheet(); toast('Booking cancelled'); } break; }
+    case 'bkf-fu': { bkFormRead(); const f = BKF; if (await bkSaveForm(true)) { closeSheet(); setTimeout(() => bkFuOpen(null, { bid: f.bid, cid: f.cid, bookingId: f.id, staff: f.staff[0] }), 350); } break; }
     // jobs
     case 'bkj-smsdone': case 'bkj-smsskip': { const b = bkRec(d.id); b.sms = b.sms || {}; if (a === 'bkj-smsdone') b.sms.booked = Date.now(); else b.sms.skip = true; touch(b); bkDone(a === 'bkj-smsdone' ? 'Marked as sent' : "Won't be sent"); break; }
     case 'bkj-psmsdone': case 'bkj-psmsskip': { const b = bkRec(d.id); if (!b.proposal) return; if (a === 'bkj-psmsdone') b.proposal.smsSent = Date.now(); else b.proposal.smsSkip = true; touch(b); bkDone(); break; }
@@ -667,6 +827,8 @@ document.addEventListener('click', async (e) => {
     case 'bks-del': { const x = Bk.get(d.id); if (!x || !(await ask(`Remove ${x.name}? Bookings already using it keep it.`, 'Yes — remove', true))) return; x.gone = true; touch(x); closeSheet(); bkDone('Removed'); break; }
     case 'bks-yarddel': { const x = Bk.get(d.id); if (!x) return; x.gone = true; touch(x); bkDone('Forgotten'); break; }
     case 'bks-staff': { const s = Bk.person(d.id); if (s) bkStaffOpen(s); break; }
+    case 'bks-bsched': bkBschedOpen(d.id); break;
+    case 'bks-fsched': bkFschedOpen(d.id); break;
     // blocks
     case 'bb-skip': { const b = Bk.list('blocks').find((x) => x.id === d.id); b.skip = [...(b.skip || []), BK.date]; touch(b); closeSheet(); bkDone(`Skipped on ${bkDate(BK.date)}`); break; }
     case 'bb-del': { const b = Bk.list('blocks').find((x) => x.id === d.id); if (!(await ask('Delete this block?', 'Yes — delete', true))) return; b.gone = true; b.on = false; touch(b); closeSheet(); bkDone('Block deleted'); break; }
@@ -678,7 +840,7 @@ document.addEventListener('click', async (e) => {
 });
 document.addEventListener('change', (e) => {
   const el = e.target; const a = el.dataset && el.dataset.act; if (!a) return;
-  if (a === 'bk-toggle') { savePref('showBook', el.checked); if (!el.checked && S.tab === 'book') S.tab = 'contacts'; renderAll(); toast(el.checked ? 'Bookings tab is on for this device' : 'Bookings tab hidden'); }
+  if (a === 'bk-toggle') { savePref('showBook', el.checked); if (!el.checked && S.tab === 'book') S.tab = 'contacts'; renderAll(); toast(el.checked ? 'Scheduling tab is on for this device' : 'Scheduling tab hidden'); }
   else if (a === 'bk-date' && el.value) { BK.date = el.value; renderAll(); }
   else if (a === 'bk-showall') { BK.showAll = el.checked; renderAll(); }
   else if (a === 'bk-oc') { if (!Bk.need('roster')) { renderAll(); return; } let o = Bk.oncall(el.dataset.d); if (!o) { o = { id: el.dataset.d, date: el.dataset.d }; D.oncall.push(o); } o[el.dataset.slot] = el.value || null; touch(o); save(); Sync.soon(); toast('On call updated'); renderTabs(); }
@@ -688,7 +850,7 @@ document.addEventListener('change', (e) => {
 document.addEventListener('input', (e) => { if (e.target.dataset && e.target.dataset.act === 'bkj-q') { BK.jobFilter = e.target.value; const pos = e.target.selectionStart; renderAll(); const q = document.getElementById('bkj-q'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } } });
 
 /* Settings → Bookings (testing) on/off for this device */
-function bkSettingsCard() { return `<div class="card"><h3>Bookings (testing)</h3><label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" data-act="bk-toggle" ${Bk.on() ? 'checked' : ''}> <span>Show the Bookings tab on this device<br><span class="hint">The new calendar is being tested. Bookings made here don't change anything else in the app, and ezyVet stays the real booking system until you switch over.</span></span></label></div>`; }
+function bkSettingsCard() { return `<div class="card"><h3>Scheduling (testing)</h3><label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" data-act="bk-toggle" ${Bk.on() ? 'checked' : ''}> <span>Show the Scheduling tab on this device<br><span class="hint">The new calendar is being tested. Bookings made here don't change anything else in the app, and ezyVet stays the real booking system until you switch over.</span></span></label></div>`; }
 
 /* ---------------- look ---------------- */
 (function () { const st = document.createElement('style'); st.id = 'bk-css'; st.textContent = `
@@ -750,4 +912,14 @@ function bkSettingsCard() { return `<div class="card"><h3>Bookings (testing)</h3
 .bk-jobsbtn{border-color:var(--red,#b42318)}
 .bk-empty{padding:16px}
 .bk-texts{margin-top:10px}.bk-text{border-left:3px solid var(--line,#ccc);padding:4px 8px;margin:6px 0;font-size:14px}.bk-text.in{border-left-color:#2f7a55;background:color-mix(in srgb,#2f7a55 7%,transparent)}
+.bk-dayscroll.v{max-height:calc(100dvh - 250px);min-height:320px;overflow:auto;overscroll-behavior:contain;border-top:1px solid var(--line,#ddd)}
+.bk-corner{left:0}
+.bk-colh[draggable=true]{cursor:grab}.bk-colh.dropto{outline:2px dashed #2f7a55;outline-offset:-2px;border-radius:6px}
+.bk-colord{display:flex;gap:4px;align-items:center}.bk-colord b{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.bk-colord .btn{padding:0 7px;font-size:14px;line-height:20px}
+.bk-svcblk{border:1px solid var(--line,#ddd);border-radius:8px;padding:6px 8px 4px;margin-bottom:6px}.bk-svcblk.along{border-style:dashed;background:color-mix(in srgb,#3a6ea5 5%,transparent)}
+.bk-svcblk .bk-svcrow{margin-bottom:4px}
+.bk-svcrow input[type=number]{width:84px!important;flex:0 0 84px;min-width:0}.bk-svcrow .hint{flex:0 0 auto}.bk-svcrow select{min-width:0}.bk-svcrow select[data-bksvc]{flex:1 1 220px}
+.bk-who{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;margin-bottom:2px}
+.bk-pp{display:inline-flex;gap:4px;align-items:center;border:1px solid var(--line,#ccc);border-radius:16px;padding:2px 9px;font-size:14px;cursor:pointer}.bk-pp:has(input:checked){border-color:#2f7a55;background:color-mix(in srgb,#2f7a55 12%,transparent);font-weight:600}.bk-pp.bad{opacity:.6}
+.bk-labour{margin-top:6px}
 `; document.head.appendChild(st); })();

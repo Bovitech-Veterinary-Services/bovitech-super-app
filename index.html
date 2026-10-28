@@ -6,7 +6,7 @@
 <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.ggpht.com https://*.googleusercontent.com; connect-src 'self' https://ymzweuhxdcxkzweacwdi.supabase.co https://*.googleapis.com https://*.gstatic.com https://*.google.com data: blob:; img-src 'self' data: blob: https://*.googleapis.com https://*.gstatic.com https://*.google.com https://*.ggpht.com https://*.googleusercontent.com https://server.arcgisonline.com https://tile.openstreetmap.org; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com https://accounts.google.com; font-src 'self' https://fonts.gstatic.com; frame-src https://*.google.com; worker-src 'self' blob:; manifest-src 'self'; object-src 'none'; base-uri 'self'; form-action 'self'">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#141414">
-<title>Bovitech Practice</title>
+<title>Bovitech Super App</title>
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="img/icon-192.png">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -54,6 +54,10 @@ main{padding-bottom:env(safe-area-inset-bottom)}
 nav.tabs button{flex:1;border:0;background:none;padding:9px 2px 8px;font-size:12px;font-weight:600;color:var(--ink3);display:flex;flex-direction:column;align-items:center;gap:2px;position:relative;cursor:pointer}
 nav.tabs button svg{width:22px;height:22px}
 nav.tabs button.on{color:var(--red)}
+nav.tabs .navm{flex:1;min-width:0;display:flex;flex-direction:column}nav.tabs .mt{display:flex}nav.tabs .navd{display:none}
+nav.tabs .st{display:flex;gap:6px;overflow-x:auto;padding:6px 8px;border-top:1px solid var(--line);scrollbar-width:none;-webkit-overflow-scrolling:touch}nav.tabs .st::-webkit-scrollbar{display:none}
+nav.tabs .st button{flex:0 0 auto;flex-direction:row;gap:5px;padding:5px 12px;border:1px solid var(--line);border-radius:16px;font-size:13px;white-space:nowrap}
+nav.tabs .st button svg{width:16px;height:16px}nav.tabs .st button.on{border-color:currentColor;background:var(--red-bg)}nav.tabs .st .badge{position:static;margin-left:2px}
 .badge{position:absolute;top:4px;left:calc(50% + 6px);background:var(--red);color:#fff;font-size:11px;min-width:18px;height:18px;border-radius:9px;padding:0 5px;display:grid;place-items:center}
 main{overflow:hidden;display:grid;grid-template-columns:1fr;min-height:0;grid-row:3}
 nav.tabs{grid-row:2}
@@ -68,6 +72,9 @@ body.show-detail #detail{display:block}
   nav.tabs{flex-direction:column;border-top:0;border-right:1px solid var(--line);justify-content:flex-start;padding:10px 8px;gap:2px}
   nav.tabs button{flex:0;flex-direction:row;justify-content:flex-start;gap:10px;padding:10px 12px;font-size:15px;border-radius:9px}
   nav.tabs button.on{background:var(--red-bg)}
+  nav.tabs .navm{display:none}nav.tabs .navd{display:flex;flex-direction:column;gap:2px}
+  nav.tabs .navd .sub{display:flex;flex-direction:column;gap:1px;margin:0 0 6px 18px;padding-left:6px;border-left:2px solid var(--line)}
+  nav.tabs .navd .sub button{padding:7px 10px;font-size:14px}nav.tabs .navd .sub button svg{width:18px;height:18px}
   .badge{position:static;margin-left:auto}
   main{grid-template-columns:minmax(360px,440px) 1fr}
   #detail{display:block;border-left:1px solid var(--line)}
@@ -356,7 +363,7 @@ html[data-scheme] header.top,html[data-theme=dark][data-scheme] header.top{backg
 html[data-scheme] .btn.primary,html[data-scheme] .seg button.on,html[data-scheme] .stop .num,html[data-scheme] .chip.on,html[data-scheme] .toast,
 html[data-theme=dark][data-scheme] .btn.primary,html[data-theme=dark][data-scheme] .seg button.on,html[data-theme=dark][data-scheme] .stop .num,html[data-theme=dark][data-scheme] .chip.on{background:var(--acc);border-color:var(--acc);color:#fff}
 html[data-theme=dark][data-scheme] .chip.on .cn{background:rgba(255,255,255,.2);color:#fff}
-html[data-scheme] nav.tabs button.on{color:var(--acc)}
+html[data-scheme] nav.tabs button.on{color:var(--acc)}html[data-scheme] nav.tabs .st button.on{background:var(--acc-bg)}
 @media(min-width:900px){html[data-theme=light][data-scheme] nav.tabs button.on{background:var(--acc-bg)}}
 .schsw{width:30px;height:30px;border-radius:50%;border:3px solid var(--card);box-shadow:0 0 0 1px var(--line);cursor:pointer;padding:0}
 .schsw.on{box-shadow:0 0 0 3px var(--ink)}
@@ -424,16 +431,17 @@ details.notelog{display:inline-block;margin-left:6px;font-size:12px}details.note
 </style>
 </head>
 <body>
-<div id="splash"><img src="img/icon-512.png" alt="Bovitech Veterinary Services"><div class="txt"><h1>Bovitech Practice</h1><div class="hi" id="splash-hi"></div></div></div>
+<div id="splash"><img src="img/icon-512.png" alt="Bovitech Veterinary Services"><div class="txt"><h1>Bovitech Super App</h1><div class="hi" id="splash-hi"></div></div></div>
 <script>(function(){var n='';try{n=localStorage.getItem('bvp-nick')||(localStorage.getItem('bvp-devname')||'').split(/\s+[\u2013-]\s+/)[0].replace(/'s (phone|pc|laptop|computer|tablet)$/i,'');}catch(e){}document.getElementById('splash-hi').textContent=n?'Hi '+n:'';var t0=Date.now(),done=false;window.hideSplash=function(){if(done)return;done=true;setTimeout(function(){var s=document.getElementById('splash');if(!s)return;s.classList.add('gone');setTimeout(function(){s.remove();},400);},Math.max(0,1200-(Date.now()-t0)));};setTimeout(window.hideSplash,5000);})();</script>
 <script>(function(){function show(msg){if(window.APP_READY||document.getElementById('crashbox'))return;var d=document.createElement('div');d.id='crashbox';d.style.cssText='position:fixed;left:12px;right:12px;bottom:16px;z-index:300;background:#fff;border:2px solid #d71f2b;border-radius:12px;padding:12px 14px;font:15px system-ui;box-shadow:0 6px 20px rgba(0,0,0,.25);color:#141414';d.innerHTML='<b>The app hit a problem while opening.</b><div style="font-size:13px;color:#666;margin:4px 0 8px;word-break:break-word">'+String(msg).replace(/</g,'&lt;').slice(0,300)+'</div><button onclick="location.reload()" style="padding:8px 12px;margin-right:6px">Try again</button><button onclick="(async function(){try{var r=await navigator.serviceWorker.getRegistrations();for(var i of r)await i.unregister();var k=await caches.keys();for(var j of k)await caches.delete(j);}catch(e){}location.reload();})()" style="padding:8px 12px">Reload the latest version</button><div style="font-size:12px;color:#666;margin-top:6px">Your contacts are safe — they stay on this device and in Google Drive.</div>';document.body.appendChild(d);var s=document.getElementById('splash');if(s)s.remove();}
 window.addEventListener('error',function(e){show(e.message||e.error)});window.addEventListener('unhandledrejection',function(e){show((e.reason&&(e.reason.stack||e.reason.message))||e.reason)});setTimeout(function(){if(!window.APP_READY)show('Still loading after 20 seconds — check the internet connection, or tap "Reload the latest version".')},20000);})();</script>
 <div class="app">
   <header class="top">
     <button class="hbtn" id="hdr-back" data-act="nav-back" style="display:none;font-size:15px;padding:5px 12px" aria-label="Back">‹ Back</button>
-    <h1><span class="ttl">Bovitech Practice <span style="font-size:.6em;font-weight:600;opacity:.75;vertical-align:middle">Clients</span></span><span id="hi" class="hi"></span></h1>
+    <h1><span class="ttl">Bovitech Super App</span><span id="hi" class="hi"></span></h1>
     <span id="net" class="pill">Online</span>
     <span id="sync" class="pill off" >Sync not set up</span>
+    <button class="hbtn" id="hdr-me" data-act="me-menu" aria-label="Signed in — sign out or lock" style="font-size:13px;font-weight:700;padding:5px 10px"></button>
     <button class="hbtn" data-act="app-refresh" title="Close and reopen the app on the latest version" aria-label="Reload app">⟳</button>
   </header>
   <nav class="tabs" id="tabs"></nav>
