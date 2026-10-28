@@ -400,7 +400,7 @@ function bkOpen(b, preset) {
     if (typeChanged || e.target.dataset.bksvc != null || e.target.dataset.bkhead != null || e.target.dataset.bkhph != null || id === 'bkf-farm') { const sg = bkSuggestMins(BKF.type, BKF.svcs.map((x) => ({ ...x })), BKF.fid); if (!BKF._minsTouched) BKF.mins = sg.mins; }
     if (id === 'bkf-mins') BKF._minsTouched = true;
     bkFormRefresh(full); });
-  form.addEventListener('input', (e) => { if (e.target.dataset.bkhph != null) { const i = +e.target.dataset.bkhph; BKF.svcs[i].hph = +e.target.value || null; BKF.rememberYard = true; } });
+  form.addEventListener('input', (e) => { if (e.target.dataset.bkhph != null) { const i = +e.target.dataset.bkhph; BKF.svcs[i].hph = +e.target.value || null; BKF.rememberYard = true; const cb = document.getElementById('bkf-rememberyard'); if (cb) cb.checked = true; } });
   bkFormBindSearch();
   if (preset && preset.suggestNow) setTimeout(() => document.querySelector('[data-act=bkf-suggest]') && document.querySelector('[data-act=bkf-suggest]').click(), 100);
 }
