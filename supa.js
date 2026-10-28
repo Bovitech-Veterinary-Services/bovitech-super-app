@@ -342,6 +342,7 @@ const SupaSync = {
       D.sync.last = Date.now(); D.sync.fileId = 'supabase';
       if (changes || !S.migDone) { S.migDone = true; photoCache.clear(); JOBS_CACHE = null; reindex(); logChanges(); migrate(); logChanges('Automatic update'); baseline(); renderAll(); if (pendingCount()) this.soon(); }
       save(); this.set(D.conflicts.length ? 'conflict' : 'ok');
+      if (typeof GContacts !== 'undefined') GContacts.maybeRun(); // caller photos, on the one device that does them
       if (!this.meChecked || Date.now() - this.meChecked > 15 * 60000) { this.meChecked = Date.now(); SBAuth.loadMe().then((me) => { if (!me) { SBAuth.signOut(true); showLogin("You're not on the active staff list any more — ask the office."); } else if (typeof updHi === 'function') updHi(); }).catch(() => {}); }
     } catch (e) {
       if (e.device || e.notStaff) { // the database refused this device or person: wiped by the admin, made inactive, or needs a code again
@@ -485,7 +486,13 @@ function supaSyncCard() {
   ${SupaSync.msg ? `<div class="kv"><div class="k">Last error</div><div class="v" style="color:var(--red)">${h(SupaSync.msg)}</div></div>` : ''}
   <div class="actions" style="margin-top:8px"><button class="btn primary" data-act="sync-now">Sync now</button>${me ? '<button class="btn" data-act="sb-pw">Change my password</button><button class="btn" data-act="sb-signout">Sign out</button>' : '<button class="btn" data-act="sb-signin">Sign in</button>'}</div>
   <div class="hint" style="margin-top:10px">Everyone signs in with their own email and password, so the change log shows who changed what. Your copy stays on this device and works offline; it syncs with the practice database (stored in Sydney) whenever you're online. Signing out hides the app on this device until someone signs in again.</div>
-  <div class="hint" style="margin-top:6px"><b>Caller photos (Google Contacts)</b> are still updated by the Bovitech Contacts app while this one is being tested.</div></div>`;
+  ${callerPhotosHtml()}</div>`;
+}
+function callerPhotosHtml() { // one device (the office computer) keeps the practice Google Contacts up to date, so the phones show the right photo when a client rings
+  const gp = GContacts.st;
+  return `<div class="lbl" style="margin-top:14px">Caller photos (Google Contacts)</div>
+  <label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" data-act="gpush-toggle" ${gp.on ? 'checked' : ''} ${S.admin ? '' : 'disabled title="Only the admin can change this"'}> <span>This device keeps Google Contacts up to date ${S.admin ? '<span class="setlock fixed" style="font-size:11px;padding:1px 7px">🔒 Admin only</span>' : '<button type="button" class="setlock" style="font-size:11px;padding:1px 7px" data-act="admin-unlock" title="Unlock admin">🔒 Admin only — unlock</button>'}<br><span class="hint">Turn this on for <b>one device only</b> — the office computer is best — and sign in to the practice Google account (${h(practiceAccount())}) when asked. It copies names, numbers, emails, business and the tag photo (with CHECK WARNING) so the phones show the right photo when a client rings. Turn it off in the old Bovitech Contacts app first.</span></span></label>
+  ${gp.on ? `<div class="kv"><div class="k">Status</div><div class="v">${h(gp.msg || 'Waiting')}${GAuth.valid() ? '' : ' — <b>sign in to Google to carry on</b>'}</div></div><div class="actions"><button class="btn small" data-act="gpush-now">${GAuth.valid() ? 'Update Google Contacts now' : 'Sign in to Google and update'}</button></div>` : ''}`;
 }
 function staffCard() {
   return `<div class="card"><h3>Staff &amp; permissions</h3><div id="staff-box"><div class="hint">Loading…</div></div></div>`;
