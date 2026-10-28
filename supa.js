@@ -119,7 +119,7 @@ async function sbFetch(path, opt = {}, retried) {
   }
   return r;
 }
-const rpc = async (fn, args) => (await sbFetch('/rest/v1/rpc/' + fn, { method: 'POST', body: JSON.stringify(args || {}) })).json();
+const rpc = async (fn, args) => { const t = await (await sbFetch('/rest/v1/rpc/' + fn, { method: 'POST', body: JSON.stringify(args || {}) })).text(); return t ? JSON.parse(t) : null; }; // functions that return nothing send an empty reply
 
 /* ---------------- remote wipe: the admin removed this device ---------------- */
 function wipeLocal(msg) {
