@@ -1,56 +1,44 @@
-// Bovitech Practice — "jobs" function: nightly backup to the office OneDrive, and security alert emails.
+// Bovitech Practice — "jobs" function: nightly backup and security alert emails.
 // Called only by the database (nightly at 2 am Perth, and when something is added to the security log).
-// Settings (Edge Functions → Secrets): MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET  (from the Microsoft 365 app registration)
-// Optional: MS_MAILBOX (default office@bovitech.com.au), ALERT_TO (default the same), BACKUP_FOLDER, KEEP_DAYS
+//   • Backup: the whole database, compressed, saved in this Supabase project's private "backups" storage (last 30 kept)
+//     and emailed to the office as an attachment (an off-site copy you can restore from anywhere).
+//   • Alerts: an email to the office for new-device sign-ins, wipes, staff changes and failed backups.
+// Settings (Edge Functions → Secrets):  RESEND_API_KEY  (from resend.com — sign up with the office email address)
+// Optional: ALERT_TO (default office@bovitech.com.au), MAIL_FROM (default Bovitech Practice <onboarding@resend.dev>),
+//           BACKUP_EMAIL = daily | weekly | off (default daily), KEEP_DAYS (default 30)
 // "Verify JWT" must be OFF for this function — it checks its own secret instead.
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SB_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SERVICE_KEY") ?? "";
-const TENANT = Deno.env.get("MS_TENANT_ID") ?? "";
-const CLIENT = Deno.env.get("MS_CLIENT_ID") ?? "";
-const SECRET = Deno.env.get("MS_CLIENT_SECRET") ?? "";
-const MAILBOX = Deno.env.get("MS_MAILBOX") ?? "office@bovitech.com.au";
-const ALERT_TO = Deno.env.get("ALERT_TO") ?? MAILBOX;
-const FOLDER = Deno.env.get("BACKUP_FOLDER") ?? "Bovitech Practice/Backups";
+const RESEND = Deno.env.get("RESEND_API_KEY") ?? "";
+const ALERT_TO = Deno.env.get("ALERT_TO") ?? "office@bovitech.com.au";
+const FROM = Deno.env.get("MAIL_FROM") ?? "Bovitech Practice <onboarding@resend.dev>";
+const BACKUP_EMAIL = (Deno.env.get("BACKUP_EMAIL") ?? "daily").toLowerCase();
 const KEEP = Number(Deno.env.get("KEEP_DAYS") ?? "30");
+const BUCKET = "backups";
 const PREFIX = "bovitech-practice-backup-";
 
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
 
-async function sb(path: string, init: RequestInit = {}) {
-  const r = await fetch(SB_URL + path, { ...init, headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, "Content-Type": "application/json", ...(init.headers ?? {}) } });
-  if (!r.ok) throw new Error(`Database ${path.split("?")[0]}: ${r.status} ${await r.text()}`);
+async function sb(path: string, init: RequestInit = {}, raw = false) {
+  const r = await fetch(SB_URL + path, { ...init, headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, ...(raw ? {} : { "Content-Type": "application/json" }), ...(init.headers ?? {}) } });
+  if (!r.ok) throw new Error(`Supabase ${path.split("?")[0]}: ${r.status} ${await r.text()}`);
   return r;
 }
 const logEvent = (kind: string, detail: Record<string, unknown>) =>
   sb("/rest/v1/security_events", { method: "POST", body: JSON.stringify({ kind, detail }), headers: { Prefer: "return=minimal" } });
 
-let graphToken: { t: string; exp: number } | null = null;
-async function graph(path: string, init: RequestInit = {}, raw = false) {
-  if (!TENANT || !CLIENT || !SECRET) throw new Error("Microsoft 365 settings (MS_TENANT_ID, MS_CLIENT_ID, MS_CLIENT_SECRET) are missing");
-  if (!graphToken || graphToken.exp < Date.now() + 60000) {
-    const r = await fetch(`https://login.microsoftonline.com/${TENANT}/oauth2/v2.0/token`, {
-      method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: new URLSearchParams({ client_id: CLIENT, client_secret: SECRET, scope: "https://graph.microsoft.com/.default", grant_type: "client_credentials" }),
-    });
-    const js = await r.json();
-    if (!r.ok) throw new Error("Microsoft sign-in failed: " + (js.error_description ?? r.status));
-    graphToken = { t: js.access_token, exp: Date.now() + js.expires_in * 1000 };
-  }
-  const url = path.startsWith("https://") ? path : "https://graph.microsoft.com/v1.0" + path;
-  const r = await fetch(url, { ...init, headers: { Authorization: "Bearer " + graphToken.t, ...(raw ? {} : { "Content-Type": "application/json" }), ...(init.headers ?? {}) } });
-  if (!r.ok && r.status !== 404) throw new Error(`Microsoft ${path.split("?")[0]}: ${r.status} ${await r.text()}`);
-  return r;
-}
-const drivePath = (p: string) => `/users/${encodeURIComponent(MAILBOX)}/drive/root:/${p.split("/").map(encodeURIComponent).join("/")}`;
-
-async function sendMail(subject: string, text: string) {
-  await graph(`/users/${encodeURIComponent(MAILBOX)}/sendMail`, {
-    method: "POST",
-    body: JSON.stringify({ message: { subject, body: { contentType: "Text", content: text }, toRecipients: [{ emailAddress: { address: ALERT_TO } }] }, saveToSentItems: false }),
+function b64(bytes: Uint8Array) { let s = ""; for (let i = 0; i < bytes.length; i += 0x8000) s += String.fromCharCode(...bytes.subarray(i, i + 0x8000)); return btoa(s); }
+async function sendMail(subject: string, text: string, attachment?: { filename: string; bytes: Uint8Array }) {
+  if (!RESEND) throw new Error("RESEND_API_KEY is missing (Edge Functions → Secrets)");
+  const r = await fetch("https://api.resend.com/emails", {
+    method: "POST", headers: { Authorization: "Bearer " + RESEND, "Content-Type": "application/json" },
+    body: JSON.stringify({ from: FROM, to: [ALERT_TO], subject, text, ...(attachment ? { attachments: [{ filename: attachment.filename, content: b64(attachment.bytes) }] } : {}) }),
   });
+  if (!r.ok) throw new Error("Email failed: " + r.status + " " + await r.text());
 }
 const perth = (t: string | number | Date) => new Date(t).toLocaleString("en-AU", { timeZone: "Australia/Perth", dateStyle: "medium", timeStyle: "short" });
+async function gzip(bytes: Uint8Array) { return new Uint8Array(await new Response(new Blob([bytes as unknown as ArrayBuffer]).stream().pipeThrough(new CompressionStream("gzip"))).arrayBuffer()); }
 
 /* ---------- nightly backup: same format as Settings → Backup → Download backup, so it can be restored in the app ---------- */
 async function backup() {
@@ -67,30 +55,32 @@ async function backup() {
     if (rows.length < 1000) break; from += 1000;
   }
   out.staff = await (await sb("/rest/v1/staff?select=email,full_name,preferred_name,initials,role,can_reports,can_invoices,can_manage_staff,active")).json();
-  const body = new TextEncoder().encode(JSON.stringify(out));
+  const raw = new TextEncoder().encode(JSON.stringify(out));
+  const gz = await gzip(raw);
   const day = new Date().toLocaleDateString("en-CA", { timeZone: "Australia/Perth" });
-  const name = `${PREFIX}${day}.json`;
-  const target = drivePath(`${FOLDER}/${name}`);
-  if (body.length < 4 * 1024 * 1024) {
-    await graph(`${target}:/content`, { method: "PUT", body, headers: { "Content-Type": "application/json" } }, true);
-  } else { // big file: upload in pieces
-    const ses = await (await graph(`${target}:/createUploadSession`, { method: "POST", body: JSON.stringify({ item: { "@microsoft.graph.conflictBehavior": "replace" } }) })).json();
-    const CH = 320 * 1024 * 16; // 5 MB, a multiple of 320 KB as Microsoft requires
-    for (let i = 0; i < body.length; i += CH) {
-      const part = body.slice(i, i + CH);
-      const r = await fetch(ses.uploadUrl, { method: "PUT", body: part, headers: { "Content-Length": String(part.length), "Content-Range": `bytes ${i}-${i + part.length - 1}/${body.length}` } });
-      if (!r.ok) throw new Error("Upload failed: " + r.status + " " + await r.text());
-    }
+  const name = `${PREFIX}${day}.json.gz`;
+  // 1) keep it in this project's private storage
+  const up = () => fetch(`${SB_URL}/storage/v1/object/${BUCKET}/${name}`, { method: "POST", body: gz, headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, "Content-Type": "application/gzip", "x-upsert": "true" } });
+  let r = await up();
+  if (!r.ok && (r.status === 404 || r.status === 400)) { // first time: make the private bucket, then try again
+    await fetch(`${SB_URL}/storage/v1/bucket`, { method: "POST", body: JSON.stringify({ id: BUCKET, name: BUCKET, public: false }), headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, "Content-Type": "application/json" } });
+    r = await up();
   }
+  if (!r.ok) throw new Error("Saving the backup failed: " + r.status + " " + await r.text());
   // keep the newest KEEP backups
-  const list = await graph(`${drivePath(FOLDER)}:/children?$select=id,name&$top=999`);
-  if (list.ok) {
-    const files = ((await list.json()).value ?? []).filter((f: any) => f.name.startsWith(PREFIX)).sort((a: any, b: any) => b.name.localeCompare(a.name));
-    for (const f of files.slice(KEEP)) await graph(`/users/${encodeURIComponent(MAILBOX)}/drive/items/${f.id}`, { method: "DELETE" });
-  }
-  const counts = { contacts: out.contacts.length, businesses: out.businesses.length, farms: out.farms.length };
-  await logEvent("backup_ok", { file: name, size: body.length, ...counts });
-  return { ok: true, file: name, size: body.length, ...counts };
+  const list = await (await sb(`/storage/v1/object/list/${BUCKET}`, { method: "POST", body: JSON.stringify({ prefix: "", limit: 1000, sortBy: { column: "name", order: "desc" } }) })).json();
+  const old = (list ?? []).map((f: any) => f.name).filter((n: string) => n.startsWith(PREFIX)).sort().reverse().slice(KEEP);
+  if (old.length) await sb(`/storage/v1/object/${BUCKET}`, { method: "DELETE", body: JSON.stringify({ prefixes: old }) });
+  // 2) email a copy (off-site)
+  const counts = { contacts: out.contacts.length, businesses: out.businesses.length, farms: out.farms.length, bookings: (out.bookings ?? []).length };
+  const weekly = BACKUP_EMAIL === "weekly", send = BACKUP_EMAIL === "daily" || (weekly && new Date().toLocaleDateString("en-AU", { timeZone: "Australia/Perth", weekday: "long" }) === "Sunday");
+  if (send) await sendMail(`Bovitech Practice backup ${day}`, [
+    `Last night's backup of the Bovitech Practice app is attached (${Math.round(gz.length / 1024)} KB): ${counts.contacts} contacts, ${counts.businesses} businesses, ${counts.farms} farms, ${counts.bookings} bookings.`,
+    "", "To restore it: open the app as the admin → Settings → Backup → Restore backup, and choose this file (no need to unzip it).",
+    "The last " + KEEP + " backups are also kept in Supabase → Storage → backups.",
+  ].join("\n"), { filename: name, bytes: gz });
+  await logEvent("backup_ok", { file: name, size: gz.length, emailed: send, ...counts });
+  return { ok: true, file: name, size: gz.length, emailed: send, ...counts };
 }
 
 /* ---------- alert email for something in the security log ---------- */
@@ -105,7 +95,7 @@ async function alert(id: number) {
   const by = e.by ? (e.by.preferred_name || e.by.full_name) : "";
   const subject = e.kind === "backup_failed" ? "⚠️ Bovitech Practice: nightly backup failed" : `Bovitech Practice security: ${who} ${WHAT[e.kind] ?? e.kind}`;
   const lines = [
-    e.kind === "backup_failed" ? "Last night's backup to OneDrive didn't work." : `${who} ${WHAT[e.kind] ?? e.kind}.`,
+    e.kind === "backup_failed" ? "Last night's backup didn't work." : `${who} ${WHAT[e.kind] ?? e.kind}.`,
     "", `When: ${perth(e.at)} (Perth time)`,
     by && by !== who ? `Done by: ${by}` : "",
     e.detail && Object.keys(e.detail).length ? "Details: " + Object.entries(e.detail).map(([k, v]) => `${k}: ${v}`).join(", ") : "",
