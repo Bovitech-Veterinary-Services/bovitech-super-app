@@ -32,8 +32,8 @@ const BK_DEFAULTS = [
   { id: 'type-inhouse', cfg: 'type', order: 2, name: 'In-house', colour: '#3a6ea5', where: 'base', fixedMins: null },
   { id: 'type-phone', cfg: 'type', order: 3, name: 'Phone', colour: '#8a5a9e', where: 'phone', fixedMins: 15 },
   { id: 'type-fec', cfg: 'type', order: 4, name: 'In-house FEC', colour: '#b5791c', where: 'base', fixedMins: 15 },
-  { id: 'svc-preg', cfg: 'service', order: 1, name: 'Preg testing', mode: 'perhead', setup: 20, hph: 150, askLabour: true, yard: 'preg' },
-  { id: 'svc-bull', cfg: 'service', order: 2, name: 'Bull testing', mode: 'perhead', setup: 20, hph: 6, askLabour: true, yard: 'bull' },
+  { id: 'svc-preg', cfg: 'service', order: 1, name: 'Preg testing', mode: 'perhead', setup: 20, hph: 150, askLabour: true, yard: 'preg', rateFrom: 'farm' },
+  { id: 'svc-bull', cfg: 'service', order: 2, name: 'Bull testing', mode: 'perhead', setup: 20, hph: 6, askLabour: true, yard: 'bull', rateFrom: 'farm' },
   { id: 'svc-ai', cfg: 'service', order: 3, name: 'Artificial insemination', mode: 'perhead', setup: 20, hph: 40, askLabour: true },
   { id: 'svc-labour', cfg: 'service', order: 4, name: 'Additional labour', mode: 'fixed', mins: 120, alongside: true },
   { id: 'svc-sample', cfg: 'service', order: 5, name: 'Blood sampling (trace elements / BVD)', mode: 'perhead', setup: 20, hph: 60 },
@@ -62,7 +62,7 @@ const BK_DEFAULTS = [
   { id: 'sms-reminder', cfg: 'sms', order: 2, use: 'reminder', name: 'Reminder (5 days before)', text: 'Hi {first}, a reminder of your appointment with Bovitech Veterinary Services on {day} {date} at {time}{at_farm}. Please reply YES to confirm, or call 0499 489 919 to change it.' },
   { id: 'sms-proposal', cfg: 'sms', order: 3, use: 'proposal', name: 'New time suggested', text: 'Hi {first}, could we move your appointment from {old_date} to {day} {date} at {time}? Please reply YES to accept, or call 0499 489 919.' },
 ];
-const BK_MIG = 2; // settings added after the first version: new services, and the "ask about additional labour" / "runs alongside" / yard flags
+const BK_MIG = 3; // 3: preg / bull testing take their speed from each farm // settings added after the first version: new services, and the "ask about additional labour" / "runs alongside" / yard flags
 const BK_NEW_V2 = ['svc-bruc', 'svc-vasec', 'svc-trace', 'svc-mischalf', 'svc-miscfull'];
 const BK_USE = { '': 'Preg and bull testing', preg: 'Preg testing only (no bull testing)', bull: 'Bull testing only (no preg testing)', individual: 'Individual animal assessments only', none: 'Do not service' };
 const BK_DEFAULT_BLOCKS = [{ id: 'blk-meeting', type: 'bt-meeting', staff: 'all', date: '2026-01-05', start: '08:00', end: '08:30', repeat: { every: 'weekdays' }, on: true, note: 'At homebase' }];
@@ -88,6 +88,7 @@ const Bk = {
         let ch = false; ['askLabour', 'alongside', 'yard'].forEach((k) => { if (d[k] != null && r[k] === undefined) { r[k] = d[k]; ch = true; } }); if (ch) { touch(r); n++; } });
       D.sync.bkMig = 2; save();
     }
+    if ((D.sync.bkMig || 1) < 3) { ['svc-preg', 'svc-bull'].forEach((id) => { const r = Bk.get(id); if (r && r.rateFrom === undefined) { r.rateFrom = 'farm'; touch(r); n++; } }); D.sync.bkMig = 3; save(); }
     if (n) { D.sync.bkSeeded = true; save(); }
   },
   /* ---- people ---- */
@@ -225,13 +226,13 @@ function bkDayHtml() {
     else { shade = `<div class="bk-off" style="top:0;height:${Math.max(0, y(hrsOn[0]))}px"></div><div class="bk-off" style="top:${y(hrsOn[1])}px;height:${Math.max(0, H - y(hrsOn[1]))}px"></div>`;
       if (c.endBuffer) shade += `<div class="bk-buffer" style="top:${y(bkHHMM(bkMin(hrsOn[1]) - c.endBuffer))}px;height:${c.endBuffer * BK_PX}px"><span>Records &amp; restock</span></div>`; }
     const blocks = Bk.blocksFor(date, s.id).map((b) => { const bt = Bk.btype(b.type); const st = b.allDay ? bkHHMM(BK_START) : b.start, en = b.allDay ? bkHHMM(BK_END) : b.end;
-      return `<div class="bk-block" data-act="bk-openblock" data-id="${b.id}" style="top:${y(st)}px;height:${Math.max(14, (bkMin(en) - bkMin(st)) * BK_PX)}px;--c:${bt.colour}"><b>${h(bt.name)}</b>${b.note ? ' · ' + h(b.note) : ''}</div>`; }).join('');
+      return `<div class="bk-block ${bkPat(bt)}" data-act="bk-openblock" data-id="${b.id}" style="top:${y(st)}px;height:${Math.max(14, (bkMin(en) - bkMin(st)) * BK_PX)}px;--c:${bt.colour}"><b>${h(bt.name)}</b>${b.note ? ' · ' + h(b.note) : ''}</div>`; }).join('');
     const bks = Bk.bookingsFor(date, s.id); let prev = null;
     const items = bks.map((b) => { const t = Bk.type(b.type); const top = y(b.start), ht = Math.max(18, b.mins * BK_PX); let gap = '';
       const loc = Travel.loc(b);
       if (prev) { const need = Travel.mins(Travel.locOut(prev), loc), have = bkMin(b.start) - (bkMin(prev.start) + prev.mins); if (need > 0 || have < 0) gap = `<div class="bk-drive ${have < need ? 'bad' : ''}" style="top:${y(bkHHMM(bkMin(prev.start) + prev.mins))}px;height:${Math.max(10, Math.max(have, 0) * BK_PX)}px"><span>🚗 ~${need} min${have < need ? ' — not enough time' : ''}</span></div>`; }
       prev = b;
-      return gap + `<div class="bk-appt ${b.status === 'confirmed' ? '' : 'unconf'} ${b.urgent ? 'urgent' : ''}" data-act="bk-open" data-id="${b.id}" style="top:${top}px;height:${ht}px;--c:${t.colour}">
+      return gap + `<div class="bk-appt ${bkPat(t)} ${b.status === 'confirmed' ? '' : 'unconf'} ${b.urgent ? 'urgent' : ''}" data-act="bk-open" data-id="${b.id}" style="top:${top}px;height:${ht}px;--c:${t.colour}">
         <div class="bk-at">${bkTime(b.start)}–${bkTime(bkHHMM(bkMin(b.start) + b.mins))} · ${h(t.name)}${b.status === 'confirmed' ? ' ✓' : ' <i>unconfirmed</i>'}</div>
         <div class="bk-aw">${b.urgent ? '⚡ ' : ''}${h(Bk.who(b))}${Bk.farmName(b) ? ' — ' + h(Bk.farmName(b)) : ''}</div><div class="bk-as">${h(Bk.svcText(b, s.id))}${(b.pids || []).length ? ' · ' + h(Bk.pidText(b)) : ''}${(b.staff || []).length > 1 ? ' · with ' + b.staff.filter((x) => x !== s.id).map(Bk.pname).join(', ') : ''}${b.proposal ? ' · <b>new time suggested</b>' : ''}</div></div>`; }).join('');
     const props = Bk.proposalsFor(date, s.id).map((b) => `<div class="bk-prop" data-act="bk-open" data-id="${b.id}" style="top:${y(b.proposal.start)}px;height:${Math.max(18, (b.proposal.mins || b.mins) * BK_PX)}px"><b>Held — new time suggested</b><br>${h(Bk.who(b))} · waiting for client (from ${bkDate(b.date)} ${bkTime(b.start)})</div>`).join('');
@@ -250,7 +251,7 @@ function bkWeekHtml() {
   const ppl = Bk.people().filter((s) => BK.showAll || days.some((d) => Bk.hours(s, d) || Bk.bookingsFor(d, s.id).length));
   return `<div class="bk-dayscroll"><table class="bk-week"><thead><tr><th></th>${days.map((d) => `<th class="${d === bkToday() ? 'today' : ''}"><button class="lnk" data-act="bk-openday" data-v="${d}">${bkDate(d)}</button><div class="hint">📟 ${bkOncallText(d, true) || '—'}</div></th>`).join('')}</tr></thead>
   <tbody>${ppl.map((s) => `<tr><th>${h(s.preferred_name || s.full_name)}</th>${days.map((d) => { const hr = Bk.hours(s, d); const bl = Bk.blocksFor(d, s.id).filter((b) => b.type !== 'bt-meeting'); const bs = Bk.bookingsFor(d, s.id), ps = Bk.proposalsFor(d, s.id);
-    return `<td class="${hr ? '' : 'off'}" data-act="bk-openday" data-v="${d}">${bl.map((b) => `<div class="bk-chip blk" style="--c:${Bk.btype(b.type).colour}">${h(Bk.btype(b.type).name)}</div>`).join('')}${bs.map((b) => `<div class="bk-chip ${b.status === 'confirmed' ? '' : 'unconf'}" style="--c:${Bk.type(b.type).colour}" data-act="bk-open" data-id="${b.id}">${bkTime(b.start)} ${h(Bk.who(b))}</div>`).join('')}${ps.map((b) => `<div class="bk-chip held" data-act="bk-open" data-id="${b.id}">Held ${bkTime(b.proposal.start)} ${h(Bk.who(b))}</div>`).join('')}${!hr && !bs.length ? '<span class="hint">off</span>' : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
+    return `<td class="${hr ? '' : 'off'}" data-act="bk-openday" data-v="${d}">${bl.map((b) => `<div class="bk-chip blk ${bkPat(Bk.btype(b.type))}" style="--c:${Bk.btype(b.type).colour}">${h(Bk.btype(b.type).name)}</div>`).join('')}${bs.map((b) => `<div class="bk-chip ${bkPat(Bk.type(b.type))} ${b.status === 'confirmed' ? '' : 'unconf'}" style="--c:${Bk.type(b.type).colour}" data-act="bk-open" data-id="${b.id}">${bkTime(b.start)} ${h(Bk.who(b))}</div>`).join('')}${ps.map((b) => `<div class="bk-chip held" data-act="bk-open" data-id="${b.id}">Held ${bkTime(b.proposal.start)} ${h(Bk.who(b))}</div>`).join('')}${!hr && !bs.length ? '<span class="hint">off</span>' : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 function bkMonthHtml() {
   const first = BK.date.slice(0, 8) + '01', start = bkWeekStart(first); const days = [...Array(42)].map((_, i) => bkAdd(start, i));
@@ -265,7 +266,7 @@ function bkRosterHtml() {
   const sel = (d, slot, v) => `<select data-act="bk-oc" data-d="${d}" data-slot="${slot}" ${ed ? '' : 'disabled'}><option value="">—</option>${vets.map((s) => `<option value="${s.id}" ${v === s.id ? 'selected' : ''}>${h(s.preferred_name || s.full_name)}</option>`).join('')}</select>`;
   return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><b class="bk-title">On-call roster</b></div>
     <div class="bk-nav"><button class="btn small" data-act="bk-rgo" data-v="-28">‹ 4 weeks</button><button class="btn small" data-act="bk-rgo" data-v="28">4 weeks ›</button>${ed ? '<button class="btn small" data-act="bk-rcopy">Copy the week before into empty days</button>' : ''}</div></div>
-  <div class="hint" style="margin-bottom:8px">Weekdays: overnight (12am–8am) and evening (6pm–12am). Weekends: one vet for the whole day.${ed ? '' : ' You can see the roster but not change it.'}</div>
+  ${bkAiCard('roster')}<div class="hint" style="margin-bottom:8px">Weekdays: overnight (12am–8am) and evening (6pm–12am). Weekends: one vet for the whole day.${ed ? '' : ' You can see the roster but not change it.'}</div>
   <div class="bk-dayscroll"><table class="bk-roster"><thead><tr><th>Day</th><th>12am–8am</th><th>6pm–12am</th></tr></thead><tbody>
   ${days.map((d) => { const o = Bk.oncall(d) || {}; const we = Bk.weekend(d); return `<tr class="${we ? 'we' : ''} ${d === bkToday() ? 'today' : ''}"><th>${bkDate(d)}</th>${we ? `<td colspan="2">${sel(d, 'all', o.all)} <span class="hint">all day</span></td>` : `<td>${sel(d, 'night', o.night)}</td><td>${sel(d, 'evening', o.evening)}</td>`}</tr>`; }).join('')}
   </tbody></table></div></div>`;
@@ -280,12 +281,13 @@ function bkSuggestMins(typeId, svcs, fids) {
   const use = main.length ? main : all; // additional labour runs alongside the other work, so it doesn't make the booking longer
   const setups = {}; let mins = 0; const why = [];
   use.forEach((x) => { const sv = Bk.svc(x.svc); const at = (t.where === 'farm' && (x.fid || fl[0])) || null;
-    if (sv.mode === 'perhead') { const y = bkYard(at, x.svc); const hph = x.hph || (y && y.hph) || sv.hph || 60; const head = +x.head || 0;
-      setups[at || '-'] = Math.max(setups[at || '-'] || 0, (y && y.setup != null ? y.setup : sv.setup) || 0); const m = head ? (head / hph) * 60 : 0; mins += m;
-      why.push(`${sv.name}: ${head || '?'} head at ${hph}/hour${y ? ' (these yards)' : ''} = ${bkDur(Math.round(m))}`); }
+    setups[at || '-'] = Math.max(setups[at || '-'] || 0, sv.setup || 0); // set-up and pack-up, once per farm
+    if (sv.mode === 'perhead') { const y = sv.rateFrom === 'farm' ? bkYard(at, x.svc) : null; const hph = x.hph || (y && y.hph) || sv.hph || 60; const head = +x.head || 0;
+      const m = head ? (head / hph) * 60 : 0; mins += m;
+      why.push(`${sv.name}: ${head || '?'} head at ${hph}/hour${x.hph ? '' : y ? ' (this farm)' : sv.rateFrom === 'farm' ? (sv.hph ? ' (usual — no rate set for this farm)' : ' (no rate set — guessed)') : ''} = ${bkDur(Math.round(m))}`); }
     else { mins += +sv.mins || 0; why.push(`${sv.name}: ${bkDur(+sv.mins || 0)}`); } });
   all.filter((x) => main.length && Bk.svc(x.svc).alongside).forEach((x) => why.push(`${Bk.svc(x.svc).name}: alongside`));
-  const setup = Object.values(setups).reduce((a, b) => a + b, 0); if (setup) why.push(`set-up ${setup} min`);
+  const setup = Object.values(setups).reduce((a, b) => a + b, 0); if (setup) why.push(`set-up and pack-up ${setup} min`);
   const drive = t.where === 'farm' && fl.length > 1 ? Travel.between(fl) : 0; if (drive) why.push(`driving between farms ~${drive} min`);
   const total = Math.max(15, Math.ceil((mins + setup + drive) / 15) * 15);
   return { mins: total, why: why.join(' + ') || 'No services chosen' };
@@ -404,16 +406,16 @@ function bkFormHtml() {
       ${farms.length > 1 && f.fids.length && f.fids.length < farms.length ? '<button type="button" class="btn small" data-act="bkf-farmadd">➕ Another farm / yards</button>' : ''}${multi ? '<div class="hint">Travel is worked out to the first farm and home from the last; driving between them is added to the length.</div>' : ''}</div>` : ''}
     <div class="grid2"><div class="f"><label for="bkf-con">SMS goes to</label><select id="bkf-con"><option value="">Nobody</option>${cons.map((c) => `<option value="${c.id}" ${c.id === f.cid ? 'selected' : ''} ${bkMobile(c) ? '' : 'disabled'}>${h(fullName(c))}${bkMobile(c) ? ' · ' + h(bkMobile(c)) : ' (no mobile)'}</option>`).join('')}</select></div>
     <div class="f"><label>Herds / flocks</label>${pids.length ? `<div class="checks">${pids.map((p, i) => `<label><input type="checkbox" data-bkpid="${i}" ${f.pids.some((q) => q.value === p.value) ? 'checked' : ''}> ${typeof pidEmo === 'function' ? pidEmo(p) : ''}${h(p.value)}${p.label ? ` <span class="hint">${h(p.label)}</span>` : ''}</label>`).join('')}</div><div class="hint">Tick each one this visit is for — each gets its own clinical record.</div>` : `<div class="hint">${bz ? 'No herd or flock IDs saved for this business yet — add them under Patient IDs on the business page.' : 'Choose a business to pick the herd or flock.'}</div>`}</div></div>` : ''}
-  <div class="f"><label>What's being done, and who</label>${(f.svcs.length ? f.svcs : [{ staff: [] }]).map((x, i) => { const sv = x.svc && Bk.svc(x.svc); const at = x.fid || f.fids[0]; const y = sv && sv.mode === 'perhead' ? bkYard(at, x.svc) : null; const who = x.staff || [];
+  <div class="f"><label>What's being done, and who</label>${(f.svcs.length ? f.svcs : [{ staff: [] }]).map((x, i) => { const sv = x.svc && Bk.svc(x.svc); const at = x.fid || f.fids[0]; const y = sv && sv.mode === 'perhead' && sv.rateFrom === 'farm' ? bkYard(at, x.svc) : null; const who = x.staff || [];
     return `<div class="bk-svcblk ${sv && sv.alongside ? 'along' : ''}"><div class="bk-svcrow"><select data-bksvc="${i}" aria-label="Service ${i + 1}"><option value="">Choose…</option>${svcs.map((s) => `<option value="${s.id}" ${s.id === x.svc ? 'selected' : ''}>${h(s.name)}</option>`).join('')}</select>${sv && sv.mode === 'perhead' ? `<input type="number" min="0" inputmode="numeric" data-bkhead="${i}" value="${x.head || ''}" aria-label="Head"><span class="hint">head</span>${at ? `<input type="number" min="1" inputmode="numeric" data-bkhph="${i}" value="${x.hph || (y && y.hph) || sv.hph || ''}" aria-label="Head per hour"><span class="hint">per hour here</span>` : ''}` : ''}${sv && sv.alongside ? '<span class="hint">runs alongside — doesn\'t add time</span>' : ''}<button type="button" class="x" data-act="bkf-svcdel" data-i="${i}" aria-label="Remove">×</button></div>
       ${multi && sv && !sv.alongside ? `<div class="bk-svcrow"><span class="hint">At</span><select data-bksfarm="${i}" aria-label="Which farm">${f.fids.map((fid) => { const fm = IDX.farms.get(fid); return `<option value="${fid}" ${fid === at ? 'selected' : ''}>${h(fm ? fm.name || fm.address || 'Farm' : 'Farm')}</option>`; }).join('')}</select></div>` : ''}
       <div class="bk-who"><span class="hint">Who:</span>${ppl.map((s) => { const bad = x.svc && !Bk.canDo(s, x.svc); return `<label class="bk-pp ${bad ? 'bad' : ''}" title="${bad ? 'Not set up for ' + h(sv.name) : ''}"><input type="checkbox" data-bkwho="${i}" data-staff="${s.id}" ${who.includes(s.id) ? 'checked' : ''}> ${h(s.preferred_name || s.full_name)}</label>`; }).join('') || '<span class="hint">The staff list loads the first time you sign in with internet.</span>'}</div></div>`; }).join('')}
     <button type="button" class="btn small" data-act="bkf-svcadd">➕ Another service</button>${labourSvc && !f.svcs.some((x) => x.svc && Bk.svc(x.svc).alongside) ? ` <button type="button" class="btn small" data-act="bkf-labour">➕ ${h(labourSvc.name)}</button>` : ''}
     ${need && !f.noLabour ? `<div class="bk-warnbox bk-labour">${need === 'always' ? `⚠ <b>${h(Bk.who(f))}</b> always needs ${h((labourSvc || { name: 'additional labour' }).name.toLowerCase())}.` : `Do you want ${h((labourSvc || { name: 'additional labour' }).name.toLowerCase())} booked for this?`}<div class="actions" style="margin-top:6px"><button type="button" class="btn small primary" data-act="bkf-labour">Yes — add it</button><button type="button" class="btn small" data-act="bkf-nolabour">${need === 'always' ? 'Not this time' : 'No'}</button></div></div>` : ''}
     ${need === 'always' && f.noLabour ? `<div class="hint">No additional labour this time (this client usually needs it). <button type="button" class="btn small" data-act="bkf-labour">Add it</button></div>` : ''}
-    ${t.where === 'farm' && f.fids.length && f.svcs.some((x) => x.svc && Bk.svc(x.svc).mode === 'perhead') ? '<div class="hint">Change the "per hour here" number to match how fast these yards run — tick below to remember it for this farm.</div>' : ''}</div>
+    ${t.where === 'farm' && f.fids.length && f.svcs.some((x) => x.svc && Bk.svc(x.svc).mode === 'perhead' && Bk.svc(x.svc).rateFrom === 'farm') ? '<div class="hint">Change the "per hour here" number to match how fast these yards run — tick below to remember it for this farm (it shows on the business page too).</div>' : ''}</div>
   <div class="grid2"><div class="f"><label for="bkf-mins">How long (minutes)</label><input id="bkf-mins" type="number" min="5" step="5" inputmode="numeric" value="${f.mins}"><div class="hint" id="bkf-why">Suggested ${bkDur(sug.mins)} — ${h(sug.why)} ${f.mins !== sug.mins ? `<button type="button" class="btn small" data-act="bkf-usesug">Use ${bkDur(sug.mins)}</button>` : ''}</div></div>
-    <div class="f"><label>&nbsp;</label>${t.where === 'farm' && f.fids.length && f.svcs.some((x) => x.svc && Bk.svc(x.svc).mode === 'perhead') ? `<label class="bk-radio"><input type="checkbox" id="bkf-rememberyard" ${f.rememberYard ? 'checked' : ''}> Remember the speed for these yards</label>` : ''}</div></div>
+    <div class="f"><label>&nbsp;</label>${t.where === 'farm' && f.fids.length && f.svcs.some((x) => x.svc && Bk.svc(x.svc).mode === 'perhead' && Bk.svc(x.svc).rateFrom === 'farm') ? `<label class="bk-radio"><input type="checkbox" id="bkf-rememberyard" ${f.rememberYard ? 'checked' : ''}> Remember the speed for these yards</label>` : ''}</div></div>
   <div class="grid2"><div class="f"><label for="bkf-date">Date</label><input id="bkf-date" type="date" value="${f.date || ''}"></div><div class="f"><label for="bkf-start">Start time</label><input id="bkf-start" type="time" step="900" value="${f.start || ''}"></div></div>
   <div class="actions"><button type="button" class="btn" data-act="bkf-suggest">🔎 Suggest days and people</button><label class="bk-radio"><input type="checkbox" id="bkf-urgent" ${f.urgent ? 'checked' : ''}> ⚡ Urgent — soonest first, nearby farms don't matter</label></div>
   <div id="bkf-sugg"></div><div id="bkf-warn">${bkWarnHtml(bkProblems(bkFormStaff(f)))}</div>
@@ -463,7 +465,7 @@ function bkExistingActions(f) {
   return `<div class="card bk-actions"><div class="lbl">${p ? 'New time suggested to the client' : 'Change this booking'}</div>
   ${p ? `<p>Suggested <b>${bkDate(p.date)} ${bkTime(p.start)}</b> with ${h((p.staff || f.staff).map(Bk.pname).join(', '))}. That time is held on the calendar, and the original stays put until the client answers.</p>${bkWarnHtml(bkProblems(f, p))}
     <div class="actions"><button type="button" class="btn primary" data-act="bkf-propyes">✓ Client agreed — move it</button><button type="button" class="btn" data-act="bkf-propno">Client said no — keep the original</button><button type="button" class="btn small" data-act="bkf-propose">Change the suggested time</button></div>`
-    : `<div class="actions"><button type="button" class="btn" data-act="bkf-propose">↔ Suggest a new time to the client</button><button type="button" class="btn" data-act="bkf-fu">➕ Follow-up</button><button type="button" class="btn" data-act="bkf-cancel" style="color:var(--red)">Cancel booking</button></div>`}
+    : `<div class="actions"><button type="button" class="btn" data-act="bkf-propose">↔ Suggest a new time to the client</button><button type="button" class="btn" data-act="bkf-fu">➕ Follow-up</button><button type="button" class="btn" data-act="bkf-dup">⧉ Duplicate</button><button type="button" class="btn" data-act="bkf-cancel" style="color:var(--red)">Cancel booking</button></div>`}
   <div class="hint" style="margin-top:6px">Booked ${f.createdAt ? new Date(f.createdAt).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' }) : ''}${f.by ? ' by ' + h(Bk.pname(f.by)) : ''}. To move it straight away (no need to ask the client), just change the date or time above and Save.</div></div>`;
 }
 function bkFormRead() {
@@ -546,7 +548,7 @@ async function bkSaveForm(skipRead) { // skipRead: the caller has already read t
     if (hard.length && !f._farmOk && !(await ask(hard.map((x) => '⛔ ' + x.msg).join('\n') + '\n\nBook it anyway?', 'Yes — book anyway', true))) return false;
   }
   // remember the yard speed for each farm
-  if (f.rememberYard) f.svcs.forEach((x) => { const at = x.fid || f.fids[0]; if (!at || !x.svc || !x.hph || Bk.svc(x.svc).mode !== 'perhead') return; const id = 'yard:' + at + ':' + x.svc; let y = Bk.get(id); if (!y) { y = { id, cfg: 'yard', fid: at, svc: x.svc }; D.bkcfg.push(y); } if (y.hph !== x.hph || y.gone) { y.hph = x.hph; delete y.gone; touch(y); } });
+  if (f.rememberYard) f.svcs.forEach((x) => { const at = x.fid || f.fids[0]; if (!at || !x.svc || !x.hph || Bk.svc(x.svc).mode !== 'perhead' || Bk.svc(x.svc).rateFrom !== 'farm') return; const id = 'yard:' + at + ':' + x.svc; let y = Bk.get(id); if (!y) { y = { id, cfg: 'yard', fid: at, svc: x.svc }; D.bkcfg.push(y); } if (y.hph !== x.hph || y.gone) { y.hph = x.hph; delete y.gone; touch(y); } });
   const rec = { ...f }; ['_orig', 'rememberYard', '_minsTouched', '_farmOk'].forEach((k) => delete rec[k]);
   rec.svcs = f.svcs.filter((x) => x.svc).map((x) => { const o = { svc: x.svc, head: x.head || 0, staff: [...(x.staff || [])] }; if (x.fid) o.fid = x.fid; return o; });
   rec.fid = f.fids[0] || null; rec.fids = [...f.fids]; if (!rec.noLabour) delete rec.noLabour;
@@ -604,7 +606,7 @@ function bkSettingsHtml() {
   return `<div class="bk-setwrap">
   ${ed ? '' : '<div class="hint" style="margin-bottom:8px">You can see these but not change them — ask the office.</div>'}
   <div class="card"><h3><span class="sp">Appointment types</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="type">➕ New</button>' : ''}</h3>${Bk.cfg('type').map((x) => row(x, `${where[x.where] || ''}${x.fixedMins ? ' · always ' + bkDur(x.fixedMins) : ' · length from what\'s being done'}`)).join('')}</div>
-  <div class="card"><h3><span class="sp">Services (what's being done)</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="service">➕ New</button>' : ''}</h3><div class="hint" style="margin-bottom:6px">Per-head services work out the length from the head count; each farm's own yard speed is remembered when you tick "Remember the speed for these yards" on a booking.</div>${Bk.cfg('service').map((x) => row(x, (x.mode === 'perhead' ? `${x.hph} head an hour + ${x.setup || 0} min set-up` : `set time ${bkDur(+x.mins || 0)}`) + (x.alongside ? ' · runs alongside' : '') + (x.askLabour ? ' · asks about additional labour' : '') + (x.yard ? ` · counts as ${x.yard === 'preg' ? 'preg' : 'bull'} testing` : ''))).join('')}
+  <div class="card"><h3><span class="sp">Services (what's being done)</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="service">➕ New</button>' : ''}</h3><div class="hint" style="margin-bottom:6px">Per-head services work out the length from the head count — either at one rate for every farm, or at each farm's own rate (set on the business page, or by ticking "Remember the speed for these yards" on a booking).</div>${Bk.cfg('service').map((x) => row(x, (x.mode === 'perhead' ? (x.rateFrom === 'farm' ? `rate from each farm${x.hph ? ` (usual ${x.hph} an hour)` : ''}` : `${x.hph} head an hour`) : `set time ${bkDur(+x.mins || 0)}`) + (x.setup ? ` + ${x.setup} min set-up and pack-up` : '') + (x.alongside ? ' · runs alongside' : '') + (x.askLabour ? ' · asks about additional labour' : '') + (x.yard ? ` · counts as ${x.yard === 'preg' ? 'preg' : 'bull'} testing` : ''))).join('')}
     ${Bk.cfg('yard').length ? `<details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Remembered yard speeds (${Bk.cfg('yard').length})</summary>${Bk.cfg('yard').map((y) => { const f = IDX.farms && IDX.farms.get(y.fid); return `<div class="kv" style="align-items:center"><div class="v">${h(f ? farmLabel(f) : 'Farm')} — ${h(Bk.svc(y.svc).name)}: <b>${y.hph}/hour</b></div>${ed ? `<button class="btn small" data-act="bks-yarddel" data-id="${y.id}">Forget</button>` : ''}</div>`; }).join('')}</details>` : ''}</div>
   <div class="card"><h3>People — hours and what they can be booked for</h3><div class="hint" style="margin-bottom:6px">Working hours, the time kept at the end of the day for records and restocking, and locums (only bookable on days marked available).${adm ? '' : ' Only the admin can change what each person can be booked for.'}</div>
     ${ppl.map((s) => { const c = Bk.scfg(s); return `<div class="kv" style="align-items:center"><div class="v"><b>${h(s.preferred_name || s.full_name)}</b><br><span class="hint">${c.mode === 'locum' ? 'Locum — available on chosen days' : [1, 2, 3, 4, 5, 6, 0].filter((d) => c.hours[d]).map((d) => DOW_NAMES[d]).join(', ') + ' ' + (Object.values(c.hours)[0] ? `${bkTime(Object.values(c.hours)[0][0])}–${bkTime(Object.values(c.hours)[0][1])}` : '')}${c.endBuffer ? ` · ${c.endBuffer} min end of day` : ''} · ${c.canDo ? 'only ' + c.canDo.map((x) => Bk.svc(x).name).join(', ') : 'all services'}</span></div>${ed || adm ? `<button class="btn small" data-act="bks-staff" data-id="${s.id}">✏️</button>` : ''}</div>`; }).join('') || '<div class="hint">The staff list loads when you are online and signed in.</div>'}</div>
@@ -615,25 +617,48 @@ function bkSettingsHtml() {
   ${adm ? `<div class="card"><h3>Permissions (admin only)</h3><div class="hint" style="margin-bottom:6px">Everyone can do all of these to start with. Untick to stop someone.</div><div class="bk-dayscroll"><table class="bk-perm"><thead><tr><th></th>${BK_PERMS.map(([k, l]) => `<th>${h(l)}</th>`).join('')}</tr></thead><tbody>${ppl.map((s) => { const pr = ((Bk.get('perms') || {}).staff || {})[s.id] || {}; return `<tr><th>${h(s.preferred_name || s.full_name)}</th>${BK_PERMS.map(([k]) => `<td><input type="checkbox" data-act="bks-perm" data-staff="${s.id}" data-k="${k}" ${pr[k] === false ? '' : 'checked'} aria-label="${h(k)}"></td>`).join('')}</tr>`; }).join('')}</tbody></table></div></div>` : ''}
   </div>`;
 }
+/* colour: a square to pick from, a box for the colour code, and the colours already in use */
+const BK_SWATCH = ['#2f7a55', '#3a6ea5', '#8a5a9e', '#b5791c', '#b42318', '#d97706', '#0f766e', '#64748b', '#7c8a6e', '#6f7fb0', '#a0782f', '#9a6b8a', '#9b5050', '#1f2937'];
+const bkHex = (v) => { v = String(v || '').trim(); if (/^#?[0-9a-f]{6}$/i.test(v)) return ('#' + v.replace('#', '')).toLowerCase(); if (/^#?[0-9a-f]{3}$/i.test(v)) return ('#' + v.replace('#', '').split('').map((c) => c + c).join('')).toLowerCase(); return null; };
+function bkColourField(c, selfId) {
+  const used = Bk.list('bkcfg').filter((y) => !y.gone && (y.cfg === 'type' || y.cfg === 'blocktype') && y.colour && y.id !== selfId);
+  return `<div class="f"><label for="bc-colourtxt">Colour</label><div class="bk-hrow"><input id="bc-colour" type="color" value="${h(c)}" aria-label="Pick a colour" class="bk-colsq"><input id="bc-colourtxt" value="${h(c)}" maxlength="7" style="max-width:120px;font-family:monospace" aria-label="Colour code" autocomplete="off" spellcheck="false"></div>
+    ${used.length ? `<div class="hint" style="margin-top:6px">Already used — tap to use the same:</div><div class="bk-swrow">${used.map((y) => `<button type="button" class="bk-sw" data-act="bks-colour" data-c="${h(y.colour)}" style="--c:${h(y.colour)}" title="${h(y.name)} ${h(y.colour)}"><span></span>${h(y.name)}</button>`).join('')}</div>` : ''}
+    <div class="hint" style="margin-top:6px">Suggestions:</div><div class="bk-swrow">${BK_SWATCH.map((x) => `<button type="button" class="bk-sw dot" data-act="bks-colour" data-c="${x}" style="--c:${x}" aria-label="${x}"><span></span></button>`).join('')}</div></div>`;
+}
+const BK_PATTERNS = [['light', 'Pale fill'], ['solid', 'Solid colour'], ['stripes', 'Stripes'], ['dots', 'Dots'], ['checks', 'Checks'], ['outline', 'Outline only']];
+function bkPatternField(p, c) { return `<div class="f"><label>Pattern on the calendar</label><div class="bk-swrow">${BK_PATTERNS.map(([v, l]) => `<label class="bk-patopt"><input type="radio" name="bc-pat" value="${v}" ${p === v ? 'checked' : ''}><span class="bk-patdemo pat-${v}" style="--c:${h(c)}"></span>${l}</label>`).join('')}</div></div>`; }
+const bkPat = (x) => 'pat-' + ((x && x.pattern) || 'light');
+document.addEventListener('input', (e) => { const id = e.target.id; if (id !== 'bc-colour' && id !== 'bc-colourtxt') return; const c = id === 'bc-colour' ? e.target.value : bkHex(e.target.value); if (!c) return; if (id === 'bc-colour') document.getElementById('bc-colourtxt').value = c; else document.getElementById('bc-colour').value = c; document.querySelectorAll('.bk-patdemo').forEach((d) => d.style.setProperty('--c', c)); });
+document.addEventListener('change', (e) => { if (e.target.id === 'bc-mode') { const per = e.target.value === 'perhead'; document.querySelectorAll('.bc-peronly').forEach((x) => (x.hidden = !per)); document.querySelectorAll('.bc-fixedonly').forEach((x) => (x.hidden = per)); }
+  if (e.target.name === 'bc-rate') { const l = document.getElementById('bc-hphlbl'); if (l) l.textContent = e.target.value === 'farm' ? 'head per hour when a farm has no rate set yet' : 'head per hour'; } });
+
 function bkCfgOpen(x, cfgType) {
   if (!Bk.need('settings')) return;
   const isNew = !x; x = x ? JSON.parse(JSON.stringify(x)) : { id: uid(cfgType.slice(0, 3)), cfg: cfgType, order: 50, name: '' };
   const t = x.cfg; let body = `<div class="f"><label for="bc-name">Name</label><input id="bc-name" value="${h(x.name)}"></div>`;
-  if (t === 'type' || t === 'blocktype') body += `<div class="f"><label for="bc-colour">Colour</label><input id="bc-colour" type="color" value="${x.colour || '#3a6ea5'}"></div>`;
-  if (t === 'type') body += `<div class="f"><label for="bc-where">Where</label><select id="bc-where">${[['farm', 'On a farm'], ['base', 'At homebase'], ['phone', 'Phone']].map(([v, l]) => `<option value="${v}" ${x.where === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div><div class="f"><label for="bc-fixed">Always this long (minutes)</label><input id="bc-fixed" type="number" min="0" step="5" value="${x.fixedMins || ''}"><div class="hint">Leave empty to work it out from what's being done.</div></div>`;
-  if (t === 'service') body += `<div class="f"><label for="bc-mode">How long</label><select id="bc-mode"><option value="fixed" ${x.mode !== 'perhead' ? 'selected' : ''}>Set time</option><option value="perhead" ${x.mode === 'perhead' ? 'selected' : ''}>Depends on head count</option></select></div>
-    <div class="grid2"><div class="f"><label for="bc-mins">Set time (minutes)</label><input id="bc-mins" type="number" min="0" step="5" value="${x.mins || ''}"></div><div class="f"><label for="bc-hph">Head per hour (usual)</label><input id="bc-hph" type="number" min="1" value="${x.hph || ''}"></div></div><div class="f"><label for="bc-setup">Set-up time for per-head (minutes)</label><input id="bc-setup" type="number" min="0" step="5" value="${x.setup || ''}"></div>
+  if (t === 'type' || t === 'blocktype') body += bkColourField(x.colour || '#3a6ea5', x.id) + bkPatternField(x.pattern || 'light', x.colour || '#3a6ea5');
+  if (t === 'type') body += `<div class="f"><label for="bc-where">Where</label><select id="bc-where">${[['farm', 'On a farm'], ['base', 'At homebase'], ['phone', 'Phone']].map(([v, l]) => `<option value="${v}" ${x.where === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div><div class="f"><label for="bc-fixed">Default length for appointment type (minutes)</label><input id="bc-fixed" type="number" min="0" step="5" value="${x.fixedMins || ''}"><div class="hint">Leave empty to work it out from what's being done.</div></div>`;
+  if (t === 'service') { const per = x.mode === 'perhead';
+    body += `<div class="f"><label for="bc-mode">How long</label><select id="bc-mode"><option value="fixed" ${per ? '' : 'selected'}>Set time</option><option value="perhead" ${per ? 'selected' : ''}>Calculate time based on per head rate</option></select></div>
+    <div class="f bc-fixedonly" ${per ? 'hidden' : ''}><label for="bc-mins">Set time (minutes)</label><input id="bc-mins" type="number" min="0" step="5" value="${x.mins || ''}"></div>
+    <div class="f bc-peronly" ${per ? '' : 'hidden'}><label>Head per hour</label>
+      <label class="bk-radio" style="display:flex;margin:4px 0"><input type="radio" name="bc-rate" value="service" ${x.rateFrom === 'farm' ? '' : 'checked'}> Use this rate for every farm:</label>
+      <label class="bk-radio" style="display:flex;margin:4px 0"><input type="radio" name="bc-rate" value="farm" ${x.rateFrom === 'farm' ? 'checked' : ''}> Use the rate set for each farm on the business page (Contacts → business → 📅 Scheduling)</label>
+      <div class="bk-hrow"><input id="bc-hph" type="number" min="1" inputmode="numeric" value="${x.hph || ''}" aria-label="Head per hour" style="max-width:110px"><span class="hint" id="bc-hphlbl">${x.rateFrom === 'farm' ? 'head per hour when a farm has no rate set yet' : 'head per hour'}</span></div></div>
+    <div class="f"><label for="bc-setup">Set-up and pack-up time (minutes)</label><input id="bc-setup" type="number" min="0" step="5" value="${x.setup || ''}"><div class="hint">Added on top, whether the time is set or worked out from the head count.</div></div>
     <label class="bk-radio" style="margin:4px 0"><input type="checkbox" id="bc-asklab" ${x.askLabour ? 'checked' : ''}> Ask whether additional labour is needed when this is booked</label>
     <label class="bk-radio" style="margin:4px 0"><input type="checkbox" id="bc-along" ${x.alongside ? 'checked' : ''}> Runs alongside the other work (like additional labour) — a separate person, doesn't make the booking longer</label>
-    <div class="f" style="margin-top:6px"><label for="bc-yard">Farm rules on the business page</label><select id="bc-yard"><option value="">Not affected</option><option value="preg" ${x.yard === 'preg' ? 'selected' : ''}>Counts as preg testing</option><option value="bull" ${x.yard === 'bull' ? 'selected' : ''}>Counts as bull testing</option></select><div class="hint">Farms set to "individual animal assessments only" warn when preg or bull testing is booked there.</div></div>`;
+    <div class="f" style="margin-top:6px"><label for="bc-yard">Counts as (for each farm's "What can be booked here")</label><select id="bc-yard"><option value="">Neither — farms don't limit it</option><option value="preg" ${x.yard === 'preg' ? 'selected' : ''}>Preg testing</option><option value="bull" ${x.yard === 'bull' ? 'selected' : ''}>Bull testing</option></select><div class="hint">On the business page each farm can be set to preg testing only, bull testing only, or individual animal assessments only. Choose which of those this service is, so you're warned if it's booked at a farm that doesn't allow it.</div></div>`; }
   if (t === 'sms') body += `<div class="f"><label for="bc-use">When it's used</label><select id="bc-use">${[['booked', 'When a booking is made'], ['reminder', 'Reminder 5 days before'], ['proposal', 'When a new time is suggested'], ['other', 'Sent by hand']].map(([v, l]) => `<option value="${v}" ${x.use === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div><div class="f"><label for="bc-text">Message</label><textarea id="bc-text" rows="5">${h(x.text || '')}</textarea><div class="hint">Fill-ins: {first} {name} {business} {type} {day} {date} {time} {farm} {at_farm} {vet} {old_date}</div></div>`;
   if (t === 'futype') body += `<div class="f"><label for="bc-days">Due how many days after</label><input id="bc-days" type="number" min="0" value="${x.days || ''}"></div>`;
   if (!isNew) body += `<div class="actions"><button type="button" class="btn" data-act="bks-del" data-id="${x.id}" style="color:var(--red)">Remove</button></div>`;
   openSheet((isNew ? 'New ' : 'Edit ') + ({ type: 'appointment type', service: 'service', blocktype: 'block type', sms: 'SMS template', futype: 'follow-up type' })[t], body, async () => {
     const g = (id) => (document.getElementById(id) || {}).value; x.name = (g('bc-name') || '').trim(); if (!x.name) { toast('Enter a name'); return false; }
-    if (t === 'type' || t === 'blocktype') x.colour = g('bc-colour');
+    if (t === 'type' || t === 'blocktype') { const c = bkHex(g('bc-colourtxt')) || g('bc-colour'); if (!c) { toast('Enter a colour like #2f7a55'); return false; } x.colour = c; x.pattern = (document.querySelector('input[name=bc-pat]:checked') || {}).value || 'light'; }
     if (t === 'type') { x.where = g('bc-where'); x.fixedMins = +g('bc-fixed') || null; }
-    if (t === 'service') { x.mode = g('bc-mode'); x.mins = +g('bc-mins') || null; x.hph = +g('bc-hph') || null; x.setup = +g('bc-setup') || 0; if (x.mode === 'perhead' && !x.hph) { toast('Enter the usual head per hour'); return false; } if (x.mode === 'fixed' && !x.mins) { toast('Enter the set time'); return false; }
+    if (t === 'service') { x.mode = g('bc-mode'); x.rateFrom = x.mode === 'perhead' ? ((document.querySelector('input[name=bc-rate]:checked') || {}).value || 'service') : null; x.mins = +g('bc-mins') || null; x.hph = +g('bc-hph') || null; x.setup = +g('bc-setup') || 0;
+      if (x.mode === 'perhead' && x.rateFrom !== 'farm' && !x.hph) { toast('Enter the head per hour'); return false; } if (x.mode === 'fixed' && !x.mins) { toast('Enter the set time'); return false; }
       x.askLabour = document.getElementById('bc-asklab').checked; x.alongside = document.getElementById('bc-along').checked; x.yard = g('bc-yard') || null; }
     if (t === 'sms') { x.use = g('bc-use'); x.text = (g('bc-text') || '').trim(); if (!x.text) { toast('Write the message'); return false; } }
     if (t === 'futype') x.days = +g('bc-days') || 0;
@@ -644,7 +669,7 @@ function bkStaffOpen(s) {
   const c = Bk.scfg(s), adm = SBAuth.isAdmin(), ed = Bk.can('settings');
   openSheet('Hours — ' + (s.preferred_name || s.full_name), `<div class="f"><label for="bs-mode">Works</label><select id="bs-mode" ${ed ? '' : 'disabled'}><option value="regular" ${c.mode === 'regular' ? 'selected' : ''}>Set days and hours</option><option value="locum" ${c.mode === 'locum' ? 'selected' : ''}>Locum — only on days marked available</option></select></div>
   <div class="f"><label>Set days and hours</label>${[1, 2, 3, 4, 5, 6, 0].map((d) => `<div class="bk-hrow"><label class="bk-radio"><input type="checkbox" data-bsday="${d}" ${c.hours[d] ? 'checked' : ''} ${ed ? '' : 'disabled'}> ${DOW_NAMES[d]}</label><input type="time" step="900" data-bsfrom="${d}" value="${(c.hours[d] || ['08:00'])[0]}" ${ed ? '' : 'disabled'} aria-label="${DOW_NAMES[d]} start"><span>to</span><input type="time" step="900" data-bsto="${d}" value="${(c.hours[d] || [, s.role === 'vet_tech' ? '17:00' : '18:00'])[1]}" ${ed ? '' : 'disabled'} aria-label="${DOW_NAMES[d]} finish"></div>`).join('')}</div>
-  <div class="grid2"><div class="f"><label for="bs-lfrom">Locum hours on available days</label><div class="bk-hrow"><input id="bs-lfrom" type="time" step="900" value="${c.locumHours[0]}" ${ed ? '' : 'disabled'}><span>to</span><input id="bs-lto" type="time" step="900" value="${c.locumHours[1]}" ${ed ? '' : 'disabled'}></div></div>
+  <div class="grid2"><div class="f"><label for="bs-lfrom">Work hours on available days</label><div class="bk-hrow"><input id="bs-lfrom" type="time" step="900" value="${c.locumHours[0]}" ${ed ? '' : 'disabled'}><span>to</span><input id="bs-lto" type="time" step="900" value="${c.locumHours[1]}" ${ed ? '' : 'disabled'}></div></div>
     <div class="f"><label for="bs-buf">End-of-day time for records and restocking (minutes)</label><input id="bs-buf" type="number" min="0" step="15" value="${c.endBuffer || 0}" ${ed ? '' : 'disabled'}></div></div>
   <div class="f"><label>Can be booked for${adm ? '' : ' (admin only)'}</label><label class="bk-radio"><input type="checkbox" id="bs-all" ${c.canDo ? '' : 'checked'} ${adm ? '' : 'disabled'}> Everything</label><div class="checks">${Bk.cfg('service').map((x) => `<label><input type="checkbox" data-bscan="${x.id}" ${!c.canDo || c.canDo.includes(x.id) ? 'checked' : ''} ${adm ? '' : 'disabled'}> ${h(x.name)}</label>`).join('')}</div></div>`, async () => {
     const id = 'staff:' + s.id; let r = Bk.get(id); if (!r) { r = { id, cfg: 'staff', name: s.full_name }; D.bkcfg.push(r); }
@@ -655,16 +680,17 @@ function bkStaffOpen(s) {
 }
 
 /* ---------------- the business page: how this client's farms are booked ---------------- */
-function bkYardSvc(kind) { return Bk.cfg('service').find((x) => x.yard === kind) || Bk.get(kind === 'preg' ? 'svc-preg' : 'svc-bull'); }
+function bkRateSvcs() { return Bk.cfg('service').filter((x) => x.mode === 'perhead' && x.rateFrom === 'farm'); } // services whose speed is set per farm
+function bkRateOk(use, sv) { if (use === 'none' || (use === 'individual' && sv.yard)) return false; return !(sv.yard && (use === 'preg' || use === 'bull') && sv.yard !== use); }
 function bkBizCard(b) {
   if (!Bk.on() || (typeof isClientBiz === 'function' && !isClientBiz(b))) return '';
-  const bs = Bk.bsched(b.id), ed = Bk.can('book'), fs = bkFarmsOf(b.id);
-  const sp = (fid, kind) => { const sv = bkYardSvc(kind); if (!sv) return '—'; const y = bkYard(fid, sv.id); return y && y.hph && !y.gone ? `<b>${y.hph}/hour</b>` : `${sv.hph || '?'}/hour (usual)`; };
+  const bs = Bk.bsched(b.id), ed = Bk.can('book'), fs = bkFarmsOf(b.id), rs = bkRateSvcs();
+  const sp = (fid, sv) => { const y = bkYard(fid, sv.id); return y && y.hph ? `<b>${y.hph}/hour</b>` : `${sv.hph ? sv.hph + '/hour (usual)' : '<b style="color:var(--red)">not set</b>'}`; };
   return `<div class="card bk-bizcard"><h3><span class="sp">📅 Scheduling</span>${ed ? `<button class="btn small" data-act="bks-bsched" data-id="${b.id}" aria-label="Edit scheduling">✏️</button>` : ''}</h3>
     <div class="kv"><div class="k">Additional labour</div><div class="v">${bs.labour ? '<b>Needed at every appointment</b> — you\'re reminded when booking' : 'Only when asked for'}${bs.note ? `<br><span class="hint">${h(bs.note)}</span>` : ''}</div></div>
-    ${fs.map((f) => { const x = Bk.fsched(f.id), stop = (f.safety || {}).status === 'stop', use = x.use || '';
-      return `<div class="kv" style="align-items:center"><div class="k">${h(f.name || f.address || 'Farm')}</div><div class="v">${use === 'none' ? '<b style="color:var(--red)">⛔ Do not service</b>' : h(BK_USE[use])}${stop ? '<br><b style="color:var(--red)">⛔ Safety: no routine work until fixed</b>' : ''}${use !== 'none' && use !== 'individual' ? `<br><span class="hint">${use !== 'bull' ? 'Preg testing ' + sp(f.id, 'preg') : ''}${use === '' ? ' · ' : ''}${use !== 'preg' ? 'Bull testing ' + sp(f.id, 'bull') : ''}</span>` : ''}${x.note ? `<br><span class="hint">${h(x.note)}</span>` : ''}</div>${ed ? `<button class="btn small" data-act="bks-fsched" data-id="${f.id}" data-bid="${b.id}" aria-label="Edit ${h(f.name || 'farm')} scheduling">✏️</button>` : ''}</div>`; }).join('') || '<div class="hint">No farms saved for this business yet.</div>'}
-    <div class="hint" style="margin-top:4px">Used when booking: the speeds set how long preg and bull testing take at each farm, and the farm rules warn you if a booking doesn't fit.</div></div>`;
+    ${fs.map((f) => { const x = Bk.fsched(f.id), stop = (f.safety || {}).status === 'stop', use = x.use || ''; const rr = rs.filter((sv) => bkRateOk(use, sv));
+      return `<div class="kv" style="align-items:center"><div class="k">${h(f.name || f.address || 'Farm')}</div><div class="v">${use === 'none' ? '<b style="color:var(--red)">⛔ Do not service</b>' : h(BK_USE[use])}${stop ? '<br><b style="color:var(--red)">⛔ Safety: no routine work until fixed</b>' : ''}${rr.length ? `<br><span class="hint">${rr.map((sv) => h(sv.name) + ' ' + sp(f.id, sv)).join(' · ')}</span>` : ''}${x.note ? `<br><span class="hint">${h(x.note)}</span>` : ''}</div>${ed ? `<button class="btn small" data-act="bks-fsched" data-id="${f.id}" data-bid="${b.id}" aria-label="Edit ${h(f.name || 'farm')} scheduling">✏️</button>` : ''}</div>`; }).join('') || '<div class="hint">No farms saved for this business yet.</div>'}
+    <div class="hint" style="margin-top:4px">Used when booking: the head-per-hour rates set how long those services take at each farm, and "what can be booked here" warns you if a booking doesn't fit.</div></div>`;
 }
 function bkBschedOpen(bid) {
   const b = IDX.biz.get(bid); if (!b || !Bk.need('book')) return; const x = Bk.bsched(bid);
@@ -674,15 +700,15 @@ function bkBschedOpen(bid) {
     r.labour = document.getElementById('bz-lab').checked; r.note = document.getElementById('bz-note').value.trim(); delete r.gone; touch(r); save(); Sync.soon(); setTimeout(renderAll, 0); return true; });
 }
 function bkFschedOpen(fid) {
-  const f = IDX.farms.get(fid); if (!f || !Bk.need('book')) return; const x = Bk.fsched(fid); const ps = bkYardSvc('preg'), bs = bkYardSvc('bull');
-  const yv = (sv) => { const y = sv && bkYard(fid, sv.id); return y && !y.gone && y.hph ? y.hph : ''; };
+  const f = IDX.farms.get(fid); if (!f || !Bk.need('book')) return; const x = Bk.fsched(fid); const rs = bkRateSvcs();
+  const yv = (sv) => { const y = bkYard(fid, sv.id); return y && y.hph ? y.hph : ''; };
   openSheet('Scheduling — ' + (f.name || f.address || 'Farm'), `<div class="f"><label for="fz-use">What can be booked here</label><select id="fz-use">${Object.entries(BK_USE).map(([k, l]) => `<option value="${k}" ${(x.use || '') === k ? 'selected' : ''}>${h(l)}</option>`).join('')}</select><div class="hint">"Do not service" pops up a warning if anyone tries to book these yards.</div></div>
-    <div class="grid2">${ps ? `<div class="f"><label for="fz-preg">Preg testing — head per hour here</label><input id="fz-preg" type="number" min="1" inputmode="numeric" value="${yv(ps)}"><div class="hint">Usual is ${ps.hph}/hour. Leave empty to use that.</div></div>` : ''}${bs ? `<div class="f"><label for="fz-bull">Bull testing — head per hour here</label><input id="fz-bull" type="number" min="1" inputmode="numeric" value="${yv(bs)}"><div class="hint">Usual is ${bs.hph}/hour. Leave empty to use that.</div></div>` : ''}</div>
-    <div class="f"><label for="fz-note">Note</label><input id="fz-note" value="${h(x.note || '')}"><div class="hint">e.g. why it's not serviced, or which yards to use.</div></div>`, async () => {
+    ${rs.length ? `<div class="grid2">${rs.map((sv) => `<div class="f"><label for="fz-r-${sv.id}">${h(sv.name)} — head per hour here</label><input id="fz-r-${sv.id}" data-fzrate="${sv.id}" type="number" min="1" inputmode="numeric" value="${yv(sv)}"><div class="hint">${sv.hph ? `Leave empty to use the usual ${sv.hph}/hour.` : 'No usual rate is set, so enter one for this farm.'}</div></div>`).join('')}</div>` : '<div class="hint">No services use a per-farm rate. Choose "Use the rate set for each farm" on a service in Settings → Scheduling.</div>'}
+    <div class="f"><label for="fz-note">Note</label><input id="fz-note" value="${h(x.note || '')}"><div class="hint">For example why it's not serviced, or which yards to use.</div></div>`, async () => {
     const id = 'fsched:' + fid; let r = Bk.get(id); if (!r) { r = { id, cfg: 'fsched', fid, name: f.name || '' }; D.bkcfg.push(r); }
     r.use = document.getElementById('fz-use').value; r.note = document.getElementById('fz-note').value.trim(); delete r.gone; touch(r);
-    [[ps, 'fz-preg'], [bs, 'fz-bull']].forEach(([sv, el]) => { if (!sv || !document.getElementById(el)) return; const v = +document.getElementById(el).value || null; const yid = 'yard:' + fid + ':' + sv.id; let y = Bk.get(yid);
-      if (v) { if (!y) { y = { id: yid, cfg: 'yard', fid, svc: sv.id }; D.bkcfg.push(y); } if (y.hph !== v || y.gone) { y.hph = v; delete y.gone; touch(y); } } else if (y && !y.gone) { y.gone = true; touch(y); } });
+    document.querySelectorAll('[data-fzrate]').forEach((el) => { const sv = el.dataset.fzrate; const v = +el.value || null; const yid = 'yard:' + fid + ':' + sv; let y = Bk.get(yid);
+      if (v) { if (!y) { y = { id: yid, cfg: 'yard', fid, svc: sv }; D.bkcfg.push(y); } if (y.hph !== v || y.gone) { y.hph = v; delete y.gone; touch(y); } } else if (y && !y.gone) { y.gone = true; touch(y); } });
     save(); Sync.soon(); setTimeout(renderAll, 0); return true; });
 }
 window.bkBizCard = bkBizCard;
@@ -705,7 +731,7 @@ function bkFollowupsHtml() {
   const all = Bk.list('followups').filter((f) => !f.gone); const open = all.filter((f) => f.status === 'open').sort((a, b) => a.due.localeCompare(b.due)); const t = bkToday();
   const row = (f) => `<div class="kv bk-fu ${f.status === 'open' && f.due < t ? 'over' : ''}" style="align-items:center"><div class="v"><b>${h(Bk.get(f.type) ? Bk.get(f.type).name : 'Follow-up')}</b> — ${h(Bk.who(f))}${f.animal ? ' · ' + h(f.animal) : ''}<br><span class="hint">Due ${bkDate(f.due)}${f.due < t && f.status === 'open' ? ' (overdue)' : ''}${f.staff ? ' · ' + h(Bk.pname(f.staff)) : ''}${f.notes ? ' · ' + h(f.notes.slice(0, 80)) : ''}</span></div>${f.status === 'open' ? `<button class="btn small" data-act="fu-done" data-id="${f.id}">✓ Done</button>` : ''}<button class="btn small" data-act="fu-open" data-id="${f.id}">Open</button></div>`;
   return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><b class="bk-title">Follow-ups</b></div></div>
-  <div class="hint" style="margin-bottom:8px">Add a follow-up from any booking (open the booking → ➕ Follow-up). Clinical records and lab requests will add them too, once that part is built.</div>
+  ${bkAiCard('followups')}<div class="hint" style="margin-bottom:8px">Add a follow-up from any booking (open the booking → ➕ Follow-up). Clinical records and lab requests will add them too, once that part is built.</div>
   <div class="card">${open.map(row).join('') || '<div class="hint">No follow-ups waiting.</div>'}</div>
   ${all.some((f) => f.status !== 'open') ? `<details><summary class="hint" style="cursor:pointer">Done (${all.filter((f) => f.status !== 'open').length})</summary><div class="card">${all.filter((f) => f.status !== 'open').sort((a, b) => b.due.localeCompare(a.due)).slice(0, 50).map(row).join('')}</div></details>` : ''}</div>`;
 }
@@ -748,7 +774,7 @@ function bkJobsHtml() {
   } return ''; };
   const groups = Object.keys(BK_JOB_NAMES).map((k) => [k, list.filter((j) => j.k === k)]).filter(([, l]) => l.length);
   return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><b class="bk-title">Scheduling jobs</b><button class="btn small" data-act="bk-page" data-v="followups">Follow-ups</button></div></div>
-  <div class="search" style="margin-bottom:8px"><input id="bkj-q" placeholder="Search jobs" value="${h(BK.jobFilter || '')}" data-act="bkj-q"></div>
+  <div class="search" style="margin-bottom:8px"><input id="bkj-q" placeholder="Search jobs" value="${h(BK.jobFilter || '')}" data-act="bkj-q"></div>${bkAiCard('jobs')}
   ${groups.length ? groups.map(([k, l]) => `<details class="card bk-jobs" open><summary><b>${BK_JOB_NAMES[k]}</b> <span class="badge">${l.length}</span></summary>${l.map((j) => `<div class="bk-job"><div class="v"><div>${h(j.d)}</div></div><div class="actions">${btns(j)}${j.b ? `<button class="btn small" data-act="bk-open" data-id="${j.b.id}">Open</button>` : ''}${j.f ? `<button class="btn small" data-act="fu-open" data-id="${j.f.id}">Open</button>` : ''}</div></div>`).join('')}</details>`).join('') : '<div class="card"><div class="hint">Nothing to do — all bookings are sorted.</div></div>'}
   <div class="hint">Texts go from the office phone automatically once it's set up (see the manual). If a text was sent another way, use "Mark as sent".</div></div>`;
 }
@@ -759,6 +785,27 @@ document.addEventListener('dragstart', (e) => { const c = e.target.closest && e.
 document.addEventListener('dragover', (e) => { const c = BK._drag && e.target.closest && e.target.closest('[data-colstaff]'); if (c) { e.preventDefault(); document.querySelectorAll('.bk-colh.dropto').forEach((x) => x.classList.remove('dropto')); c.classList.add('dropto'); } });
 document.addEventListener('drop', (e) => { const c = BK._drag && e.target.closest && e.target.closest('[data-colstaff]'); const id = BK._drag; BK._drag = null; document.querySelectorAll('.bk-colh.dropto').forEach((x) => x.classList.remove('dropto')); if (!c || c.dataset.colstaff === id) return; e.preventDefault(); const r = c.getBoundingClientRect(); bkColMove(id, c.dataset.colstaff, e.clientX > r.left + r.width / 2); });
 document.addEventListener('dragend', () => { BK._drag = null; document.querySelectorAll('.bk-colh.dropto').forEach((x) => x.classList.remove('dropto')); });
+
+/* ---------------- Ask Claude (Scheduling Jobs, On call, Follow-ups): copies the question with what's on this page ---------------- */
+const BK_AI_NAME = { jobs: 'Scheduling jobs', roster: 'On-call roster', followups: 'Follow-ups' };
+function bkAiCard(pg) {
+  return `<details class="card bk-ai" ${BK['aiOpen_' + pg] ? 'open' : ''} data-pg="${pg}"><summary><b>🤖 Ask Claude</b> <span class="hint">about the ${h(BK_AI_NAME[pg].toLowerCase())}</span></summary>
+    <div class="hint" style="margin:6px 0">Free — uses your own Claude account. Type your question (for example how to cover a day, or which jobs to do first), tap the button, and paste into Claude. Claude answers and explains what to change; you make the changes here.</div>
+    <div class="f"><label for="bkai-${pg}">What do you want to ask?</label><textarea id="bkai-${pg}" rows="3">${h(BK['aiReq_' + pg] || '')}</textarea></div>
+    <div class="actions"><button class="btn primary" data-act="bk-ai" data-v="${pg}">Copy for Claude &amp; open Claude</button></div><div class="hint" id="bkai-info-${pg}"></div></details>`;
+}
+function bkAiText(pg, req) {
+  const t = bkToday(), ppl = Bk.people(); const L = [];
+  L.push(`I work at Bovitech Veterinary Services (mobile large-animal vets, cattle and sheep, Albany WA). This is from the Scheduling part of our practice app (${BK_AI_NAME[pg]} page), today ${bkDate(t, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}.`, '', 'MY QUESTION:', req, '', 'STAFF:');
+  ppl.forEach((p) => { const c = Bk.scfg(p); L.push(`- ${p.preferred_name || p.full_name} (${p.role === 'vet_tech' ? 'vet tech' : p.role})${c.mode === 'locum' ? ' — locum, only on days marked available' : ': ' + [1, 2, 3, 4, 5, 6, 0].filter((d) => c.hours[d]).map((d) => `${DOW_NAMES[d]} ${c.hours[d][0]}–${c.hours[d][1]}`).join(', ')}`); });
+  if (pg === 'jobs') { L.push('', 'JOBS LIST:'); bkJobs().forEach((j) => L.push(`- ${BK_JOB_NAMES[j.k]}: ${j.d}`)); }
+  if (pg === 'roster') { L.push('', 'ON-CALL ROSTER (weekdays: overnight 12–8am and evening 6pm–12am; weekends one vet all day):'); for (let i = 0; i < 28; i++) { const d = bkAdd(bkWeekStart(BK.date), i), o = Bk.oncall(d) || {}; L.push(`- ${bkDate(d)}: ${Bk.weekend(d) ? 'all day ' + (o.all ? Bk.pname(o.all) : 'NOT SET') : `12–8am ${o.night ? Bk.pname(o.night) : 'NOT SET'}, 6pm–12am ${o.evening ? Bk.pname(o.evening) : 'NOT SET'}`}`); } }
+  if (pg === 'followups') { L.push('', 'OPEN FOLLOW-UPS:'); Bk.list('followups').filter((f) => !f.gone && f.status === 'open').sort((a, b) => a.due.localeCompare(b.due)).forEach((f) => L.push(`- due ${bkDate(f.due)}${f.due < t ? ' (OVERDUE)' : ''}: ${(Bk.get(f.type) || {}).name || 'Follow-up'} — ${Bk.who(f)}${f.animal ? ' · ' + f.animal : ''}${f.staff ? ' · ' + Bk.pname(f.staff) : ''}${f.notes ? ' · ' + f.notes : ''}`)); }
+  L.push('', 'BOOKINGS IN THE NEXT 3 WEEKS:');
+  Bk.list('bookings').filter((b) => Bk.live(b) && b.date >= t && b.date <= bkAdd(t, 21)).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start)).forEach((b) => L.push(`- ${bkDate(b.date)} ${bkTime(b.start)}–${bkTime(bkHHMM(bkMin(b.start) + b.mins))}: ${Bk.who(b)}${Bk.farmName(b) ? ' at ' + Bk.farmName(b) : ''} — ${(b.svcs || []).map((x) => Bk.svc(x.svc).name + (x.head ? ' ×' + x.head : '') + ' (' + Bk.sstaff(b, x).map(Bk.pname).join(' + ') + ')').join(', ') || Bk.type(b.type).name}${b.status === 'confirmed' ? '' : ' [unconfirmed]'}`));
+  L.push('', 'Please answer in plain English. If something should be changed, list the changes step by step so I can make them in the app.');
+  return L.join('\n');
+}
 
 /* ---------------- taps and changes ---------------- */
 function bkRec(id) { return Bk.list('bookings').find((b) => b.id === id); }
@@ -804,6 +851,9 @@ document.addEventListener('click', async (e) => {
     case 'bk-pick': { const r = BK._sugg && BK._sugg[+d.i]; if (!r) return; bkFormRead(); BKF.date = r.date; BKF.start = r.start;
       const main = BKF.svcs.filter((x) => !x.svc || !Bk.svc(x.svc).alongside); main.forEach((x) => (x.staff = [r.staff])); bkFormStaff(BKF); bkFormRefresh(true); toast(`${bkDate(r.date)} ${bkTime(r.start)} with ${Bk.pname(r.staff)} — tap Save to book`); break; }
     case 'bkf-propose': bkProposeForm(); break;
+    case 'bkf-dup': { if (!Bk.need('book')) return; bkFormRead(); const src = JSON.parse(JSON.stringify(BKF)); closeSheet();
+      const copy = { type: src.type, bid: src.bid, cid: src.cid, fids: src.fids, fid: src.fid, pids: src.pids, svcs: src.svcs.map((x) => ({ ...x, staff: [...(x.staff || [])] })), mins: src.mins, date: src.date, start: src.start, notes: src.notes, urgent: src.urgent, noLabour: src.noLabour, _minsTouched: true };
+      setTimeout(() => { bkOpen(null, copy); toast('Copy made — change the date and time, then Save'); }, 350); break; }
     case 'bkf-propyes': bkFormRead(); bkMove(BKF); if (await bkSaveForm(true)) { closeSheet(); toast('Moved to the new time and confirmed'); } break;
     case 'bkf-propno': bkFormRead(); delete BKF.proposal; if (await bkSaveForm(true)) { closeSheet(); toast('Kept the original time — the held time is free again'); } break;
     case 'bkf-cancel': { bkFormRead(); const ok = await askBox('Cancel this booking?', '<div class="f"><label for="bkc-why">Reason (optional)</label><input id="bkc-why" data-ask="why"></div>', 'Yes — cancel it', true, 'No — keep it'); if (!ok) return; BKF.status = 'cancelled'; BKF.cancelReason = ASK_FORM.why || ''; BKF.cancelledAt = Date.now(); delete BKF.proposal; if (await bkSaveForm(true)) { closeSheet(); toast('Booking cancelled'); } break; }
@@ -823,6 +873,11 @@ document.addEventListener('click', async (e) => {
       bkDone(a === 'bkj-replyprop' ? 'Moved to the new time and confirmed' : 'Booking confirmed'); break; }
     // settings
     case 'bks-new': bkCfgOpen(null, d.cfg); break;
+    case 'bk-ai': { const pg = d.v, box = document.getElementById('bkai-' + pg); const req = (box && box.value || '').trim(); BK['aiReq_' + pg] = req; if (!req) { toast('Type your question first'); return; }
+      const txt = bkAiText(pg, req); let okc = false; try { await navigator.clipboard.writeText(txt); okc = true; } catch (x) { } const info = document.getElementById('bkai-info-' + pg);
+      if (okc) { info.innerHTML = '✓ Copied. Paste it into Claude.'; window.open((D.settings && D.settings.aiChatUrl) || 'https://claude.ai/new', '_blank'); toast('Copied — now paste it into Claude'); }
+      else info.innerHTML = `Couldn't copy automatically — select all of this, copy it, and paste it into Claude:<textarea readonly style="min-height:120px;margin-top:6px">${h(txt)}</textarea>`; break; }
+    case 'bks-colour': { const a = document.getElementById('bc-colour'), b = document.getElementById('bc-colourtxt'); if (a) a.value = d.c; if (b) b.value = d.c; document.querySelectorAll('.bk-patdemo').forEach((x) => x.style.setProperty('--c', d.c)); break; }
     case 'bks-edit': bkCfgOpen(Bk.get(d.id)); break;
     case 'bks-del': { const x = Bk.get(d.id); if (!x || !(await ask(`Remove ${x.name}? Bookings already using it keep it.`, 'Yes — remove', true))) return; x.gone = true; touch(x); closeSheet(); bkDone('Removed'); break; }
     case 'bks-yarddel': { const x = Bk.get(d.id); if (!x) return; x.gone = true; touch(x); bkDone('Forgotten'); break; }
@@ -847,6 +902,8 @@ document.addEventListener('change', (e) => {
   else if (a === 'bks-perm') { if (!SBAuth.isAdmin()) return; let p = Bk.get('perms'); if (!p) { p = { id: 'perms', cfg: 'perms', name: 'Permissions', staff: {} }; D.bkcfg.push(p); } p.staff = p.staff || {}; p.staff[el.dataset.staff] = { ...(p.staff[el.dataset.staff] || {}), [el.dataset.k]: el.checked }; touch(p); save(); Sync.soon(); toast('Permission updated'); }
   else if (a === 'bks-blockon') { if (!Bk.need('blocks')) return; const b = Bk.list('blocks').find((x) => x.id === el.dataset.id); b.on = el.checked; touch(b); bkDone(el.checked ? 'Block on' : 'Block off'); }
 });
+document.addEventListener('toggle', (e) => { const d = e.target; if (d.classList && d.classList.contains('bk-ai')) BK['aiOpen_' + d.dataset.pg] = d.open; }, true);
+document.addEventListener('input', (e) => { if (/^bkai-/.test(e.target.id || '')) BK['aiReq_' + e.target.id.slice(5)] = e.target.value; });
 document.addEventListener('input', (e) => { if (e.target.dataset && e.target.dataset.act === 'bkj-q') { BK.jobFilter = e.target.value; const pos = e.target.selectionStart; renderAll(); const q = document.getElementById('bkj-q'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } } });
 
 /* Settings → Bookings (testing) on/off for this device */
@@ -874,7 +931,7 @@ function bkSettingsCard() { return `<div class="card"><h3>Scheduling (testing)</
 .bk-buffer{position:absolute;left:0;right:0;background:rgba(181,121,28,.10);border-top:1px dashed rgba(181,121,28,.6);font-size:11px;color:var(--ink3,#777);padding:1px 4px;pointer-events:none;overflow:hidden}
 .bk-block{position:absolute;left:2px;right:2px;border-radius:6px;background:color-mix(in srgb,var(--c) 22%,var(--bg,#fff));border:1px solid color-mix(in srgb,var(--c) 55%,transparent);font-size:12px;padding:2px 6px;overflow:hidden;cursor:pointer;z-index:1}
 .bk-appt{position:absolute;left:3px;right:3px;border-radius:7px;background:color-mix(in srgb,var(--c) 16%,var(--bg,#fff));border:1.5px solid var(--c);border-left-width:5px;padding:3px 6px;font-size:12.5px;overflow:hidden;cursor:pointer;z-index:2;line-height:1.25}
-.bk-appt.unconf{border-style:dashed;background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 10%,var(--bg,#fff)) 0 8px,color-mix(in srgb,var(--c) 18%,var(--bg,#fff)) 8px 16px)}
+.bk-appt.unconf{border-style:dashed}.bk-appt.unconf.pat-light{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 10%,var(--bg,#fff)) 0 8px,color-mix(in srgb,var(--c) 18%,var(--bg,#fff)) 8px 16px)}
 .bk-appt.urgent{box-shadow:0 0 0 2px var(--red,#b42318) inset}
 .bk-at{font-weight:600;font-size:11.5px}.bk-at i{font-weight:500}
 .bk-aw{font-weight:600}.bk-as{color:var(--ink3,#666);font-size:11.5px}
@@ -922,4 +979,14 @@ function bkSettingsCard() { return `<div class="card"><h3>Scheduling (testing)</
 .bk-who{display:flex;flex-wrap:wrap;gap:4px 6px;align-items:center;margin-bottom:2px}
 .bk-pp{display:inline-flex;gap:4px;align-items:center;border:1px solid var(--line,#ccc);border-radius:16px;padding:2px 9px;font-size:14px;cursor:pointer}.bk-pp:has(input:checked){border-color:#2f7a55;background:color-mix(in srgb,#2f7a55 12%,transparent);font-weight:600}.bk-pp.bad{opacity:.6}
 .bk-labour{margin-top:6px}
+.bk-ai summary{cursor:pointer}.bk-ai{margin-bottom:8px}
+.bk-appt.pat-solid,.bk-block.pat-solid,.bk-chip.pat-solid{background:var(--c)!important;color:#fff}.pat-solid .bk-as,.pat-solid .bk-at i{color:rgba(255,255,255,.85)}
+.bk-appt.pat-stripes,.bk-block.pat-stripes,.bk-chip.pat-stripes,.bk-patdemo.pat-stripes{background:repeating-linear-gradient(135deg,color-mix(in srgb,var(--c) 34%,var(--bg,#fff)) 0 6px,color-mix(in srgb,var(--c) 9%,var(--bg,#fff)) 6px 12px)!important}
+.bk-appt.pat-dots,.bk-block.pat-dots,.bk-chip.pat-dots,.bk-patdemo.pat-dots{background:radial-gradient(color-mix(in srgb,var(--c) 60%,transparent) 1.6px,transparent 1.9px) 0 0/8px 8px,color-mix(in srgb,var(--c) 7%,var(--bg,#fff))!important}
+.bk-appt.pat-checks,.bk-block.pat-checks,.bk-chip.pat-checks,.bk-patdemo.pat-checks{background:repeating-conic-gradient(color-mix(in srgb,var(--c) 28%,var(--bg,#fff)) 0 25%,color-mix(in srgb,var(--c) 7%,var(--bg,#fff)) 0 50%) 0 0/12px 12px!important}
+.bk-appt.pat-outline,.bk-block.pat-outline,.bk-chip.pat-outline,.bk-patdemo.pat-outline{background:var(--bg,#fff)!important}
+.bk-patdemo{display:inline-block;width:34px;height:22px;border:1.5px solid var(--c);border-radius:5px;background:color-mix(in srgb,var(--c) 16%,var(--bg,#fff));vertical-align:middle}.bk-patdemo.pat-solid{background:var(--c)}
+.bk-patopt{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line,#ccc);border-radius:8px;padding:4px 8px;font-size:14px;cursor:pointer}.bk-patopt:has(input:checked){border-color:#2f7a55;background:color-mix(in srgb,#2f7a55 10%,transparent)}
+.bk-swrow{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}.bk-sw{display:inline-flex;gap:5px;align-items:center;border:1px solid var(--line,#ccc);border-radius:14px;background:var(--bg,#fff);color:inherit;font:inherit;font-size:13px;padding:2px 9px 2px 4px;cursor:pointer}.bk-sw span{width:18px;height:18px;border-radius:50%;background:var(--c);display:inline-block}.bk-sw.dot{padding:3px}
+input.bk-colsq{width:64px;height:64px;padding:0;border:1px solid var(--line,#ccc);border-radius:10px;background:none;cursor:pointer}
 `; document.head.appendChild(st); })();

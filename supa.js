@@ -180,11 +180,13 @@ function drawLogin(msg) {
       <button class="btn primary" type="submit" id="lg-go" style="width:100%;font-size:17px;padding:12px">Confirm</button>
       <div id="lg-msg" style="margin-top:10px;color:var(--red,#b42318);font-size:15px"></div>
       <div class="hint" style="margin-top:10px">Lost or changed your phone? Ask the office to reset your two-step sign-in. <button type="button" class="btn small" id="lg-back">Back</button></div>`;
+  const keep = {}; ['lg-email', 'lg-pw', 'lg-code'].forEach((id) => { const el = bg.querySelector('#' + id); if (el && el.value) keep[id] = el.value; }); const shown = !!(bg.querySelector('#lg-show') || {}).checked; const had = document.activeElement && document.activeElement.id; // redrawing never loses what's been typed
   bg.innerHTML = `<form class="card" style="width:100%;max-width:400px;margin:auto" autocomplete="on" novalidate>${head}${body}</form>`;
+  Object.entries(keep).forEach(([id, v]) => { const el = bg.querySelector('#' + id); if (el) el.value = v; }); if (shown && bg.querySelector('#lg-show')) { bg.querySelector('#lg-show').checked = true; bg.querySelector('#lg-pw').type = 'text'; }
   bg.querySelector('#lg-msg').textContent = msg || '';
   let pending = ''; try { pending = localStorage.getItem('bvp-wiped-msg') || ''; if (pending) { localStorage.removeItem('bvp-wiped-msg'); bg.querySelector('#lg-msg').textContent = pending; } } catch (e) { }
   if (LG.mode === 'password' && SBAuth.s && SBAuth.s.user) bg.querySelector('#lg-email').value = SBAuth.s.user.email;
-  setTimeout(() => { const f = bg.querySelector(LG.mode !== 'password' ? '#lg-code' : bg.querySelector('#lg-email').value ? '#lg-pw' : '#lg-email'); if (f) f.focus(); }, 50);
+  setTimeout(() => { const f = bg.querySelector(had && bg.querySelector('#' + had) ? '#' + had : LG.mode !== 'password' ? '#lg-code' : bg.querySelector('#lg-email').value ? '#lg-pw' : '#lg-email'); if (f) f.focus(); }, 50);
 }
 async function onLoginSubmit(e) {
   e.preventDefault();
@@ -386,13 +388,13 @@ const SupaSync = {
     if (!l) { list.push(s); return 1; }
     if (!l._dirty) { if ((l._rev || 0) === r.rev) return 0; adopt(l, s); return 1; } // update in place so open screens keep the same record
     if ((l._rev || 0) === r.rev) return 0; // our change is based on this version — it will upload
-    if (JSON.stringify({ ...strip(l), _rev: 0, _u: 0, _dev: 0 }) === JSON.stringify({ ...s, _rev: 0, _u: 0, _dev: 0 })) { adopt(l, s); return 1; } // same edit both sides
+    if (stable({ ...strip(l), _rev: 0, _u: 0, _dev: 0 }) === stable({ ...s, _rev: 0, _u: 0, _dev: 0 })) { adopt(l, s); return 1; } // same edit both sides (field order doesn't matter — the database stores fields in its own order)
     // changed here and somewhere else → keep theirs, never lose a link added here, and park the rest as a conflict to choose
     const mine0 = JSON.parse(JSON.stringify(strip(l))), mineAt0 = l._u;
     const lk = k === 'businesses' ? 'farmLinks' : k === 'contacts' ? 'links' : null, idk = k === 'businesses' ? 'fid' : 'bid';
     if (lk) {
       const theirs = s[lk] || [], have = new Set(theirs.map((x) => x[idk])); const add = (l[lk] || []).filter((x) => !have.has(x[idk])); const merged = { ...s, [lk]: [...theirs, ...add] };
-      const rest = (o) => JSON.stringify({ ...strip(o), [lk]: 0, _rev: 0, _u: 0, _dev: 0, _dirty: 0 }); const same = rest(l) === rest(merged);
+      const rest = (o) => stable({ ...strip(o), [lk]: 0, _rev: 0, _u: 0, _dev: 0, _dirty: 0 }); const same = rest(l) === rest(merged);
       if (add.length) { adopt(l, merged); l._dirty = true; } else adopt(l, s);
       if (same) return 1;
     } else adopt(l, s);
