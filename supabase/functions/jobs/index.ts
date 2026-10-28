@@ -6,6 +6,9 @@
 // Settings (Edge Functions → Secrets):  RESEND_API_KEY  (from resend.com — sign up with the office email address)
 // Optional: ALERT_TO (default office@bovitech.com.au), MAIL_FROM (default Bovitech Practice <onboarding@resend.dev>),
 //           BACKUP_EMAIL = daily | weekly | off (default daily), KEEP_DAYS (default 30)
+//   • SMS: booking made / reminder 5 days before at 8:30am / new time suggested / hand-written texts, sent from the
+//     office phone through the "SMS Gateway for Android" app (cloud mode); replies and delivery reports come back here.
+//     Secrets: SMSGATE_USER, SMSGATE_PASS (shown in the phone app under Cloud server).
 // "Verify JWT" must be OFF for this function — it checks its own secret instead.
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -17,6 +20,9 @@ const BACKUP_EMAIL = (Deno.env.get("BACKUP_EMAIL") ?? "daily").toLowerCase();
 const KEEP = Number(Deno.env.get("KEEP_DAYS") ?? "30");
 const BUCKET = "backups";
 const PREFIX = "bovitech-practice-backup-";
+const SMS_USER = Deno.env.get("SMSGATE_USER") ?? "";
+const SMS_PASS = Deno.env.get("SMSGATE_PASS") ?? "";
+const SMS_API = Deno.env.get("SMSGATE_URL") ?? "https://api.sms-gate.app/3rdparty/v1";
 
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
 
@@ -107,12 +113,111 @@ async function alert(id: number) {
   return { ok: true };
 }
 
+/* ---------- SMS from the office phone ---------- */
+const auMobile = (p: string) => { const d = String(p || "").replace(/\D/g, ""); if (/^04\d{8}$/.test(d)) return "+61" + d.slice(1); if (/^614\d{8}$/.test(d)) return "+" + d; return null; };
+const perthNow = () => { const n = new Date(); const p = new Date(n.toLocaleString("en-US", { timeZone: "Australia/Perth" })); return p; };
+const ymd = (d: Date) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const addDays = (s: string, n: number) => { const d = new Date(s + "T12:00:00Z"); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const nice = (s: string, o: Intl.DateTimeFormatOptions) => new Date(s + "T12:00:00Z").toLocaleDateString("en-AU", { timeZone: "UTC", ...o });
+const niceTime = (t: string) => { const [h, m] = t.split(":").map(Number); return `${h % 12 || 12}${m ? ":" + String(m).padStart(2, "0") : ""}${h < 12 ? "am" : "pm"}`; };
+async function gateway(phone: string, text: string) {
+  if (!SMS_USER || !SMS_PASS) throw new Error("SMS isn't set up yet (SMSGATE_USER / SMSGATE_PASS)");
+  const r = await fetch(SMS_API + "/messages", { method: "POST", headers: { Authorization: "Basic " + btoa(SMS_USER + ":" + SMS_PASS), "Content-Type": "application/json" }, body: JSON.stringify({ textMessage: { text }, phoneNumbers: [phone] }) });
+  const js = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error("Phone gateway " + r.status + " " + JSON.stringify(js).slice(0, 200));
+  return js.id as string;
+}
+async function recs(kind: string, ids?: string[]) {
+  if (ids && !ids.length) return [];
+  const q = ids ? `&id=in.(${ids.map((x) => '"' + x.replace(/"/g, "") + '"').join(",")})` : "";
+  const out: any[] = []; let from = 0;
+  for (;;) { const rows = await (await sb(`/rest/v1/records?select=id,data,deleted&kind=eq.${kind}${q}&order=seq.asc&offset=${from}&limit=1000`)).json(); out.push(...rows.filter((r: any) => !r.deleted && r.data).map((r: any) => ({ ...r.data, id: r.id }))); if (rows.length < 1000) break; from += 1000; }
+  return out;
+}
+async function claim(row: Record<string, unknown>) { // insert first so the same text never goes twice
+  const r = await sb("/rest/v1/sms_log", { method: "POST", body: JSON.stringify(row), headers: { Prefer: "resolution=ignore-duplicates,return=representation" } });
+  const js = await r.json(); return js[0] || null;
+}
+const setLog = (id: number, patch: Record<string, unknown>) => sb(`/rest/v1/sms_log?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(patch), headers: { Prefer: "return=minimal" } });
+async function smsRun() {
+  const now = perthNow(), today = ymd(now), hm = now.getHours() * 60 + now.getMinutes();
+  const sent: any[] = []; const errors: string[] = []; let budget = 30;
+  const send = async (row: any) => { if (budget-- <= 0) return; try { const gid = await gateway(row.phone, row.body); await setLog(row.id, { status: "sending", gateway_id: gid }); sent.push(row.id); } catch (e) { await setLog(row.id, { status: "failed", error: String((e as Error).message).slice(0, 300) }); errors.push((e as Error).message); } };
+  // 1) hand-written texts
+  for (const row of await (await sb("/rest/v1/sms_log?status=eq.queued&kind=eq.manual&order=at.asc&limit=30")).json()) { const ph = auMobile(row.phone); if (!ph) { await setLog(row.id, { status: "failed", error: "Not a mobile number" }); continue; } row.phone = ph; await send(row); }
+  // 2) booking texts that are due
+  const bookings = (await recs("bookings")).filter((b) => b.status !== "cancelled" && !b.gone && b.date >= today);
+  if (!bookings.length) return { sent: sent.length, errors };
+  const cfg = await recs("bkcfg"); const tpl = (use: string) => cfg.filter((c) => c.cfg === "sms" && c.use === use && !c.gone).sort((a, b) => (a.order || 99) - (b.order || 99))[0];
+  const type = (id: string) => cfg.find((c) => c.id === id) || { name: "appointment" };
+  const cids = [...new Set(bookings.map((b) => b.cid).filter(Boolean))], bids = [...new Set(bookings.map((b) => b.bid).filter(Boolean))], fids = [...new Set(bookings.map((b) => b.fid).filter(Boolean))];
+  const [contacts, businesses, farms] = await Promise.all([recs("contacts", cids), recs("businesses", bids), recs("farms", fids)]);
+  const staff = await (await sb("/rest/v1/staff?select=id,full_name,preferred_name")).json();
+  const fill = (t: string, b: any, c: any, extra: Record<string, string> = {}) => {
+    const f = farms.find((x) => x.id === b.fid), bz = businesses.find((x) => x.id === b.bid);
+    const vals: Record<string, string> = { first: c.first || "", name: [c.first, c.last].filter(Boolean).join(" "), business: bz ? bz.name : "", type: String(type(b.type).name || "").toLowerCase(),
+      day: nice(extra.date || b.date, { weekday: "long" }), date: nice(extra.date || b.date, { day: "numeric", month: "long" }), time: niceTime(extra.start || b.start),
+      farm: f ? f.name || "" : "", at_farm: f && f.name ? " at " + f.name : "", vet: (extra.staff ? extra.staff.split(",") : b.staff || []).map((id: string) => { const s = staff.find((x: any) => x.id === id); return s ? s.preferred_name || s.full_name.split(" ")[0] : ""; }).filter(Boolean).join(" and "),
+      old_date: nice(b.date, { weekday: "long", day: "numeric", month: "long" }) };
+    return t.replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m)).replace(/\s+([.,])/g, "$1");
+  };
+  const keys = new Set(((await (await sb(`/rest/v1/sms_log?select=key&at=gte.${addDays(today, -120)}&key=not.is.null`)).json()) as any[]).map((x) => x.key));
+  for (const b of bookings) {
+    const c = contacts.find((x) => x.id === b.cid); const ph = c && auMobile(((c.mobiles || [])[0] || {}).value); if (!ph) continue;
+    const base = { booking_id: b.id, contact_id: c.id, business_id: b.bid || null, phone: ph };
+    const madeRecently = b.createdAt && Date.now() - b.createdAt < 3 * 864e5;
+    if (b.sms && b.sms.send && !b.sms.booked && !b.sms.skip && madeRecently && !keys.has("booked:" + b.id) && tpl("booked")) {
+      const row = await claim({ ...base, kind: "booked", key: "booked:" + b.id, body: fill(tpl("booked").text, b, c), status: "queued" }); if (row) await send(row); }
+    if (b.date === addDays(today, 5) && hm >= 8 * 60 + 30 && !(b.sms && b.sms.noReminder) && !keys.has(`reminder:${b.id}:${b.date}`) && tpl("reminder")) {
+      const row = await claim({ ...base, kind: "reminder", key: `reminder:${b.id}:${b.date}`, body: fill(tpl("reminder").text, b, c), status: "queued" }); if (row) await send(row); }
+    const p = b.proposal;
+    if (p && !p.smsSent && !p.smsSkip && !keys.has(`proposal:${b.id}:${p.at}`) && tpl("proposal")) {
+      const row = await claim({ ...base, kind: "proposal", key: `proposal:${b.id}:${p.at}`, body: fill(tpl("proposal").text, b, c, { date: p.date, start: p.start, staff: (p.staff || b.staff || []).join(",") }), status: "queued" }); if (row) await send(row); }
+  }
+  return { sent: sent.length, errors };
+}
+// replies and delivery reports from the phone app
+async function smsHook(body: any) {
+  const ev = body.event || "", pl = body.payload || {};
+  if (["sms:sent", "sms:delivered", "sms:failed"].includes(ev)) {
+    const st = ev === "sms:failed" ? "failed" : ev === "sms:delivered" ? "delivered" : "sent";
+    const id = pl.messageId || pl.id; if (id) await sb(`/rest/v1/sms_log?gateway_id=eq.${encodeURIComponent(id)}${st === "sent" ? "&status=neq.delivered" : ""}`, { method: "PATCH", body: JSON.stringify({ status: st, ...(st === "failed" ? { error: String(pl.reason || "Not delivered").slice(0, 300) } : {}) }), headers: { Prefer: "return=minimal" } });
+    return { ok: true };
+  }
+  if (ev === "sms:received") {
+    const ph = auMobile(pl.sender || pl.phoneNumber || ""); const digits = ph ? "0" + ph.slice(3) : String(pl.sender || "");
+    const contacts = await recs("contacts");
+    const c = contacts.find((x) => (x.mobiles || []).some((m: any) => String(m.value || "").replace(/\D/g, "").replace(/^61/, "0") === digits));
+    const bid = c && (c.links || []).find((l: any) => !l.past)?.bid;
+    await sb("/rest/v1/sms_log", { method: "POST", body: JSON.stringify({ kind: "reply", phone: ph || pl.sender, body: String(pl.message || "").slice(0, 2000), contact_id: c ? c.id : null, business_id: bid || null, status: "received", gateway_id: pl.messageId || null, at: pl.receivedAt || new Date().toISOString() }), headers: { Prefer: "return=minimal" } });
+    return { ok: true };
+  }
+  return { ok: true, ignored: ev };
+}
+async function smsSetup() { // register where the phone app sends replies and delivery reports
+  const url = await (await sb("/rest/v1/rpc/sms_hook_url", { method: "POST", body: "{}" })).json();
+  const auth = { Authorization: "Basic " + btoa(SMS_USER + ":" + SMS_PASS), "Content-Type": "application/json" };
+  const have = await (await fetch(SMS_API + "/webhooks", { headers: auth })).json().catch(() => []);
+  const done: string[] = [];
+  for (const event of ["sms:received", "sms:sent", "sms:delivered", "sms:failed"]) {
+    if (Array.isArray(have) && have.some((w: any) => w.event === event && w.url === url)) { done.push(event + " (already)"); continue; }
+    const r = await fetch(SMS_API + "/webhooks", { method: "POST", headers: auth, body: JSON.stringify({ url, event }) });
+    if (!r.ok) throw new Error(`Couldn't register ${event}: ${r.status} ${await r.text()}`); done.push(event);
+  }
+  return { ok: true, webhooks: done };
+}
+
 Deno.serve(async (req) => {
   try {
     if (req.method !== "POST") return json({ error: "POST only" }, 405);
-    const ok = await (await sb("/rest/v1/rpc/check_job_secret", { method: "POST", body: JSON.stringify({ s: req.headers.get("x-job-secret") ?? "" }) })).json();
+    const hook = new URL(req.url).searchParams.get("hook");
+    const ok = await (await sb("/rest/v1/rpc/check_job_secret", { method: "POST", body: JSON.stringify({ s: hook ?? req.headers.get("x-job-secret") ?? "" }) })).json();
     if (ok !== true) return json({ error: "Not allowed" }, 403);
+    if (hook) return json(await smsHook(await req.json().catch(() => ({}))));
     const { task, id } = await req.json().catch(() => ({}));
+    if (task === "sms") return json(await smsRun());
+    if (task === "sms_setup") return json(await smsSetup());
+    if (task === "sms_test") { const ph = auMobile(String(id || "")); if (!ph) return json({ error: "Give a mobile number as id" }, 400); return json({ ok: true, id: await gateway(ph, "Test from the Bovitech Practice app — SMS from the office phone is working.") }); }
     if (task === "backup") {
       try { return json(await backup()); }
       catch (e) { await logEvent("backup_failed", { error: String((e as Error).message).slice(0, 300) }).catch(() => {}); throw e; }

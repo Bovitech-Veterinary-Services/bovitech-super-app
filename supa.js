@@ -343,6 +343,10 @@ const SupaSync = {
       if (changes || !S.migDone) { S.migDone = true; photoCache.clear(); JOBS_CACHE = null; reindex(); logChanges(); migrate(); logChanges('Automatic update'); baseline(); renderAll(); if (pendingCount()) this.soon(); }
       save(); this.set(D.conflicts.length ? 'conflict' : 'ok');
       if (typeof GContacts !== 'undefined') GContacts.maybeRun(); // caller photos, on the one device that does them
+      if (window.Bk && Bk.on()) { // bookings: texts sent / replies (only once 03-sms.sql has been run)
+        if (this.kickSms) { this.kickSms = false; rpc('sms_kick', { k: Dev.k() }).catch(() => {}); }
+        if (!this.smsAt || Date.now() - this.smsAt > 90000) { this.smsAt = Date.now(); rpc('sms_status', { k: Dev.k(), days: 60 }).then((l) => { D.smsLog = l || []; save(); if (S.tab === 'book' && !SHEET && !CONFIRM) renderAll(); else renderTabs(); }).catch(() => {}); }
+      }
       if (!this.meChecked || Date.now() - this.meChecked > 15 * 60000) { this.meChecked = Date.now(); SBAuth.loadList().catch(() => {}); SBAuth.loadMe().then((me) => { if (!me) { SBAuth.signOut(true); showLogin("You're not on the active staff list any more — ask the office."); } else if (typeof updHi === 'function') updHi(); }).catch(() => {}); }
     } catch (e) {
       if (e.device || e.notStaff) { // the database refused this device or person: wiped by the admin, made inactive, or needs a code again
@@ -432,7 +436,7 @@ const SupaSync = {
     const add = (it, onOk, onNo) => { items.push({ ...it, device: DEVICE, ...(force ? { force: true } : {}) }); done.push({ onOk, onNo }); };
     [...KINDS, ...(window.BOOK_KINDS || [])].forEach((k) => (D[k] || []).forEach((r) => {
       if (!r._dirty) return; const u = r._u, data = strip(r); delete data._rev;
-      add({ kind: k, id: r.id, data, base_rev: r._rev || 0 }, (rev) => { r._rev = rev; if (r._u === u) delete r._dirty; });
+      add({ kind: k, id: r.id, data, base_rev: r._rev || 0 }, (rev) => { r._rev = rev; if (r._u === u) delete r._dirty; if (k === 'bookings' && (data.sms || data.proposal)) this.kickSms = true; });
     }));
     const flag = (f, kind, id, data) => { if (!D[f]) return; delete D[f]; add({ kind, id, data, base_rev: revs[kind + ':' + id] || 0 }, (rev) => { revs[kind + ':' + id] = rev; }, () => { D[f] = true; }); };
     if (D.settings._dirty) { const st = D.settings, u = st._u, data = strip(st); delete data._rev; add({ kind: 'settings', id: 'main', data, base_rev: revs['settings:main'] || 0 }, (rev) => { revs['settings:main'] = rev; if (D.settings === st && st._u === u) delete st._dirty; }); }

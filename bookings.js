@@ -131,6 +131,9 @@ const Bk = {
   farmName(b) { const f = Bk.farm(b); return f ? f.name || f.address || 'Farm' : ''; },
   svcText(b) { return (b.svcs || []).map((x) => Bk.svc(x.svc).name + (x.head ? ' ×' + x.head : '')).join(', '); },
 };
+Bk.sms = (bookingId) => ((D && D.smsLog) || []).filter((x) => x.booking_id === bookingId);
+Bk.smsOk = (row) => row && ['queued', 'sending', 'sent', 'delivered'].includes(row.status);
+Bk.smsKey = (key) => ((D && D.smsLog) || []).find((x) => x.key === key);
 window.Bk = Bk;
 
 /* ---------------- travel (estimates between turn-off pins; the farm's own drive time from homebase when known) ---------------- */
@@ -345,14 +348,45 @@ function bkFormHtml() {
   <div class="actions"><button type="button" class="btn" data-act="bkf-suggest">🔎 Suggest days and people</button><label class="bk-radio"><input type="checkbox" id="bkf-urgent" ${f.urgent ? 'checked' : ''}> ⚡ Urgent — soonest first, nearby farms don't matter</label></div>
   <div id="bkf-sugg"></div><div id="bkf-warn">${bkWarnHtml(bkProblems(f))}</div>
   ${isNew ? `<label class="bk-radio" style="margin:8px 0"><input type="checkbox" id="bkf-sms" ${f.sms.send ? 'checked' : ''}> Send the "booking made" SMS${f.cid && bkMobile(D.contacts.find((c) => c.id === f.cid)) ? '' : ' <span class="hint">(choose who it goes to above)</span>'}</label>` : `<div class="hint" style="margin:8px 0">${bkSmsStatus(f)}</div>`}
+  <label class="bk-radio" style="margin:0 0 8px"><input type="checkbox" id="bkf-rem" ${f.sms.noReminder ? '' : 'checked'}> Send a reminder SMS 5 days before (8:30am)</label>
+  ${!isNew ? bkTextsHtml(f) : ''}
   <div class="f"><label for="bkf-notes">Notes</label><textarea id="bkf-notes" rows="3">${h(f.notes || '')}</textarea></div>
   ${!isNew ? bkExistingActions(f) : ''}`;
 }
 function bkWarnHtml(list) { return list.length ? `<div class="bk-warnbox">${list.map((x) => `<div>⚠ ${h(x)}</div>`).join('')}</div>` : ''; }
 function bkSmsStatus(b) {
   const s = b.sms || {}; if (!s.send) return 'No "booking made" SMS for this booking.';
-  return s.booked ? `"Booking made" SMS sent ${new Date(s.booked).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.` : '"Booking made" SMS not sent yet.';
+  const row = Bk.smsKey('booked:' + b.id); if (row) return `"Booking made" SMS: ${bkSmsState(row)}.`;
+  return s.booked ? `"Booking made" SMS marked as sent ${new Date(s.booked).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}.` : '"Booking made" SMS not sent yet (it goes within a few minutes once the office phone is set up).';
 }
+function bkSmsState(x) { return ({ queued: '⏳ waiting to send', sending: '📤 sending', sent: '✓ sent', delivered: '✓✓ delivered', failed: '⚠ failed' + (x.error ? ' — ' + x.error : ''), received: '📥 received' })[x.status] || x.status; }
+function bkSmsWho(x) { const c = x.contact_id && D.contacts.find((y) => y.id === x.contact_id); const b = x.business_id && IDX.biz && IDX.biz.get(x.business_id); return c ? fullName(c) + (b ? ' (' + b.name + ')' : '') : b ? b.name : x.phone || 'Unknown number'; }
+function bkTextsHtml(b) {
+  const rows = ((D && D.smsLog) || []).filter((x) => x.booking_id === b.id || (x.kind === 'reply' && ((b.cid && x.contact_id === b.cid) || (b.bid && x.business_id === b.bid)) && Date.parse(x.at) > (b.createdAt || 0) - 864e5)).sort((a, c) => Date.parse(c.at) - Date.parse(a.at));
+  return `<div class="card bk-texts"><div class="lbl">Texts</div>${rows.map((x) => `<div class="bk-text ${x.kind === 'reply' ? 'in' : ''}"><span class="hint">${new Date(x.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} · ${({ booked: 'Booking made', reminder: 'Reminder', proposal: 'New time', manual: 'Text' + (x.by ? ' from ' + x.by : ''), reply: 'Reply' })[x.kind]} · ${bkSmsState(x)}</span><div>${h(x.body || '')}</div></div>`).join('') || '<div class="hint">No texts yet.</div>'}
+  <div class="actions"><button type="button" class="btn small" data-act="bk-text" data-booking="${b.id}" data-cid="${b.cid || ''}" data-bid="${b.bid || ''}">📱 Send a text…</button></div></div>`;
+}
+function bkFill(text, b) { // the same fill-ins the office phone uses
+  const c = b.cid && D.contacts.find((x) => x.id === b.cid), f = Bk.farm(b), bz = b.bid && IDX.biz.get(b.bid);
+  const v = { first: c ? c.first || '' : '', name: c ? fullName(c) : '', business: bz ? bz.name : '', type: Bk.type(b.type).name.toLowerCase(), day: bkDate(b.date, { weekday: 'long' }), date: bkDate(b.date, { day: 'numeric', month: 'long' }), time: b.start ? bkTime(b.start) : '', farm: f ? f.name || '' : '', at_farm: f && f.name ? ' at ' + f.name : '', vet: (b.staff || []).map(Bk.pname).join(' and '), old_date: bkDate(b.date, { weekday: 'long', day: 'numeric', month: 'long' }) };
+  return text.replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m)).replace(/\s+([.,])/g, '$1');
+}
+async function bkTextOpen(d) {
+  const b = d.booking ? bkRec(d.booking) : null; const cons = d.bid ? bkContactsOf(d.bid) : d.cid ? D.contacts.filter((c) => c.id === d.cid) : [];
+  const opts = cons.filter(bkMobile).map((c) => ({ v: bkMobile(c), l: `${fullName(c)} · ${bkMobile(c)}`, cid: c.id }));
+  if (d.phone && !opts.some((o) => o.v.replace(/\D/g, '').replace(/^61/, '0') === d.phone.replace(/\D/g, '').replace(/^61/, '0'))) opts.unshift({ v: d.phone, l: d.phone, cid: d.cid || '' });
+  const tpls = Bk.cfg('sms');
+  const ok = await askBox('Send a text', `<div class="f"><label for="bt-to">To</label><select id="bt-to" data-ask="to">${opts.map((o) => `<option value="${h(o.v)}" data-cid="${o.cid}" ${o.cid === (b && b.cid) ? 'selected' : ''}>${h(o.l)}</option>`).join('')}</select>${opts.length ? '' : '<div class="hint">No mobile number saved for this client.</div>'}</div>
+    <div class="f"><label for="bt-tpl">Start from</label><select id="bt-tpl"><option value="">A blank message</option>${tpls.map((t) => `<option value="${t.id}">${h(t.name)}</option>`).join('')}</select></div>
+    <div class="f"><label for="bt-body">Message</label><textarea id="bt-body" data-ask="body" rows="5"></textarea><div class="hint" id="bt-n">0 characters</div></div>
+    <div class="hint">Sent from the office phone (0499 489 919). Replies show in Bookings → Jobs.</div>`, 'Send', false, 'Cancel');
+  if (!ok) return; const to = ASK_FORM.to, body = (ASK_FORM.body || '').trim(); if (!to || !body) { toast('Choose who to text and write the message'); return; }
+  const c = cons.find((x) => bkMobile(x) === to);
+  try { await rpc('sms_queue', { k: Dev.k(), phone: to, body, contact_id: c ? c.id : d.cid || null, business_id: d.bid || null, booking_id: b ? b.id : null }); toast('Text queued — it goes from the office phone in a moment'); SupaSync.smsAt = 0; SupaSync.soon(); }
+  catch (e) { toast(e.offline ? 'No internet — the text wasn\'t sent. Try again when you have signal.' : e.message); }
+}
+document.addEventListener('change', (e) => { if (e.target.id !== 'bt-tpl') return; const t = Bk.get(e.target.value); const box = document.getElementById('bt-body'); if (!box) return; const b = BK._textBooking; box.value = t ? (b ? bkFill(t.text, b) : t.text) : ''; box.dispatchEvent(new Event('input', { bubbles: true })); });
+document.addEventListener('input', (e) => { if (e.target.id !== 'bt-body') return; const n = e.target.value.length; const el = document.getElementById('bt-n'); if (el) el.textContent = `${n} characters${n > 160 ? ` · ${Math.ceil(n / 153)} texts` : ''}`; });
 function bkExistingActions(f) {
   const p = f.proposal;
   return `<div class="card bk-actions"><div class="lbl">${p ? 'New time suggested to the client' : 'Change this booking'}</div>
@@ -372,7 +406,7 @@ function bkFormRead() {
   f.svcs = f.svcs.filter((x, i, a) => x.svc || a.length === 1);
   f.mins = +q('bkf-mins').value || f.mins; f.staff = [...document.querySelectorAll('[data-bkstaff]:checked')].map((el) => el.dataset.bkstaff);
   f.date = q('bkf-date').value; f.start = q('bkf-start').value; f.urgent = q('bkf-urgent').checked; f.notes = q('bkf-notes').value;
-  if (q('bkf-sms')) f.sms.send = q('bkf-sms').checked; if (q('bkf-rememberyard')) f.rememberYard = q('bkf-rememberyard').checked;
+  if (q('bkf-sms')) f.sms.send = q('bkf-sms').checked; if (q('bkf-rem')) f.sms.noReminder = !q('bkf-rem').checked; if (q('bkf-rememberyard')) f.rememberYard = q('bkf-rememberyard').checked;
   return oldType !== f.type;
 }
 function bkFormRefresh(full) {
@@ -473,7 +507,7 @@ function bkSettingsHtml() {
     ${ppl.map((s) => { const c = Bk.scfg(s); return `<div class="kv" style="align-items:center"><div class="v"><b>${h(s.preferred_name || s.full_name)}</b><br><span class="hint">${c.mode === 'locum' ? 'Locum — available on chosen days' : [1, 2, 3, 4, 5, 6, 0].filter((d) => c.hours[d]).map((d) => DOW_NAMES[d]).join(', ') + ' ' + (Object.values(c.hours)[0] ? `${bkTime(Object.values(c.hours)[0][0])}–${bkTime(Object.values(c.hours)[0][1])}` : '')}${c.endBuffer ? ` · ${c.endBuffer} min end of day` : ''} · ${c.canDo ? 'only ' + c.canDo.map((x) => Bk.svc(x).name).join(', ') : 'all services'}</span></div>${ed || adm ? `<button class="btn small" data-act="bks-staff" data-id="${s.id}">✏️</button>` : ''}</div>`; }).join('') || '<div class="hint">The staff list loads when you are online and signed in.</div>'}</div>
   <div class="card"><h3><span class="sp">Block types</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="blocktype">➕ New</button>' : ''}</h3>${Bk.cfg('blocktype').map((x) => row(x)).join('')}
     <div class="lbl" style="margin-top:8px">Blocks</div>${Bk.list('blocks').filter((b) => !b.gone).map((b) => `<div class="kv" style="align-items:center"><span class="bk-dot" style="--c:${Bk.btype(b.type).colour}"></span><div class="v">${h(Bk.btype(b.type).name)}${b.note ? ' — ' + h(b.note) : ''}<br><span class="hint">${b.staff === 'all' ? 'Everyone' : b.staff.map(Bk.pname).join(', ')} · ${b.allDay ? 'all day' : bkTime(b.start) + '–' + bkTime(b.end)} · ${({ none: bkDate(b.date), weekdays: 'every weekday', daily: 'every day', weekly: 'weekly', fortnightly: 'fortnightly', monthly: 'monthly' })[(b.repeat || {}).every || 'none']}${b.on ? '' : ' · <b>off</b>'}</span></div>${Bk.can('blocks') ? `<label class="bk-radio"><input type="checkbox" data-act="bks-blockon" data-id="${b.id}" ${b.on ? 'checked' : ''}> On</label><button class="btn small" data-act="bk-openblock" data-id="${b.id}">✏️</button>` : ''}</div>`).join('')}</div>
-  <div class="card"><h3><span class="sp">SMS templates</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="sms">➕ New</button>' : ''}</h3><div class="hint" style="margin-bottom:6px">Fill-ins: {first} {name} {business} {type} {day} {date} {time} {farm} {at_farm} {vet} {old_date}. SMS sending from the office phone comes in the next step.</div>${Bk.cfg('sms').map((x) => row(x, `${({ booked: 'Sent when a booking is made', reminder: 'Reminder, 5 days before at 8:30am', proposal: 'When a new time is suggested', other: 'Sent by hand' })[x.use] || ''} · “${h((x.text || '').slice(0, 90))}${(x.text || '').length > 90 ? '…' : ''}”`)).join('')}</div>
+  <div class="card"><h3><span class="sp">SMS templates</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="sms">➕ New</button>' : ''}</h3><div class="hint" style="margin-bottom:6px">Fill-ins: {first} {name} {business} {type} {day} {date} {time} {farm} {at_farm} {vet} {old_date}. Sent from the office phone: "booking made" within a few minutes of booking, reminders 5 days before at 8:30am, and new-time texts as soon as a new time is held.</div>${Bk.cfg('sms').map((x) => row(x, `${({ booked: 'Sent when a booking is made', reminder: 'Reminder, 5 days before at 8:30am', proposal: 'When a new time is suggested', other: 'Sent by hand' })[x.use] || ''} · “${h((x.text || '').slice(0, 90))}${(x.text || '').length > 90 ? '…' : ''}”`)).join('')}</div>
   <div class="card"><h3><span class="sp">Follow-up types</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="futype">➕ New</button>' : ''}</h3>${Bk.cfg('futype').map((x) => row(x, `due ${x.days} days after`)).join('')}</div>
   ${adm ? `<div class="card"><h3>Permissions (admin only)</h3><div class="hint" style="margin-bottom:6px">Everyone can do all of these to start with. Untick to stop someone.</div><div class="bk-dayscroll"><table class="bk-perm"><thead><tr><th></th>${BK_PERMS.map(([k, l]) => `<th>${h(l)}</th>`).join('')}</tr></thead><tbody>${ppl.map((s) => { const pr = ((Bk.get('perms') || {}).staff || {})[s.id] || {}; return `<tr><th>${h(s.preferred_name || s.full_name)}</th>${BK_PERMS.map(([k]) => `<td><input type="checkbox" data-act="bks-perm" data-staff="${s.id}" data-k="${k}" ${pr[k] === false ? '' : 'checked'} aria-label="${h(k)}"></td>`).join('')}</tr>`; }).join('')}</tbody></table></div></div>` : ''}
   </div>`;
@@ -541,17 +575,21 @@ function bkJobs() {
   if (!D || !Bk.list) return []; const t = bkToday(), soon = bkAdd(t, 7), fort = bkAdd(t, 14); const out = [];
   const live = Bk.list('bookings').filter((b) => Bk.live(b) && b.date >= t);
   live.forEach((b) => {
-    if (b.sms && b.sms.send && !b.sms.booked && !b.sms.skip) out.push({ k: 'sms', b, t: 'Booking SMS not sent', d: `${bkDate(b.date)} ${bkTime(b.start)} — ${Bk.who(b)}` });
-    if (b.proposal && !b.proposal.smsSent && !b.proposal.smsSkip) out.push({ k: 'psms', b, t: 'New-time SMS not sent', d: `${Bk.who(b)}: suggested ${bkDate(b.proposal.date)} ${bkTime(b.proposal.start)}` });
+    if (b.sms && b.sms.send && !b.sms.booked && !b.sms.skip && !Bk.smsOk(Bk.smsKey('booked:' + b.id))) out.push({ k: 'sms', b, t: 'Booking SMS not sent', d: `${bkDate(b.date)} ${bkTime(b.start)} — ${Bk.who(b)}${b.cid ? '' : ' (no one chosen to text)'}` });
+    if (b.proposal && !b.proposal.smsSent && !b.proposal.smsSkip && !Bk.smsOk(Bk.smsKey(`proposal:${b.id}:${b.proposal.at}`))) out.push({ k: 'psms', b, t: 'New-time SMS not sent', d: `${Bk.who(b)}: suggested ${bkDate(b.proposal.date)} ${bkTime(b.proposal.start)}` });
     if (b.proposal) out.push({ k: 'prop', b, t: 'Waiting for the client to agree a new time', d: `${Bk.who(b)}: ${bkDate(b.date)} → ${bkDate(b.proposal.date)} ${bkTime(b.proposal.start)} (held since ${new Date(b.proposal.at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })})` });
     if (b.status !== 'confirmed' && b.date <= soon) out.push({ k: 'unconf', b, t: 'Unconfirmed — within a week', d: `${bkDate(b.date)} ${bkTime(b.start)} — ${Bk.who(b)}` });
     if (b.date <= fort) { const pr = bkProblems(b); if (pr.length) out.push({ k: 'clash', b, t: 'Check this booking', d: `${bkDate(b.date)} ${bkTime(b.start)} — ${Bk.who(b)}: ${pr[0]}${pr.length > 1 ? ` (+${pr.length - 1} more)` : ''}` }); }
   });
   for (let i = 0; i < 14; i++) { const d = bkAdd(t, i); const o = Bk.oncall(d) || {}; if (Bk.weekend(d) ? !o.all : !o.night || !o.evening) out.push({ k: 'oncall', d0: d, t: 'On call not set', d: bkDate(d) }); }
+  ((D && D.smsLog) || []).forEach((x) => {
+    if (x.kind === 'reply' && !x.handled) out.push({ k: 'reply', x, t: 'SMS reply', d: `${bkSmsWho(x)}: “${(x.body || '').slice(0, 160)}” · ${new Date(x.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` });
+    if (x.status === 'failed' && x.kind !== 'reply' && Date.now() - Date.parse(x.at) < 14 * 864e5) out.push({ k: 'smsfail', x, b: x.booking_id ? bkRec(x.booking_id) : null, t: 'SMS failed', d: `${({ booked: 'Booking made', reminder: 'Reminder', proposal: 'New time', manual: 'Text' })[x.kind] || 'Text'} to ${bkSmsWho(x)}: ${x.error || 'not delivered'}` });
+  });
   Bk.list('followups').filter((f) => !f.gone && f.status === 'open' && f.due <= t).forEach((f) => out.push({ k: 'fu', f, t: f.due < t ? 'Follow-up overdue' : 'Follow-up due today', d: `${Bk.get(f.type) ? Bk.get(f.type).name : 'Follow-up'} — ${Bk.who(f)}${f.animal ? ' · ' + f.animal : ''} (due ${bkDate(f.due)})` }));
   return out;
 }
-const BK_JOB_NAMES = { sms: 'Booking SMS not sent', psms: 'New-time SMS not sent', prop: 'Waiting for client', unconf: 'Unconfirmed this week', clash: 'Clashes and travel', oncall: 'On call not set', fu: 'Follow-ups due' };
+const BK_JOB_NAMES = { reply: 'SMS replies', smsfail: 'SMS failed', sms: 'Booking SMS not sent', psms: 'New-time SMS not sent', prop: 'Waiting for client', unconf: 'Unconfirmed this week', clash: 'Clashes and travel', oncall: 'On call not set', fu: 'Follow-ups due' };
 function bkJobsHtml() {
   const all = bkJobs(); const q = (BK.jobFilter || '').toLowerCase(); const list = all.filter((j) => !q || (j.t + ' ' + j.d).toLowerCase().includes(q));
   const vets = Bk.people().filter((s) => s.role === 'vet');
@@ -563,12 +601,16 @@ function bkJobsHtml() {
     case 'clash': return `<button class="btn small" data-act="bkj-suggest" data-id="${b.id}">🔎 Find a better time</button>`;
     case 'oncall': { const o = Bk.oncall(j.d0) || {}; const sel = (slot) => `<select data-act="bk-oc" data-d="${j.d0}" data-slot="${slot}" ${Bk.can('roster') ? '' : 'disabled'}><option value="">${slot === 'all' ? 'All day' : slot === 'night' ? '12–8am' : '6pm–12am'}…</option>${vets.map((s) => `<option value="${s.id}" ${o[slot] === s.id ? 'selected' : ''}>${h(s.preferred_name || s.full_name)}</option>`).join('')}</select>`; return Bk.weekend(j.d0) ? sel('all') : sel('night') + sel('evening'); }
     case 'fu': return `<button class="btn small primary" data-act="fu-done" data-id="${j.f.id}">✓ Done</button><button class="btn small" data-act="fu-book" data-id="${j.f.id}">📅 Book it</button>`;
+    case 'smsfail': return `<button class="btn small primary" data-act="bkj-smsretry" data-id="${j.x.id}">Try again</button>`;
+    case 'reply': { const x = j.x; const mine = Bk.list('bookings').filter((b) => Bk.live(b) && b.date >= bkToday() && ((x.contact_id && b.cid === x.contact_id) || (x.business_id && b.bid === x.business_id))).sort((a, c) => a.date.localeCompare(c.date));
+      const un = mine.find((b) => b.status !== 'confirmed'), pr = mine.find((b) => b.proposal);
+      return `${pr ? `<button class="btn small primary" data-act="bkj-replyprop" data-id="${pr.id}" data-sms="${x.id}">✓ Agree new time (${bkDate(pr.proposal.date)})</button>` : ''}${un && !pr ? `<button class="btn small primary" data-act="bkj-replyconf" data-id="${un.id}" data-sms="${x.id}">✓ Confirm ${bkDate(un.date)} booking</button>` : ''}<button class="btn small" data-act="bk-text" data-cid="${x.contact_id || ''}" data-bid="${x.business_id || ''}" data-phone="${h(x.phone || '')}">Reply…</button><button class="btn small" data-act="bkj-replydone" data-sms="${x.id}">Done</button>`; }
   } return ''; };
   const groups = Object.keys(BK_JOB_NAMES).map((k) => [k, list.filter((j) => j.k === k)]).filter(([, l]) => l.length);
   return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><button class="btn small" data-act="bk-page" data-v="cal">‹ Calendar</button><b class="bk-title">Bookings jobs</b><button class="btn small" data-act="bk-page" data-v="followups">Follow-ups</button></div></div>
   <div class="search" style="margin-bottom:8px"><input id="bkj-q" placeholder="Search jobs" value="${h(BK.jobFilter || '')}" data-act="bkj-q"></div>
   ${groups.length ? groups.map(([k, l]) => `<details class="card bk-jobs" open><summary><b>${BK_JOB_NAMES[k]}</b> <span class="badge">${l.length}</span></summary>${l.map((j) => `<div class="bk-job"><div class="v"><div>${h(j.d)}</div></div><div class="actions">${btns(j)}${j.b ? `<button class="btn small" data-act="bk-open" data-id="${j.b.id}">Open</button>` : ''}${j.f ? `<button class="btn small" data-act="fu-open" data-id="${j.f.id}">Open</button>` : ''}</div></div>`).join('')}</details>`).join('') : '<div class="card"><div class="hint">Nothing to do — all bookings are sorted.</div></div>'}
-  <div class="hint">SMS will be sent automatically from the office phone once that's set up; until then, "Mark as sent" when you've texted by hand.</div></div>`;
+  <div class="hint">Texts go from the office phone automatically once it's set up (see the manual). If a text was sent another way, use "Mark as sent".</div></div>`;
 }
 
 /* ---------------- taps and changes ---------------- */
@@ -613,6 +655,12 @@ document.addEventListener('click', async (e) => {
     case 'bkj-propno': { const b = bkRec(d.id); if (!Bk.need('book')) return; delete b.proposal; touch(b); bkDone('Kept the original time'); break; }
     case 'bkj-confirm': { const b = bkRec(d.id); if (!Bk.need('book')) return; b.status = 'confirmed'; touch(b); bkDone('Confirmed'); break; }
     case 'bkj-suggest': { const b = bkRec(d.id); bkOpen(b, { suggestNow: true }); break; }
+    case 'bk-text': BK._textBooking = d.booking ? bkRec(d.booking) : null; if (document.getElementById('sheet') && d.booking) { bkFormRead(); BK._textBooking = BKF; } bkTextOpen(d); break;
+    case 'bkj-smsretry': try { await rpc('sms_retry', { k: Dev.k(), sms_id: +d.id }); toast('Trying again'); SupaSync.smsAt = 0; SupaSync.soon(); } catch (x) { toast(x.message); } break;
+    case 'bkj-replydone': try { await rpc('sms_handled', { k: Dev.k(), sms_id: +d.sms }); const x = (D.smsLog || []).find((y) => y.id === +d.sms); if (x) x.handled = true; bkDone('Done'); } catch (x) { toast(x.message); } break;
+    case 'bkj-replyconf': case 'bkj-replyprop': { if (!Bk.need('book')) return; const b = bkRec(d.id); if (a === 'bkj-replyprop') bkMove(b); else { b.status = 'confirmed'; touch(b); }
+      try { await rpc('sms_handled', { k: Dev.k(), sms_id: +d.sms }); const x = (D.smsLog || []).find((y) => y.id === +d.sms); if (x) x.handled = true; } catch (x) { }
+      bkDone(a === 'bkj-replyprop' ? 'Moved to the new time and confirmed' : 'Booking confirmed'); break; }
     // settings
     case 'bks-new': bkCfgOpen(null, d.cfg); break;
     case 'bks-edit': bkCfgOpen(Bk.get(d.id)); break;
@@ -701,4 +749,5 @@ function bkSettingsCard() { return `<div class="card"><h3>Bookings (testing)</h3
 .bk-fu.over b{color:var(--red,#b42318)}
 .bk-jobsbtn{border-color:var(--red,#b42318)}
 .bk-empty{padding:16px}
+.bk-texts{margin-top:10px}.bk-text{border-left:3px solid var(--line,#ccc);padding:4px 8px;margin:6px 0;font-size:14px}.bk-text.in{border-left-color:#2f7a55;background:color-mix(in srgb,#2f7a55 7%,transparent)}
 `; document.head.appendChild(st); })();
