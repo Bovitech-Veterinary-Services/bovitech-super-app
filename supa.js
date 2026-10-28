@@ -94,7 +94,7 @@ const SBAuth = {
     if (me) { try { localStorage.setItem('bvp-initials', me.initials); if (!localStorage.getItem('bvp-nick')) localStorage.setItem('bvp-nick', me.preferred_name || me.full_name.split(' ')[0]); } catch (e) { } }
     return me;
   },
-  async loadList() { this.list = await (await sbFetch('/rest/v1/staff?select=*&order=full_name.asc')).json(); return this.list; },
+  async loadList() { this.list = await (await sbFetch('/rest/v1/staff?select=*&order=full_name.asc')).json(); LSJ.set('bvp-stafflist', this.list); return this.list; },
   async changePassword(pw) { await this.auth('user', { password: pw }, await this.token()); },
   async signOut(quiet) {
     const t = this.s && this.s.access_token;
@@ -343,7 +343,7 @@ const SupaSync = {
       if (changes || !S.migDone) { S.migDone = true; photoCache.clear(); JOBS_CACHE = null; reindex(); logChanges(); migrate(); logChanges('Automatic update'); baseline(); renderAll(); if (pendingCount()) this.soon(); }
       save(); this.set(D.conflicts.length ? 'conflict' : 'ok');
       if (typeof GContacts !== 'undefined') GContacts.maybeRun(); // caller photos, on the one device that does them
-      if (!this.meChecked || Date.now() - this.meChecked > 15 * 60000) { this.meChecked = Date.now(); SBAuth.loadMe().then((me) => { if (!me) { SBAuth.signOut(true); showLogin("You're not on the active staff list any more — ask the office."); } else if (typeof updHi === 'function') updHi(); }).catch(() => {}); }
+      if (!this.meChecked || Date.now() - this.meChecked > 15 * 60000) { this.meChecked = Date.now(); SBAuth.loadList().catch(() => {}); SBAuth.loadMe().then((me) => { if (!me) { SBAuth.signOut(true); showLogin("You're not on the active staff list any more — ask the office."); } else if (typeof updHi === 'function') updHi(); }).catch(() => {}); }
     } catch (e) {
       if (e.device || e.notStaff) { // the database refused this device or person: wiped by the admin, made inactive, or needs a code again
         if (!(await checkWipe())) { this.set('signin', e.message); if (e.notStaff) await SBAuth.signOut(true); showLogin(e.message); }
@@ -376,7 +376,7 @@ const SupaSync = {
 
   apply(r) {
     const k = r.kind;
-    if (KINDS.includes(k)) return this.applyRec(k, r);
+    if (KINDS.includes(k) || (window.BOOK_KINDS || []).includes(k)) return this.applyRec(k, r);
     const revs = this.revs();
     if (k === 'settings') {
       revs['settings:' + r.id] = r.rev; if (!r.data) return 0;
@@ -399,7 +399,7 @@ const SupaSync = {
   },
   applyRec(k, r) {
     const list = D[k] || (D[k] = []); const i = list.findIndex((x) => x.id === r.id); const l = i >= 0 ? list[i] : null;
-    const who = (o) => (k === 'contacts' ? fullName(o) : k === 'farms' ? farmLabel(o) : o.name);
+    const who = (o) => (k === 'contacts' ? fullName(o) : k === 'farms' ? farmLabel(o) : k === 'bookings' && window.Bk ? 'Booking — ' + Bk.who(o) : o.name || o.id);
     if (D.sync.forceAll && l && l._dirty) return 0; // a backup was just restored here: it replaces what's in the database
     if (r.deleted) {
       if (!D.deleted.some((x) => x.id === r.id)) D.deleted.push({ id: r.id, kind: k, at: Date.parse(r.updated_at), synced: true });
@@ -430,7 +430,7 @@ const SupaSync = {
   async push() {
     const revs = this.revs(), force = !!D.sync.forceAll, items = [], done = [];
     const add = (it, onOk, onNo) => { items.push({ ...it, device: DEVICE, ...(force ? { force: true } : {}) }); done.push({ onOk, onNo }); };
-    KINDS.forEach((k) => (D[k] || []).forEach((r) => {
+    [...KINDS, ...(window.BOOK_KINDS || [])].forEach((k) => (D[k] || []).forEach((r) => {
       if (!r._dirty) return; const u = r._u, data = strip(r); delete data._rev;
       add({ kind: k, id: r.id, data, base_rev: r._rev || 0 }, (rev) => { r._rev = rev; if (r._u === u) delete r._dirty; });
     }));
@@ -466,7 +466,7 @@ const SupaSync = {
   imported(oldIds) {
     const now = new Set(KINDS.flatMap((k) => (D[k] || []).map((r) => k + ':' + r.id)));
     oldIds.forEach(([k, id]) => { if (!now.has(k + ':' + id) && !D.deleted.some((x) => x.id === id)) D.deleted.push({ id, kind: k, at: Date.now() }); });
-    KINDS.forEach((k) => (D[k] || []).forEach((r) => (r._dirty = true))); D.settings._dirty = true;
+    [...KINDS, ...(window.BOOK_KINDS || [])].forEach((k) => (D[k] || []).forEach((r) => (r._dirty = true))); D.settings._dirty = true;
     D._dismissDirty = D._trashDirty = D._logDirty = D._infoDirty = true;
     (D.deleted || []).forEach((x) => { if (!now.has(x.kind + ':' + x.id)) delete x.synced; }); // send the backup's deletions too
     D.sync.forceAll = true; D.sync.gotSettings = true;

@@ -14,7 +14,6 @@ const ALERT_TO = Deno.env.get("ALERT_TO") ?? MAILBOX;
 const FOLDER = Deno.env.get("BACKUP_FOLDER") ?? "Bovitech Practice/Backups";
 const KEEP = Number(Deno.env.get("KEEP_DAYS") ?? "30");
 const PREFIX = "bovitech-practice-backup-";
-const KINDS = ["contacts", "businesses", "tags", "routes", "farms"];
 
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
 
@@ -60,7 +59,7 @@ async function backup() {
   for (;;) {
     const rows = await (await sb(`/rest/v1/records?select=kind,id,data,rev,deleted,updated_at&order=seq.asc&offset=${from}&limit=1000`)).json();
     for (const r of rows) {
-      if (KINDS.includes(r.kind)) { if (r.deleted) out.deleted.push({ id: r.id, kind: r.kind, at: Date.parse(r.updated_at), synced: true }); else out[r.kind].push({ ...r.data, _rev: r.rev }); }
+      if (!["settings", "meta", "device"].includes(r.kind)) { if (r.deleted) out.deleted.push({ id: r.id, kind: r.kind, at: Date.parse(r.updated_at), synced: true }); else (out[r.kind] ??= []).push({ ...r.data, _rev: r.rev }); }
       else if (r.kind === "settings" && r.data) out.settings = r.data;
       else if (r.kind === "meta" && r.data) { if (r.id === "info") out.importedAt = r.data.importedAt ?? null; else out[r.id] = r.data; }
       else if (r.kind === "device" && r.data) out.devices[r.id] = r.data;
