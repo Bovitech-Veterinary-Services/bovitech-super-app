@@ -378,6 +378,7 @@ function bkFormRead() {
 function bkFormRefresh(full) {
   const form = document.querySelector('#sheet .form'); if (!form || !BKF) return;
   if (full) { const y = form.scrollTop; form.innerHTML = bkFormHtml(); form.scrollTop = y; bkFormBindSearch(); return; }
+  const mi = document.getElementById('bkf-mins'); if (mi && +mi.value !== BKF.mins) mi.value = BKF.mins;
   const w = document.getElementById('bkf-warn'); if (w) w.innerHTML = bkWarnHtml(bkProblems(BKF));
   const sug = bkSuggestMins(BKF.type, BKF.svcs, BKF.fid); const why = document.getElementById('bkf-why');
   if (why) why.innerHTML = `Suggested ${bkDur(sug.mins)} — ${h(sug.why)} ${BKF.mins !== sug.mins ? `<button type="button" class="btn small" data-act="bkf-usesug">Use ${bkDur(sug.mins)}</button>` : ''}`;
