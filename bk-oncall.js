@@ -33,7 +33,7 @@ function bkRosterHtml() {
     <div class="actions"><button class="btn small primary" data-act="oc-csv">Download CSV</button></div><div class="hint">One row per day: date, day, start 00:00, end 23:59, vet and their mobile (set mobiles in Settings → Scheduling → People).</div></details>
   ${bkOcGoogleLine()}
   <div class="bk-dayscroll"><table class="bk-roster"><thead><tr><th>Day</th><th>On call (midnight to midnight)</th><th></th></tr></thead><tbody>
-  ${days.map((d) => { const rec = bkOncallRec(d); return `<tr class="${Bk.weekend(d) ? 'we' : ''} ${d === bkToday() ? 'today' : ''}"><th>${bkDate(d)}${pat ? ` <span class="hint">wk ${cycleWeek(d)}</span>` : ''}</th><td>${sel(d)}</td><td>${rec && bkOncallFromPat(d) !== rec.who ? '<span class="hint">changed</span>' : ''}</td></tr>`; }).join('')}
+  ${days.map((d) => { const rec = bkOncallRec(d); return `<tr class="${Bk.weekend(d) ? 'we' : ''} ${d === bkToday() ? 'today' : ''}"><th>${bkDate(d)}${bkHoliday(d) ? ` <span class="bk-hol">🎉 ${h(bkHoliday(d))}</span>` : ''}${pat ? ` <span class="hint">wk ${cycleWeek(d)}</span>` : ''}</th><td>${sel(d)}</td><td>${rec && bkOncallFromPat(d) !== rec.who ? '<span class="hint">changed</span>' : ''}</td></tr>`; }).join('')}
   </tbody></table></div></div>`;
 }
 function bkOcPatRec() { let p = Bk.get('ocpat'); if (!p) { p = { id: 'ocpat', cfg: 'ocpat', name: 'On-call pattern', weeks: 2, start: bkWeekStart(bkToday()), grid: {} }; D.bkcfg.push(p); } return p; }
@@ -85,14 +85,14 @@ const OcG = {
     const cal = found || await this.api('/calendars', { method: 'POST', body: JSON.stringify({ summary: this.name, timeZone: 'Australia/Perth', description: 'Kept up to date by the Bovitech Super App (Scheduling → On call). Changes made here are overwritten.' }) });
     let who = ''; try { const u = await (await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + this.tok.t } })).json(); who = u.email || ''; } catch (e) { }
     D.settings.ocCal = { id: cal.id, account: who || this.account, at: Date.now() }; touch(D.settings); save(); Sync.soon(); return cal.id; },
-  want(from, to) { const m = {}; for (let d = from; d <= to; d = bkAdd(d, 1)) { const w = bkOncallWho(d); if (w) m[d] = 'On call: ' + Bk.pname(w); } return m; },
+  want(from, to) { const m = {}; for (let d = from; d <= to; d = bkAdd(d, 1)) { const w = bkOncallWho(d); if (w) m[d] = { t: 'On call: ' + Bk.pname(w), c: Bk.gcol(w) }; } return m; },
   async sync(force) { if (this.busy) return 0; this.busy = true; let n = 0;
     try { const cal = await this.ensureCal(); const from = bkAdd(bkToday(), -14), to = bkAdd(bkToday(), 180); const want = this.want(from, to);
       const key = stable(want); if (!force && key === localStorage.getItem('bvp-ocghash')) return 0;
       const have = {}; let pageToken = ''; do { const r = await this.api(`/calendars/${encodeURIComponent(cal)}/events?privateExtendedProperty=${encodeURIComponent('bvp=oncall')}&timeMin=${from}T00:00:00Z&timeMax=${bkAdd(to, 2)}T00:00:00Z&singleEvents=true&maxResults=2500${pageToken ? '&pageToken=' + pageToken : ''}`); (r.items || []).forEach((ev) => { const d = ((ev.extendedProperties || {}).private || {}).date; if (d) { if (have[d]) { this.api(`/calendars/${encodeURIComponent(cal)}/events/${ev.id}`, { method: 'DELETE' }).catch(() => {}); } else have[d] = ev; } }); pageToken = r.nextPageToken || ''; } while (pageToken);
       for (let d = from; d <= to; d = bkAdd(d, 1)) { const ev = have[d], w = want[d];
-        if (w && !ev) { await this.api(`/calendars/${encodeURIComponent(cal)}/events`, { method: 'POST', body: JSON.stringify({ summary: w, start: { date: d }, end: { date: bkAdd(d, 1) }, transparency: 'transparent', description: 'From the Bovitech Super App on-call roster (midnight to midnight).', extendedProperties: { private: { bvp: 'oncall', date: d } } }) }); n++; }
-        else if (w && ev && ev.summary !== w) { await this.api(`/calendars/${encodeURIComponent(cal)}/events/${ev.id}`, { method: 'PATCH', body: JSON.stringify({ summary: w }) }); n++; }
+        if (w && !ev) { await this.api(`/calendars/${encodeURIComponent(cal)}/events`, { method: 'POST', body: JSON.stringify({ summary: w.t, ...(w.c ? { colorId: w.c } : {}), start: { date: d }, end: { date: bkAdd(d, 1) }, transparency: 'transparent', description: 'From the Bovitech Super App on-call roster (midnight to midnight).', extendedProperties: { private: { bvp: 'oncall', date: d } } }) }); n++; }
+        else if (w && ev && (ev.summary !== w.t || (ev.colorId || '') !== w.c)) { await this.api(`/calendars/${encodeURIComponent(cal)}/events/${ev.id}`, { method: 'PATCH', body: JSON.stringify({ summary: w.t, colorId: w.c || null }) }); n++; }
         else if (!w && ev) { await this.api(`/calendars/${encodeURIComponent(cal)}/events/${ev.id}`, { method: 'DELETE' }); n++; } }
       try { localStorage.setItem('bvp-ocghash', key); localStorage.setItem('bvp-ocgat', String(Date.now())); } catch (e) { }
       if (n || force) { D.settings.ocCal = { ...(D.settings.ocCal || {}), at: Date.now() }; touch(D.settings); save(); Sync.soon(); }

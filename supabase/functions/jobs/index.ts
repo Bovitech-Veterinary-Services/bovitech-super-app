@@ -92,7 +92,7 @@ async function backup() {
 /* ---------- alert email for something in the security log ---------- */
 const WHAT: Record<string, string> = {
   new_device: "signed in on a new device", device_wiped: "had a device removed and wiped", devices_wiped: "had all their devices wiped",
-  two_step_reset: "had their two-step sign-in reset", staff_changed: "had their staff details or permissions changed", staff_added: "was added as staff", backup_failed: "Nightly backup FAILED",
+  two_step_reset: "had their two-step sign-in reset", staff_changed: "had their staff details or permissions changed", staff_added: "was added as staff", login_created: "had a login created by the admin", password_set: "had their password set by the admin", backup_failed: "Nightly backup FAILED",
 };
 async function alert(id: number) {
   const [e] = await (await sb(`/rest/v1/security_events?id=eq.${id}&select=*,about:staff_id(full_name,preferred_name,email),by:actor_id(full_name,preferred_name)`)).json();

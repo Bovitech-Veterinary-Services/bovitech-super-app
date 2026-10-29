@@ -78,8 +78,38 @@ const BK_STATUS = { unconfirmed: 'Unconfirmed', confirmed: 'Confirmed', done: 'C
 const BK_DEFAULT_BLOCKS = [{ id: 'blk-meeting', type: 'bt-meeting', staff: 'all', date: '2026-01-05', start: '08:00', end: '08:30', repeat: { every: 'weekdays' }, on: true, note: 'At homebase' }];
 const BK_PERMS = [['book', 'Add, change and move appointments'], ['blocks', 'Add and change blocks (meetings, RDOs, leave…)'], ['roster', 'Change the on-call roster'], ['settings', 'Change appointment types, procedures, block types and SMS templates']];
 
+const BK_GCOLS = [['1', 'Lavender', '#7986cb'], ['2', 'Sage', '#33b679'], ['3', 'Grape', '#8e24aa'], ['4', 'Flamingo', '#e67c73'], ['5', 'Banana', '#f6bf26'], ['6', 'Tangerine', '#f4511e'], ['7', 'Peacock', '#039be5'], ['8', 'Graphite', '#616161'], ['9', 'Blueberry', '#3f51b5'], ['10', 'Basil', '#0b8043'], ['11', 'Tomato', '#d50000']]; // Google Calendar's own event colours (it can only use these)
 function bkDefColour(s) { const n = (s.preferred_name || s.full_name || '').toLowerCase(); return /^(milly|amelia)/.test(n) ? '#2f9e44' : /^jess/.test(n) ? '#1c6fd1' : /^rory/.test(n) ? '#e8720c' : /^ally|^allison/.test(n) ? '#8a5a9e' : '#64748b'; } // Milly green, Jess blue, Rory orange
 const BK_LCACHE = new Map();
+/* ---------------- WA public holidays (worked out for any year; Settings → Scheduling → Public holidays can mark one as a working day or add closures) ---------------- */
+const BK_HOLS = new Map();
+function bkEaster(y) { const a = y % 19, b = Math.floor(y / 100), c = y % 100, d = Math.floor(b / 4), e = b % 4, f = Math.floor((b + 8) / 25), g = Math.floor((b - f + 1) / 3), hh = (19 * a + b - d - g + 15) % 30, i = Math.floor(c / 4), k = c % 4, l = (32 + 2 * e + 2 * i - hh - k) % 7, m = Math.floor((a + 11 * hh + 22 * l) / 451); const mo = Math.floor((hh + l - 7 * m + 114) / 31), da = ((hh + l - 7 * m + 114) % 31) + 1; return `${y}-${String(mo).padStart(2, '0')}-${String(da).padStart(2, '0')}`; }
+function bkWaHolidays(y) {
+  if (BK_HOLS.has(y)) return BK_HOLS.get(y); const out = []; const D0 = (m, d) => `${y}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`; const add = (date, name) => out.push({ date, name });
+  const nthMon = (m, n) => { let d = D0(m, 1); while (bkDow(d) !== 1) d = bkAdd(d, 1); return bkAdd(d, 7 * (n - 1)); };
+  const lastMon = (m) => { let d = bkAdd(D0(m + 1, 1), -1); while (bkDow(d) !== 1) d = bkAdd(d, -1); return d; };
+  const nextMon = (d) => { while (bkDow(d) !== 1) d = bkAdd(d, 1); return d; };
+  const ny = D0(1, 1); add(ny, "New Year's Day"); if ([0, 6].includes(bkDow(ny))) add(nextMon(ny), "New Year's Day (additional day)");
+  const au = D0(1, 26); add([0, 6].includes(bkDow(au)) ? nextMon(au) : au, 'Australia Day');
+  add(nthMon(3, 1), 'Labour Day');
+  const ea = bkEaster(y); add(bkAdd(ea, -2), 'Good Friday'); add(ea, 'Easter Sunday'); add(bkAdd(ea, 1), 'Easter Monday');
+  const an = D0(4, 25); add(an, 'Anzac Day'); if ([0, 6].includes(bkDow(an))) add(nextMon(an), 'Anzac Day (additional day)');
+  add(nthMon(6, 1), 'Western Australia Day');
+  add(lastMon(9), "King's Birthday");
+  const xm = D0(12, 25), bx = D0(12, 26); add(xm, 'Christmas Day'); add(bx, 'Boxing Day');
+  const dx = bkDow(xm); if (dx === 6) { add(D0(12, 27), 'Christmas Day (additional day)'); add(D0(12, 28), 'Boxing Day (additional day)'); } else if (dx === 0) add(D0(12, 27), 'Christmas Day (additional day)'); else if (dx === 5) add(D0(12, 28), 'Boxing Day (additional day)');
+  out.sort((a, b) => a.date.localeCompare(b.date)); BK_HOLS.set(y, out); return out;
+}
+function bkHolCfg() { return Bk.get('hols') || { work: {}, extra: [] }; }
+function bkHolidayList(from, to) { // the public holidays (and practice closures) between two dates
+  const c = bkHolCfg(); const out = []; for (let y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) bkWaHolidays(y).forEach((x) => { if (x.date >= from && x.date <= to) out.push({ ...x, work: !!(c.work || {})[x.date] }); });
+  (c.extra || []).forEach((x) => { if (x.date >= from && x.date <= to) out.push({ ...x, extra: true }); }); return out.sort((a, b) => a.date.localeCompare(b.date));
+}
+function bkHoliday(date) { // → the holiday's name, or null (also null when it's been marked as a working day)
+  if (!date || typeof D === 'undefined' || !D) return null; const c = bkHolCfg(); if ((c.work || {})[date]) return null;
+  const x = bkWaHolidays(+date.slice(0, 4)).filter((y) => y.date === date).map((y) => y.name); const e = (c.extra || []).filter((y) => y.date === date).map((y) => y.name || 'Practice closed');
+  const all = [...x, ...e]; return all.length ? all.join(' / ') : null;
+}
 const Bk = {
   on() { return !!(typeof PREF !== 'undefined' && PREF.showBook); },
   list(k) { return (D && D[k]) || (D[k] = []); },
@@ -147,7 +177,7 @@ const Bk = {
   usualHours(s, date) { const c = Bk.scfg(s); return c.mode === 'locum' ? null : c.hours[bkDow(date)] || null; },
   hours(s, date) { // [start, end] on that day, or null when they're not working
     const c = Bk.scfg(s); if (c.offDates[date]) return null;
-    const a = c.availDates[date]; if (a) return Array.isArray(a) ? a : c.mode === 'locum' ? c.locumHours : Bk.usualHours(s, date) || c.locumHours;
+    const a = c.availDates[date]; if (!a && bkHoliday(date)) return null; /* public holidays are like a weekend (only on call) unless someone is made available */ if (a) return Array.isArray(a) ? a : c.mode === 'locum' ? c.locumHours : Bk.usualHours(s, date) || c.locumHours;
     return c.mode === 'locum' ? null : c.hours[bkDow(date)] || null;
   },
   canDo(s, svcId) { const c = Bk.scfg(s); return !c.canDo || c.canDo.includes(svcId); },
@@ -186,7 +216,7 @@ const Bk = {
   live(b) { return b.status !== 'cancelled' && !b.gone; },
   bookingsFor(date, staffId) { return Bk.list('bookings').filter((b) => Bk.live(b) && b.date === date && (b.staff || []).includes(staffId)).sort((a, c) => a.start.localeCompare(c.start)); },
   proposalsFor(date, staffId) { return Bk.list('bookings').filter((b) => Bk.live(b) && b.proposal && b.proposal.date === date && (b.proposal.staff || b.staff || []).includes(staffId)); },
-  weekend(date) { const d = bkDow(date); return d === 0 || d === 6; },
+  weekend(date) { const d = bkDow(date); return d === 0 || d === 6 || !!bkHoliday(date); }, // weekends and public holidays
   statusText(b) { return b.proposal ? 'Reschedule pending approval' : BK_STATUS[b.status] || 'Unconfirmed'; },
   unconf(b) { return !b.status || b.status === 'unconfirmed'; },
   done(b) { return b.status === 'done' || b.status === 'invoiced'; },
@@ -208,6 +238,7 @@ const Bk = {
   fsched(fid) { return (fid && Bk.get('fsched:' + fid)) || {}; }, // a farm's booking rules (set on the business page)
   bsched(bid) { return (bid && Bk.get('bsched:' + bid)) || {}; },
   pcol(id) { const p = Bk.person(id); return p ? Bk.scfg(p).colour || bkDefColour(p) : '#64748b'; }, // each person's own colour (Settings → Scheduling → People)
+  gcol(id) { const p = Bk.person(id); if (!p) return ''; const c = Bk.scfg(p); if (c.gcol !== undefined) return c.gcol || ''; const n = (p.preferred_name || p.full_name || '').toLowerCase(); return /^(milly|amelia)/.test(n) ? '2' : /^jess/.test(n) ? '1' : /^rory/.test(n) ? '6' : ''; }, // Google Calendar event colour for their on-call days
   pidText(b) { return (b.pids || []).map((p) => p.value).join(', '); },
   look(item, typeRec) { const l = item && item.look; return { colour: (l && l.colour) || typeRec.colour || '#777', pattern: (l && l.pattern) || typeRec.pattern || 'light' }; }, // default look from the type, or this one's own
 };

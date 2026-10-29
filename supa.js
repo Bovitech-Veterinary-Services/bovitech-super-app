@@ -479,6 +479,14 @@ window.SBAuth = SBAuth; window.SupaSync = SupaSync; window.Lock = Lock;
 
 /* ---------------- Settings: sync & sign-in, staff & permissions ---------------- */
 const ROLE_NAMES = { admin: 'Admin', vet: 'Vet', vet_tech: 'Vet technician', assistant: 'Vet assistant', other: 'Other' };
+async function loginFn(action, email, password) { // the "users" Edge Function: admin creates a login or sets a password
+  let r; try { r = await fetch(SB.url() + '/functions/v1/users', { method: 'POST', headers: { apikey: SB.key(), Authorization: 'Bearer ' + (await SBAuth.token()), 'Content-Type': 'application/json' }, body: JSON.stringify({ k: Dev.k(), action, email, password }) }); }
+  catch (e) { throw new Error(navigator.onLine ? 'The "users" function isn\'t set up in Supabase yet (one-time step — see the manual, Signing in, staff and permissions)' : 'Connect to the internet first'); }
+  const t = await r.text(); let js = {}; try { js = JSON.parse(t); } catch (e) { }
+  if (r.status === 404 && !js.error) throw new Error('The "users" function isn\'t set up in Supabase yet (one-time step — see the manual, Signing in, staff and permissions)');
+  if (!r.ok || !js.ok) throw new Error(js.error || js.message || 'Supabase: ' + r.status); return true;
+}
+document.addEventListener('change', (e) => { if (e.target.dataset && e.target.dataset.act === 'sf-show') ['sf-pw1', 'sf-pw2', 'lp-1', 'lp-2'].forEach((id) => bvpShowSecret(document.getElementById(id), e.target.checked)); });
 const PERMS = [['can_reports', 'Reports'], ['can_invoices', 'Invoices'], ['can_manage_staff', 'Manage staff'], ['active', 'Can sign in']];
 function supaSyncCard() {
   const me = SBAuth.staff;
@@ -506,10 +514,10 @@ function staffBoxHtml() {
   return `${mgr ? '' : '<div class="hint" style="margin-bottom:6px">Only people who can manage staff can change these.</div>'}
   ${list.map((s) => `<div class="card" style="padding:10px;margin:6px 0${s.active ? '' : ';opacity:.6'}">
     <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:180px"><b>${h(s.preferred_name || s.full_name)}</b>${s.preferred_name && s.preferred_name !== s.full_name ? ` <span class="hint">(${h(s.full_name)})</span>` : ''} · ${h(s.initials)}${initialsSeen[s.initials] > 1 && s.active ? ' <span style="color:var(--red);font-size:13px">same initials as someone else</span>' : ''}<br><span class="hint">${h(ROLE_NAMES[s.role] || s.role)} · ${h(s.email)}${s.user_id ? '' : ' · <b>no login yet</b>'}</span></div>
-    ${mgr ? `<button class="btn small" data-act="staff-edit" data-id="${s.id}">✏️ Edit</button>` : ''}</div>
+    ${mgr ? `<button class="btn small" data-act="staff-edit" data-id="${s.id}">✏️ Edit</button>` : ''}${SBAuth.isAdmin() ? `<button class="btn small" data-act="login-set" data-email="${h(s.email)}" data-has="${s.user_id ? '1' : ''}">🔑 ${s.user_id ? 'Set a new password' : 'Create their login'}</button>` : ''}</div>
     <div class="checks" style="margin-top:6px">${PERMS.map(([k, l]) => `<label><input type="checkbox" data-staffperm="${k}" data-id="${s.id}" ${s[k] ? 'checked' : ''} ${mgr ? '' : 'disabled'}>${l}</label>`).join('')}</div>${SBAuth.isAdmin() ? Admin.personHtml(s) : ''}</div>`).join('')}
-  ${mgr ? `<div class="actions" style="margin-top:8px"><button class="btn small" data-act="staff-add">➕ Add a person</button><a class="btn small" href="https://supabase.com/dashboard/project/${(SB.url() || '').replace(/^https:\/\/|\.supabase\.co.*$/g, '')}/auth/users" target="_blank" rel="noopener">Logins and passwords (Supabase) ↗</a></div>
-  <div class="hint" style="margin-top:6px">To give someone a login: add them here, then in Supabase go to <b>Authentication → Users → Add user → Create new user</b>, enter the same email and a starting password, tick <b>Auto Confirm User</b>, and tell them the password (they can change it in Settings → Sync &amp; sign-in). Forgotten passwords are reset in the same place. Untick <b>Can sign in</b> to stop someone syncing straight away.</div>` : ''}`;
+  ${mgr ? `<div class="actions" style="margin-top:8px"><button class="btn small primary" data-act="staff-add">➕ Add a user</button></div>
+  <div class="hint" style="margin-top:6px">${SBAuth.isAdmin() ? '<b>➕ Add a user</b> puts them on the staff list and creates their login (their email and a starting password) in one go — tell them the password; they can change it in Settings → Sync &amp; sign-in. <b>🔑 Set a new password</b> is for a forgotten password. ' : 'Only the admin can create logins and set passwords. '}Untick <b>Can sign in</b> to stop someone syncing straight away.</div>` : ''}`;
 }
 async function fillStaffBox(force) {
   const box = document.getElementById('staff-box'); if (!box) return;
@@ -529,6 +537,7 @@ function staffForm(s) {
   <div class="grid2"><div class="f"><label>Preferred name</label><input id="sf-pref" value="${h(s.preferred_name || '')}"></div>
   <div class="f"><label>Initials</label><input id="sf-ini" value="${h(s.initials)}" maxlength="5" style="max-width:120px;text-transform:uppercase"><div class="hint">Shown next to everything they add. Best kept different for each person.</div></div></div>
   <div class="f"><label>Email (their login)</label><input id="sf-email" type="email" value="${h(s.email)}" ${s.id ? 'disabled' : ''}>${s.id ? '<div class="hint">To change someone\'s email, change it in Supabase (Authentication → Users) and here — ask Claude for help.</div>' : ''}</div>
+  ${!s.id && typeof SBAuth !== 'undefined' && SBAuth.isAdmin() ? `<div class="grid2"><div class="f"><label for="sf-pw1">Starting password</label><input id="sf-pw1" type="${PWT}" class="bvp-secret" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true"><div class="hint">At least 8 characters. Leave empty to add them to the list without a login yet.</div></div><div class="f"><label for="sf-pw2">Password again</label><input id="sf-pw2" type="${PWT}" class="bvp-secret" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true"></div></div><label style="display:flex;gap:6px;align-items:center;font-size:14px;margin:-2px 0 10px"><input type="checkbox" data-act="sf-show"> Show password</label>` : ''}
   <div class="f"><label>Role</label><select id="sf-role">${Object.entries(ROLE_NAMES).map(([v, l]) => `<option value="${v}" ${s.role === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>`;
 }
 function staffFromForm() {
@@ -575,18 +584,30 @@ document.addEventListener('click', async (e) => {
       if (p1 !== p2) { toast("The two passwords don't match"); return false; }
       try { await SBAuth.changePassword(p1); toast('✓ Password changed'); return true; } catch (err) { toast(err.message); return false; }
     });
+  } else if (a === 'login-set') {
+    if (!SBAuth.isAdmin()) { toast('Only the admin can do this'); return; } const em = el.dataset.email, has = !!el.dataset.has; const s = (SBAuth.list || []).find((x) => x.email === em) || {};
+    const sec = `type="${PWT}" class="bvp-secret" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true"`;
+    const ok = await askBox(`${has ? 'Set a new password' : 'Create a login'} — ${s.preferred_name || s.full_name || em}`, `<p class="hint">Login email: <b>${h(em)}</b>. ${has ? 'Their old password stops working straight away.' : 'They can sign in with this email and password straight away.'} Tell them the password — they can change it in Settings → Sync &amp; sign-in.</p>
+      <div class="grid2"><div class="f"><label for="lp-1">${has ? 'New password' : 'Starting password'}</label><input id="lp-1" data-ask="p1" ${sec}><div class="hint">At least 8 characters.</div></div><div class="f"><label for="lp-2">Password again</label><input id="lp-2" data-ask="p2" ${sec}></div></div>
+      <label style="display:flex;gap:6px;align-items:center;font-size:14px"><input type="checkbox" data-act="sf-show"> Show password</label>`, has ? 'Set the password' : 'Create the login', false, 'Cancel');
+    if (!ok) return; const p1 = ASK_FORM.p1 || '', p2 = ASK_FORM.p2 || '';
+    if (p1.length < 8) { toast('The password must be at least 8 characters'); return; } if (p1 !== p2) { toast("The two passwords don't match"); return; }
+    try { await loginFn(has ? 'password' : 'create', em, p1); toast(has ? '✓ New password set — tell them what it is' : '✓ Login created — tell them their password'); await SBAuth.loadList().catch(() => {}); fillStaffBox(true); } catch (err) { toast(err.message); }
   } else if (a === 'staff-add' || a === 'staff-edit') {
     const s = a === 'staff-edit' ? (SBAuth.list || []).find((x) => x.id === el.dataset.id) : null;
-    openSheet(s ? 'Edit ' + (s.preferred_name || s.full_name) : 'Add a person', staffForm(s), async () => {
+    openSheet(s ? 'Edit ' + (s.preferred_name || s.full_name) : 'Add a user', staffForm(s), async () => {
       let o; try { o = staffFromForm(); } catch (err) { toast(err.message); return false; }
       const clash = (SBAuth.list || []).find((x) => x.active && x.initials === o.initials && (!s || x.id !== s.id));
       if (clash && !(await ask(`${clash.preferred_name || clash.full_name} already uses ${o.initials}. Use the same initials anyway?`, 'Yes — keep'))) return false;
       try {
         if (s) await rpc('staff_update', { k: Dev.k(), staff_id: s.id, patch: o });
         else { const em = (document.getElementById('sf-email').value || '').trim().toLowerCase(); if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) { toast('Enter their email'); return false; }
-          await rpc('staff_add', { k: Dev.k(), person: { ...o, email: em } }); }
+          const p1 = (document.getElementById('sf-pw1') || {}).value || '', p2 = (document.getElementById('sf-pw2') || {}).value || '';
+          if (p1 && p1.length < 8) { toast('The password must be at least 8 characters'); return false; } if (p1 !== p2) { toast("The two passwords don't match"); return false; }
+          await rpc('staff_add', { k: Dev.k(), person: { ...o, email: em } });
+          if (p1) { try { await loginFn('create', em, p1); toast(`✓ ${o.preferred_name || o.full_name} added, with a login — tell them their password`); } catch (err) { toast('Added to the staff list, but the login wasn\'t made: ' + err.message); } await SBAuth.loadList(); setTimeout(() => fillStaffBox(), 50); return true; } }
         await SBAuth.loadList(); if (s && SBAuth.staff && s.id === SBAuth.staff.id) await SBAuth.loadMe();
-        toast(s ? '✓ Saved' : '✓ Added — now create their login in Supabase (see the steps below the list)'); setTimeout(() => fillStaffBox(), 50); return true;
+        toast(s ? '✓ Saved' : '✓ Added — tap 🔑 Create their login when you have a password for them'); setTimeout(() => fillStaffBox(), 50); return true;
       } catch (err) { toast(/duplicate key/.test(err.message) ? 'Someone with that email is already on the list' : err.message); return false; }
     });
   }
