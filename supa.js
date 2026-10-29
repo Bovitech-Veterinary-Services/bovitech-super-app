@@ -234,7 +234,7 @@ const Lock = {
   async ok(pin) { const r = this.rec(); if (!r) return pin === LOCK_DEFAULT.pin; return (await this.hash(pin, r.salt)) === r.hash; },
   async setPin(pin) { const salt = randHex(16); D.settings.appPin = { salt, hash: await this.hash(pin, salt), at: Date.now(), by: SBAuth.staff && SBAuth.staff.id }; touch(D.settings); save(); SupaSync.soon(); },
   start() {
-    try { localStorage.removeItem('bvp-lock'); } catch (e) { } // the old per-person PINs and fingerprints
+    try { localStorage.removeItem('bvp-lock'); } catch (e) { } // the old per-person PINs
     ['pointerdown', 'keydown', 'touchstart', 'wheel'].forEach((ev) => document.addEventListener(ev, () => this.touch(), { capture: true, passive: true }));
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.check(); else this.touch(); });
     setInterval(() => this.check(), 15000);
@@ -245,7 +245,26 @@ const Lock = {
     if (document.getElementById('loginbox')) return;
     if (Date.now() - this.last() > this.minutes() * 60000 || (atStart && !this.last())) this.show();
   },
-  afterSignIn() { this.fails = 0; this.touch(); },
+  /* this device's own screen lock (fingerprint, face, PIN or pattern) can unlock the app instead of the app PIN */
+  creds() { try { return JSON.parse(localStorage.getItem('bvp-unlock') || '{}'); } catch (e) { return {}; } },
+  cred() { const u = SBAuth.s && SBAuth.s.user && SBAuth.s.user.id; return u ? this.creds()[u] || null : null; },
+  setCred(v) { const u = SBAuth.s && SBAuth.s.user && SBAuth.s.user.id; if (!u) return; const a = this.creds(); if (v) a[u] = v; else delete a[u]; try { localStorage.setItem('bvp-unlock', JSON.stringify(a)); } catch (e) { } },
+  async canDevice() { try { return !!(window.PublicKeyCredential && await PublicKeyCredential.isUserVerifyingPlatformAuthenticatorAvailable()); } catch (e) { return false; } },
+  async addDevice() {
+    const me = SBAuth.staff || {}; const uid8 = new Uint8Array(16); crypto.getRandomValues(uid8); const ch = new Uint8Array(32); crypto.getRandomValues(ch);
+    const c = await navigator.credentials.create({ publicKey: { challenge: ch, rp: { name: 'Bovitech Super App' }, user: { id: uid8, name: me.email || 'staff', displayName: me.preferred_name || me.full_name || 'Staff' }, pubKeyCredParams: [{ type: 'public-key', alg: -7 }, { type: 'public-key', alg: -257 }], authenticatorSelection: { authenticatorAttachment: 'platform', userVerification: 'required', residentKey: 'discouraged' }, timeout: 60000 } });
+    const id = btoa(String.fromCharCode(...new Uint8Array(c.rawId))); this.setCred(id); return id;
+  },
+  async useDevice() { const id = this.cred(); if (!id) throw new Error('none'); const ch = new Uint8Array(32); crypto.getRandomValues(ch);
+    await navigator.credentials.get({ publicKey: { challenge: ch, allowCredentials: [{ type: 'public-key', id: Uint8Array.from(atob(id), (x) => x.charCodeAt(0)) }], userVerification: 'required', timeout: 60000 } }); },
+  async offerDevice() { // once per person per device, after signing in
+    const u = SBAuth.s && SBAuth.s.user && SBAuth.s.user.id; if (!u || this.cred()) return; let asked = {}; try { asked = JSON.parse(localStorage.getItem('bvp-unlockask') || '{}'); } catch (e) { } if (asked[u]) return;
+    if (!(await this.canDevice())) return; asked[u] = Date.now(); try { localStorage.setItem('bvp-unlockask', JSON.stringify(asked)); } catch (e) { }
+    if (typeof askBox !== 'function') return;
+    const ok = await askBox('Unlock with this device\'s screen lock?', `<p style="font-size:16px">When the app locks, it can open with the screen lock you already use on this ${/Android|iPhone|Mobile/i.test(navigator.userAgent) ? 'phone' : 'device'} — fingerprint, face, PIN or pattern — instead of the app PIN. The app PIN still works too.</p>`, 'Yes — use the screen lock', false, 'No — just the app PIN');
+    if (!ok) return; try { await this.addDevice(); if (typeof toast === 'function') toast('✓ This device\'s screen lock now unlocks the app'); } catch (e) { if (typeof toast === 'function') toast("The screen lock wasn't set up — you can turn it on later in Settings → General → App lock"); }
+  },
+  afterSignIn() { this.fails = 0; this.touch(); setTimeout(() => this.offerDevice(), 1500); },
   hide() { const b = document.getElementById('lockbox'); if (b) b.remove(); this.locked = false; this._t = 0; this.touch(); },
   show() {
     this.locked = true;
@@ -256,6 +275,7 @@ const Lock = {
     b.innerHTML = `<form class="card" style="width:100%;max-width:340px;margin:auto;text-align:center"><div style="font-size:42px">🔒</div><h2 style="margin:2px 0 4px;font-size:22px">Hi ${h(me.preferred_name || me.full_name || '')}</h2><div class="hint" style="margin-bottom:12px">Enter the app PIN to carry on</div>
       <input id="lk-pin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" aria-label="App PIN" style="${inp}">
       <button class="btn primary" type="submit" style="width:100%;font-size:17px;padding:12px;margin-top:10px">Unlock</button>
+      ${this.cred() ? '<button class="btn" type="button" id="lk-dev" style="width:100%;margin-top:8px;font-size:16px;padding:10px">🔓 Use this device\'s screen lock</button>' : ''}
       <div id="lk-msg" style="margin-top:8px;color:var(--red,#b42318)"></div>
       <div class="hint" style="margin-top:10px">Forgotten the PIN? Ask the office, or <button type="button" class="btn small" id="lk-out">sign out</button></div></form>`;
     const f = b.querySelector('form'), msg = b.querySelector('#lk-msg');
@@ -268,7 +288,8 @@ const Lock = {
       msg.textContent = `Wrong PIN (${5 - this.fails} more tr${5 - this.fails === 1 ? 'y' : 'ies'} before you need to sign in again).`;
     };
     b.querySelector('#lk-out').onclick = async () => { this.hide(); await SBAuth.signOut(true); showLogin(''); };
-    setTimeout(() => { const i = b.querySelector('#lk-pin'); if (i) i.focus(); }, 50);
+    const dv = b.querySelector('#lk-dev'); if (dv) { const go = async () => { try { await this.useDevice(); this.fails = 0; this.hide(); } catch (x) { msg.textContent = 'Screen lock not recognised — use the app PIN, or try again.'; } }; dv.onclick = go; setTimeout(go, 300); }
+    else setTimeout(() => { const i = b.querySelector('#lk-pin'); if (i) i.focus(); }, 50);
   },
 };
 
@@ -599,7 +620,8 @@ async function fillLockBox() {
   const box = document.getElementById('lock-box'); if (!box) return; box.dataset.filled = '1';
   const min = Lock.minutes(), r = Lock.rec();
   box.innerHTML = `<div class="hint" style="margin-bottom:6px">The app locks after <b>${min === 0 ? 'never' : min + ' minute' + (min === 1 ? '' : 's')}</b> without use and asks for the app PIN. Everyone uses the same PIN, set by the admin.${SBAuth.isAdmin() ? (r ? ` Last changed ${new Date(r.at || 0).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })}.` : ' It is still the starting PIN (2015).') : ''}</div>
-  <div class="actions"><button class="btn small" data-act="lk-now">🔒 Lock now</button>${SBAuth.isAdmin() ? '<button class="btn small" data-act="lk-change">Change the app PIN (everyone)</button>' : ''}</div>
+  <div class="actions"><button class="btn small" data-act="lk-now">🔒 Lock now</button>${(await Lock.canDevice()) ? (Lock.cred() ? '<button class="btn small" data-act="lk-devoff">Stop using this device\'s screen lock</button>' : '<button class="btn small" data-act="lk-devon">🔓 Unlock with this device\'s screen lock</button>') : ''}${SBAuth.isAdmin() ? '<button class="btn small" data-act="lk-change">Change the app PIN (everyone)</button>' : ''}</div>
+  ${Lock.cred() ? '<div class="hint">This device\'s screen lock (fingerprint, face, PIN or pattern) unlocks the app; the app PIN works too.</div>' : ''}
   ${SBAuth.isAdmin() ? `<div class="f" style="margin-top:10px"><label for="lk-minsel">Lock after (everyone, admin only)</label><select id="lk-minsel" data-act="lk-min">${[1, 2, 5, 10, 15, 30, 60].map((v) => `<option value="${v}" ${min === v ? 'selected' : ''}>${v} minute${v === 1 ? '' : 's'}</option>`).join('')}</select></div>` : ''}`;
 }
 document.addEventListener('change', (e) => {
@@ -609,6 +631,8 @@ document.addEventListener('click', async (e) => {
   const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return;
   const a = el.dataset.act;
   if (a === 'lk-now') Lock.show();
+  else if (a === 'lk-devon') { try { await Lock.addDevice(); toast('✓ This device\'s screen lock now unlocks the app'); } catch (x) { toast("The screen lock wasn't set up"); } const b = document.getElementById('lock-box'); if (b) fillLockBox(); }
+  else if (a === 'lk-devoff') { Lock.setCred(null); toast('Screen lock unlock turned off on this device'); const b = document.getElementById('lock-box'); if (b) fillLockBox(); }
   else if (a === 'lk-change' && SBAuth.isAdmin()) {
     const ok = await askBox('Change the app PIN', `<div class="hint" style="margin-bottom:8px">This changes the PIN for everyone, on every device (after their next sync). 4 to 8 numbers.</div><div class="f"><label for="lk-1">New PIN</label><input id="lk-1" data-ask="p1" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></div><div class="f"><label for="lk-2">New PIN again</label><input id="lk-2" data-ask="p2" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></div>`, 'Change the PIN', false, 'Cancel');
     if (!ok) return; const p1 = ASK_FORM.p1 || '', p2 = ASK_FORM.p2 || '';
