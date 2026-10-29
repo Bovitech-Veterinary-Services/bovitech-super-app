@@ -3,6 +3,10 @@
    once someone has signed in on a device, the app opens without signal and syncs when it's back.
    Security: password, then a code from an authenticator app the first time on each device (that device is then
    remembered); the shared app PIN after a few minutes unused; the admin can wipe a device remotely. */
+/* passwords and PINs: hidden as you type, but never offered to the browser's "save password" (the box isn't a password box to the browser) */
+const PWT = (window.CSS && CSS.supports && (CSS.supports('-webkit-text-security', 'disc') || CSS.supports('text-security', 'disc'))) ? 'text' : 'password';
+function bvpShowSecret(el, show) { if (!el) return; if (PWT === 'text') el.classList.toggle('show', !!show); else el.type = show ? 'text' : 'password'; }
+(function () { const st = document.createElement('style'); st.textContent = '.bvp-secret{-webkit-text-security:disc;text-security:disc}.bvp-secret.show{-webkit-text-security:none;text-security:none}'; (document.head || document.documentElement).appendChild(st); })();
 'use strict';
 
 const SB = {
@@ -149,7 +153,7 @@ function showLogin(msg) {
       if (e.target.id === 'lg-back') { LG.mode = 'password'; SBAuth.signOut(true); drawLogin(''); }
       if (e.target.id === 'lg-copy' && LG.secret) { try { navigator.clipboard.writeText(LG.secret); e.target.textContent = 'Copied'; } catch (x) { } }
     });
-    bg.addEventListener('change', (e) => { if (e.target.id === 'lg-show') bg.querySelector('#lg-pw').type = e.target.checked ? 'text' : 'password'; });
+    bg.addEventListener('change', (e) => { if (e.target.id === 'lg-show') bvpShowSecret(bg.querySelector('#lg-pw'), e.target.checked); });
     LG.mode = 'password';
   }
   drawLogin(msg || (navigator.onLine ? '' : "You're offline — signing in needs internet the first time on each device."));
@@ -160,8 +164,8 @@ function drawLogin(msg) {
   const inp = 'font-size:17px;width:100%;box-sizing:border-box';
   let body;
   if (LG.mode === 'password') body = `<div class="hint" style="text-align:center;margin-bottom:14px">Sign in with your own login</div>
-      <div class="f"><label for="lg-email">Email</label><input id="lg-email" type="email" autocomplete="username" inputmode="email" style="${inp}"></div>
-      <div class="f"><label for="lg-pw">Password</label><input id="lg-pw" type="password" autocomplete="current-password" style="${inp}"></div>
+      <div class="f"><label for="lg-email">Email</label><input id="lg-email" type="email" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" inputmode="email" style="${inp}"></div>
+      <div class="f"><label for="lg-pw">Password</label><input id="lg-pw" type="${PWT}" class="bvp-secret" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" style="${inp}"></div>
       <label style="display:flex;gap:6px;align-items:center;font-size:14px;margin:-2px 0 10px"><input type="checkbox" id="lg-show"> Show password</label>
       <button class="btn primary" type="submit" id="lg-go" style="width:100%;font-size:17px;padding:12px">Sign in</button>
       <div id="lg-msg" style="margin-top:10px;color:var(--red,#b42318);font-size:15px"></div>
@@ -181,8 +185,8 @@ function drawLogin(msg) {
       <div id="lg-msg" style="margin-top:10px;color:var(--red,#b42318);font-size:15px"></div>
       <div class="hint" style="margin-top:10px">Lost or changed your phone? Ask the office to reset your two-step sign-in. <button type="button" class="btn small" id="lg-back">Back</button></div>`;
   const keep = {}; ['lg-email', 'lg-pw', 'lg-code'].forEach((id) => { const el = bg.querySelector('#' + id); if (el && el.value) keep[id] = el.value; }); const shown = !!(bg.querySelector('#lg-show') || {}).checked; const had = document.activeElement && document.activeElement.id; // redrawing never loses what's been typed
-  bg.innerHTML = `<form class="card" style="width:100%;max-width:400px;margin:auto" autocomplete="on" novalidate>${head}${body}</form>`;
-  Object.entries(keep).forEach(([id, v]) => { const el = bg.querySelector('#' + id); if (el) el.value = v; }); if (shown && bg.querySelector('#lg-show')) { bg.querySelector('#lg-show').checked = true; bg.querySelector('#lg-pw').type = 'text'; }
+  bg.innerHTML = `<form class="card" style="width:100%;max-width:400px;margin:auto" autocomplete="off" novalidate>${head}${body}</form>`;
+  Object.entries(keep).forEach(([id, v]) => { const el = bg.querySelector('#' + id); if (el) el.value = v; }); if (shown && bg.querySelector('#lg-show')) { bg.querySelector('#lg-show').checked = true; bvpShowSecret(bg.querySelector('#lg-pw'), true); }
   bg.querySelector('#lg-msg').textContent = msg || '';
   let pending = ''; try { pending = localStorage.getItem('bvp-wiped-msg') || ''; if (pending) { localStorage.removeItem('bvp-wiped-msg'); bg.querySelector('#lg-msg').textContent = pending; } } catch (e) { }
   if (LG.mode === 'password' && SBAuth.s && SBAuth.s.user) bg.querySelector('#lg-email').value = SBAuth.s.user.email;
@@ -275,7 +279,7 @@ const Lock = {
     const me = SBAuth.staff || {};
     const inp = 'font-size:24px;letter-spacing:6px;text-align:center;width:100%;box-sizing:border-box';
     b.innerHTML = `<form class="card" style="width:100%;max-width:340px;margin:auto;text-align:center"><div style="font-size:42px">🔒</div><h2 style="margin:2px 0 4px;font-size:22px">Hi ${h(me.preferred_name || me.full_name || '')}</h2><div class="hint" style="margin-bottom:12px">Enter the app PIN to carry on</div>
-      <input id="lk-pin" type="password" inputmode="numeric" maxlength="8" autocomplete="off" aria-label="App PIN" style="${inp}">
+      <input id="lk-pin" type="${PWT}" class="bvp-secret" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" inputmode="numeric" maxlength="8" aria-label="App PIN" style="${inp}">
       <button class="btn primary" type="submit" style="width:100%;font-size:17px;padding:12px;margin-top:10px">Unlock</button>
       ${this.cred() ? '<button class="btn" type="button" id="lk-dev" style="width:100%;margin-top:8px;font-size:16px;padding:10px">🔓 Use this device\'s screen lock</button>' : ''}
       <div id="lk-msg" style="margin-top:8px;color:var(--red,#b42318)"></div>
@@ -565,7 +569,7 @@ document.addEventListener('click', async (e) => {
     if (pendingCount() && !(await ask(`${pendingCount()} change${pendingCount() === 1 ? " hasn't" : "s haven't"} synced yet. Sign out anyway? They'll sync when someone signs in again on this device.`, 'Yes — sign out'))) return;
     if (await ask('Sign out on this device? The app will be hidden until someone signs in again.', 'Yes — sign out')) { await SBAuth.signOut(); if (typeof updHi === 'function') updHi(); renderAll(); }
   } else if (a === 'sb-pw') {
-    openSheet('Change my password', `<div class="f"><label>New password</label><input id="pw-1" type="password" autocomplete="new-password"><div class="hint">At least 8 characters.</div></div><div class="f"><label>New password again</label><input id="pw-2" type="password" autocomplete="new-password"></div>`, async () => {
+    openSheet('Change my password', `<div class="f"><label>New password</label><input id="pw-1" type="${PWT}" class="bvp-secret" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true"><div class="hint">At least 8 characters.</div></div><div class="f"><label>New password again</label><input id="pw-2" type="${PWT}" class="bvp-secret" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true"></div>`, async () => {
       const p1 = document.getElementById('pw-1').value, p2 = document.getElementById('pw-2').value;
       if (p1.length < 8) { toast('Use at least 8 characters'); return false; }
       if (p1 !== p2) { toast("The two passwords don't match"); return false; }
@@ -636,7 +640,7 @@ document.addEventListener('click', async (e) => {
   else if (a === 'lk-devon') { try { await Lock.addDevice(); toast('✓ This device\'s screen lock now unlocks the app'); } catch (x) { toast("The screen lock wasn't set up"); } const b = document.getElementById('lock-box'); if (b) fillLockBox(); }
   else if (a === 'lk-devoff') { Lock.setCred(null); toast('Screen lock unlock turned off on this device'); const b = document.getElementById('lock-box'); if (b) fillLockBox(); }
   else if (a === 'lk-change' && SBAuth.isAdmin()) {
-    const ok = await askBox('Change the app PIN', `<div class="hint" style="margin-bottom:8px">This changes the PIN for everyone, on every device (after their next sync). 4 to 8 numbers.</div><div class="f"><label for="lk-1">New PIN</label><input id="lk-1" data-ask="p1" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></div><div class="f"><label for="lk-2">New PIN again</label><input id="lk-2" data-ask="p2" type="password" inputmode="numeric" maxlength="8" autocomplete="off"></div>`, 'Change the PIN', false, 'Cancel');
+    const ok = await askBox('Change the app PIN', `<div class="hint" style="margin-bottom:8px">This changes the PIN for everyone, on every device (after their next sync). 4 to 8 numbers.</div><div class="f"><label for="lk-1">New PIN</label><input id="lk-1" data-ask="p1" type="${PWT}" class="bvp-secret" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" inputmode="numeric" maxlength="8"></div><div class="f"><label for="lk-2">New PIN again</label><input id="lk-2" data-ask="p2" type="${PWT}" class="bvp-secret" autocomplete="off" autocapitalize="off" spellcheck="false" data-lpignore="true" data-1p-ignore="true" data-bwignore="true" inputmode="numeric" maxlength="8"></div>`, 'Change the PIN', false, 'Cancel');
     if (!ok) return; const p1 = ASK_FORM.p1 || '', p2 = ASK_FORM.p2 || '';
     if (!/^\d{4,8}$/.test(p1)) { toast('Use 4 to 8 numbers — the PIN was not changed'); return; }
     if (p1 !== p2) { toast("The two PINs don't match — the PIN was not changed"); return; }
