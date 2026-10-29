@@ -24,6 +24,15 @@ function bkFarmsOf(bid) { const b = bid && IDX.biz.get(bid); return b ? b.farmLi
 function bkContactsOf(bid) { return bid ? IDX.bizContacts.get(bid) || [] : []; }
 function bkMobile(c) { return c && ((c.mobiles || [])[0] || {}).value; }
 function bkPidsOf(bid) { const b = bid && IDX.biz && IDX.biz.get(bid); return b ? (b.patientIds || []).filter((p) => p && p.value) : []; }
+function bkWarnBlock(ws, compact) { // warnings, cautions, side notes and biosecurity from the client, contacts, farms and yards
+  if (!ws.length) return ''; const order = ['major', 'safety', 'assess', 'minor', 'bio', 'side'];
+  return `<div class="bk-wlist ${compact ? 'compact' : ''}">${ws.slice().sort((a, b) => order.indexOf(a.lvl) - order.indexOf(b.lvl)).map((w) => `<div class="bk-w ${w.lvl}"><span>${BK_WLVL[w.lvl][0]}</span><div><b>${h(BK_WLVL[w.lvl][1])}</b> · ${h(w.from || '')}<br>${h(w.text)}</div></div>`).join('')}</div>`;
+}
+function bkWarnIcons(b) { const ws = bkWarnings(b); if (!ws.length) return ''; const set = [...new Set(ws.map((w) => BK_WLVL[w.lvl][0]))]; return `<span class="bk-wi" title="${h(ws.map((w) => BK_WLVL[w.lvl][1] + ': ' + w.text).join('\n'))}">${set.join('')}</span> `; }
+function bkChecklistHtml(f, attr) { // ticks for the procedure checklists (before / during / after)
+  const cl = bkChecklist(f); if (!cl.length) return ''; attr = attr || 'data-bkchk';
+  return `<div class="f"><label>Checklists</label><div class="bk-checkl">${BK_PHASES.map(([ph, l]) => { const xs = cl.filter((x) => x.phase === ph); return xs.length ? `<div class="lbl">${l}</div>${xs.map((x) => `<label class="bk-radio" style="display:flex;margin:3px 0"><input type="checkbox" ${attr}="${h(x.key)}" data-id="${f.id}" ${bkTicked(f, x.key) ? 'checked' : ''}> ${h(x.text)} <span class="hint">(${h(x.svc)})</span></label>`).join('')}` : ''; }).join('')}</div></div>`;
+}
 function bkWarnHtml(list) { return list.length ? `<div class="bk-warnbox">${list.map((x) => `<div>⚠ ${h(x)}</div>`).join('')}</div>` : ''; }
 function bkFormStaff(f) { f.staff = [...new Set((f.svcs || []).flatMap((x) => x.staff || []))]; return f; } // everyone on the appointment = everyone on any of its procedures
 function bkTimeOpts(sel, from, to) { let o = ''; for (let m = from; m <= to; m += 15) o += `<option value="${bkHHMM(m)}" ${bkHHMM(m) === sel ? 'selected' : ''}>${bkTime(m)}</option>`; return o; }
@@ -41,6 +50,7 @@ function bkFormHtml() {
   return `<div class="grid2"><div class="f"><label for="bkf-type">Appointment type</label><select id="bkf-type">${types.map((x) => `<option value="${x.id}" ${x.id === f.type ? 'selected' : ''}>${h(x.name)}</option>`).join('')}</select></div>
     <div class="f"><label>Status</label><div class="bk-seg">${Object.entries(BK_STATUS).map(([v, l]) => `<label class="bk-radio"><input type="radio" name="bkf-status" value="${v}" ${(f.status || 'unconfirmed') === v ? 'checked' : ''}> ${l}</label>`).join('')}</div>${f.proposal ? '<div class="hint"><b>Reschedule pending approval</b> — see below</div>' : ''}</div></div>
   <div class="f"><label for="bkf-q">Client</label>${f.bid || f.cid ? `<div class="bk-picked"><b>${h(Bk.who(f))}</b>${!f.bid ? ' <span class="hint">(individual)</span>' : ''} <button type="button" class="btn small" data-act="bkf-clear">Change</button></div>${bkClientOk(bkWhoOf(t), f.bid, f.cid) ? '' : `<div class="bk-warnbox">${h(t.name)} appointments can only be booked ${h(bkWhoText(bkWhoOf(t)))}.</div>`}` : `<div class="search"><input id="bkf-q" placeholder="Search a business, person or mobile" autocomplete="off"></div><div id="bkf-res"></div><div class="hint">${h(t.name)}: ${h(bkWhoText(bkWhoOf(t)))}</div>`}</div>
+  ${f.bid || f.cid ? bkWarnBlock(bkWarnings(f)) : ''}
   ${f.bid || f.cid ? `${farmT ? `<div class="f"><label for="bkf-farm0">Farms and yards${multi ? ' (in the order you\'ll visit them)' : ''}</label>${(f.stops.length ? f.stops : [{ fid: '', yid: null }]).map((st, i) => { const fm = st.fid && IDX.farms.get(st.fid); const noY = fm && !bkYardsOf(fm).length;
       return `<div class="bk-svcrow"><span class="hint">${i + 1}.</span><select id="bkf-farm${i}" data-bkfarm="${i}" aria-label="Farm ${i + 1}">${farmOpts(st.fid)}</select>${fm && !noY ? `<select id="bkf-yard${i}" data-bkyard="${i}" aria-label="Yards ${i + 1}">${yardOpts(st)}</select>` : ''}${f.stops.length > 1 ? `<button type="button" class="x" data-act="bkf-stopdel" data-i="${i}" aria-label="Remove this stop">×</button>` : ''}</div>${noY ? `<div class="bk-warnbox">${h(fm.name || 'This farm')} has no yards pin yet — add one (Contacts → the farm → 📍 pins) before it can be booked. <button type="button" class="btn small" data-act="bkf-addyard" data-fid="${fm.id}">📍 Add a yards pin</button></div>` : ''}`; }).join('')}
       ${farms.length && f.stops.length && f.stops[f.stops.length - 1].fid ? '<button type="button" class="btn small" data-act="bkf-stopadd">➕ Another farm / yards</button>' : ''}${multi ? '<div class="hint">Travel is worked out to the first stop and home from the last; driving between them is added to the length. The same yards can be visited more than once.</div>' : ''}</div>` : ''}
@@ -56,9 +66,9 @@ function bkFormHtml() {
     ${farmT && f.stops.length && f.svcs.some((x) => x.svc && Bk.svc(x.svc).mode === 'perhead' && Bk.svc(x.svc).rateFrom === 'farm') ? '<div class="hint">Change the "per hour here" number to match how fast these yards run — tick below to remember it (it shows on the business page too).</div>' : ''}</div>
   <div class="grid2"><div class="f"><label for="bkf-mins">How long (minutes)</label><input id="bkf-mins" type="number" min="5" step="5" inputmode="numeric" value="${f.mins}"><div class="hint" id="bkf-why">Suggested ${bkDur(sug.mins)} — ${h(sug.why)} ${f.mins !== sug.mins ? `<button type="button" class="btn small" data-act="bkf-usesug">Use ${bkDur(sug.mins)}</button>` : ''}</div></div>
     <div class="f"><label>&nbsp;</label>${farmT && f.stops.length && f.svcs.some((x) => x.svc && Bk.svc(x.svc).mode === 'perhead' && Bk.svc(x.svc).rateFrom === 'farm') ? `<label class="bk-radio"><input type="checkbox" id="bkf-rememberyard" ${f.rememberYard ? 'checked' : ''}> Remember the speed for these yards</label>` : ''}
-      ${lc.on ? `<label class="bk-radio" style="margin-top:6px"><input type="checkbox" id="bkf-lunchon" ${f.lunch ? 'checked' : ''}> Lunch break during this appointment</label>${f.lunch ? `<select id="bkf-lunchat" aria-label="Lunch time">${bkTimeOpts(f.lunch.start, f.start ? bkMin(f.start) : bkMin(lc.from), f.start ? bkMin(f.start) + Math.max(0, f.mins - lc.mins) : bkMin(lc.to) - lc.mins)}</select>` : ''}` : ''}</div></div>
+      ${lc.on && (f.mins > BK_LONG || f.lunch) ? `<label class="bk-radio" style="margin-top:6px"><input type="checkbox" id="bkf-lunchon" ${f.lunch ? 'checked' : ''}> Lunch break during this appointment</label>${f.lunch ? `<select id="bkf-lunchat" aria-label="Lunch time">${bkTimeOpts(f.lunch.start, f.start ? bkMin(f.start) : bkMin(lc.from), f.start ? bkMin(f.start) + Math.max(0, f.mins - lc.mins) : bkMin(lc.to) - lc.mins)}</select>` : ''}` : ''}</div></div>
   <div class="grid2"><div class="f"><label for="bkf-date">Date</label><input id="bkf-date" type="date" value="${f.date || ''}"></div><div class="f"><label for="bkf-start">Start time</label><input id="bkf-start" type="time" step="900" value="${f.start || ''}"><div class="hint">On the quarter hour.</div></div></div>
-  <div class="actions"><button type="button" class="btn" data-act="bkf-dayslots">⏱ Times free on this day</button><button type="button" class="btn" data-act="bkf-suggest">🔎 Suggest days and people</button><label class="bk-radio"><input type="checkbox" id="bkf-urgent" ${f.urgent ? 'checked' : ''}> ⚡ Urgent — soonest first</label></div>
+  <div class="actions"><button type="button" class="btn" data-act="bkf-dayslots">⏱ Times free on this day</button><button type="button" class="btn" data-act="bkf-suggest">🔎 Suggest days and people</button><label class="bk-radio"><input type="checkbox" id="bkf-urgent" ${f.urgent ? 'checked' : ''}> ⚡ Urgent / emergency — soonest first</label><label class="bk-radio"><input type="checkbox" id="bkf-wait" ${f.waitlist ? 'checked' : ''}> ⏳ Waitlist — wants an earlier time if one comes up</label></div>
   <div id="bkf-sugg"></div><div id="bkf-warn">${bkWarnHtml(bkProblems(bkFormStaff(f)))}</div>
   ${isNew ? `<div class="grid2"><div class="f"><label for="bkf-rep">Repeats</label><select id="bkf-rep">${BK_REPEATS.map(([v, l]) => `<option value="${v}" ${((f.repeat || {}).every || 'none') === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div>${(f.repeat || {}).every && f.repeat.every !== 'none' ? `<div class="f"><label for="bkf-repuntil">Until</label><input id="bkf-repuntil" type="date" value="${f.repeat.until || ''}"><div class="hint">Empty = a year ahead.</div></div>` : ''}</div>${['weekly', 'fortnightly'].includes((f.repeat || {}).every) ? `<div class="f"><label>On these days</label><div class="checks">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<label><input type="checkbox" data-bkrepday="${d}" ${((f.repeat.days && f.repeat.days.length) ? f.repeat.days : [f.date ? bkDow(f.date) : 1]).includes(d) ? 'checked' : ''}> ${DOW_NAMES[d]}</label>`).join('')}</div></div>` : ''}`
     : series ? `<div class="hint" style="margin:6px 0">🔁 ${h(bkRuleText(series.rule, series.anchor))} · ${Bk.list('bookings').filter((b) => b.series === f.series && Bk.live(b)).length} in the series. Changes ask whether they're for this one, this and the following ones, or all of them. <button type="button" class="btn small" data-act="bkf-rerule">Change the repeat from here</button></div>` : ''}
@@ -66,6 +76,7 @@ function bkFormHtml() {
   <label class="bk-radio" style="margin:0 0 8px"><input type="checkbox" id="bkf-rem" ${f.sms.noReminder ? '' : 'checked'}> Send a reminder SMS 5 days before (8:30am)</label>
   ${bkLookField(f, t, 'bkl')}
   ${!isNew ? bkTextsHtml(f) : ''}
+  ${bkChecklistHtml(f)}
   <div class="f"><label for="bkf-notes">Notes</label><textarea id="bkf-notes" rows="3">${h(f.notes || '')}</textarea></div>
   ${!isNew ? bkExistingActions(f) : ''}`;
 }
@@ -97,11 +108,12 @@ function bkFormRead() {
   f.svcs = f.svcs.filter((x, i, a) => x.svc || a.length === 1);
   bkFormStaff(f);
   f.mins = +q('bkf-mins').value || f.mins;
-  f.date = q('bkf-date').value; f.start = q('bkf-start').value; f.urgent = q('bkf-urgent').checked; f.notes = q('bkf-notes').value;
+  f.date = q('bkf-date').value; f.start = q('bkf-start').value; f.urgent = q('bkf-urgent').checked; f.waitlist = !!(q('bkf-wait') && q('bkf-wait').checked); f.notes = q('bkf-notes').value;
   if (q('bkf-lunchon')) { if (q('bkf-lunchon').checked) f.lunch = { start: (q('bkf-lunchat') && q('bkf-lunchat').value) || (f.lunch && f.lunch.start) || bkDefLunchIn(f) }; else f.lunch = null; }
   if (q('bkf-rep')) f.repeat = { every: q('bkf-rep').value, until: (q('bkf-repuntil') || {}).value || null, days: [...document.querySelectorAll('[data-bkrepday]:checked')].map((el) => +el.dataset.bkrepday) };
   if (q('bkf-sms')) f.sms.send = q('bkf-sms').checked; if (q('bkf-rem')) f.sms.noReminder = !q('bkf-rem').checked; if (q('bkf-rememberyard')) f.rememberYard = q('bkf-rememberyard').checked;
   if (document.querySelector('input[name="bkl-lookmode"]')) f.look = bkLookRead('bkl');
+  if (document.querySelector('[data-bkchk]')) { f.ticks = {}; document.querySelectorAll('[data-bkchk]:checked').forEach((el) => { f.ticks[el.dataset.bkchk] = true; }); }
   return oldType !== f.type;
 }
 function bkDefLunchIn(f) { const lc = Bk.lunchCfg(); const s = f.start ? bkMin(f.start) : bkMin(lc.def); const want = Math.min(Math.max(bkMin(lc.def), s), s + Math.max(0, (f.mins || 60) - lc.mins)); return bkHHMM(Math.round(want / 15) * 15); }
@@ -142,6 +154,8 @@ function bkOpen(b, preset) {
     const full = typeChanged || dd.bkfarm != null || dd.bkyard != null || dd.bksstop != null || id === 'bkf-con' || dd.bksvc != null || e.target.name === 'bkf-status' || dd.bkwho != null || id === 'bkf-lunchon' || id === 'bkf-rep';
     if (typeChanged || dd.bksvc != null || dd.bkhead != null || dd.bkhph != null || dd.bkfarm != null || dd.bkyard != null || dd.bksstop != null || id === 'bkf-lunchon') bkAutoMins();
     if (id === 'bkf-mins') BKF._minsTouched = true;
+    if (id === 'bkf-lunchon' && BKF._minsTouched) { BKF.mins += (BKF.lunch ? 1 : -1) * Bk.lunchCfg().mins; BKF._lunchAsked = true; bkFormRefresh(); } // lunch during it: half an hour longer (not charged)
+    if (id === 'bkf-lunchon' && !BKF.lunch) BKF._lunchAsked = true;
     bkFormRefresh(full);
     if (dd.bkyard != null || dd.bkfarm != null) { const i = +(dd.bkyard ?? dd.bkfarm); const st = BKF.stops[i]; const was = before[i] || {}; if (st && st.fid && (st.fid !== was.fid || st.yid !== was.yid)) bkStopCheck(st); } });
   form.addEventListener('input', (e) => { if (e.target.dataset.bkhph != null) { const i = +e.target.dataset.bkhph; BKF.svcs[i].hph = +e.target.value || null; BKF.rememberYard = true; const cb = document.getElementById('bkf-rememberyard'); if (cb) cb.checked = true; } });
@@ -161,14 +175,40 @@ function bkDone(msg) { save(); Sync.soon(); renderAll(); if (msg) toast(msg); }
 async function bkLunchSort(rec) { // move lunch out of the way of this appointment (inside the usual window if possible; outside only if you agree)
   if (rec.lunch && rec.lunch.start) return; const lc = Bk.lunchCfg(); if (!lc.on) return; const s0 = bkMin(rec.start), e0 = s0 + rec.mins; const add = { s: s0, e: e0, loc: Travel.loc(rec), locOut: Travel.locOut(rec), ref: rec };
   for (const sid of rec.staff || []) { const lu = Bk.lunch(sid, rec.date); if (!lu || lu.inAppt) continue; const ls = bkMin(lu.start);
-    const plan = BKF && BKF._lunchPlan && BKF._lunchPlan[sid];
-    const day = bkDay(sid, rec.date, { skipId: rec.id, add, noLunch: true }); const clash = (m) => day.items.some((x) => x.s < m + lc.mins && x.e > m) || day.legs.some((l) => l.start < m + lc.mins && l.end > m);
-    if (plan != null && !clash(plan)) { if (bkLunchOutside(plan) && !(await ask(`Move ${Bk.pname(sid)}'s lunch to ${bkTime(plan)}? That's outside the usual ${bkTime(lc.from)}–${bkTime(lc.to)}.`, 'Yes — move it'))) continue; bkSetLunch(sid, rec.date, plan); toast(`${Bk.pname(sid)}'s lunch moved to ${bkTime(plan)}`); continue; }
-    if (!clash(ls)) continue;
-    const fit = bkLunchFit(sid, rec.date, { skipId: rec.id, add }); if (fit != null) { bkSetLunch(sid, rec.date, fit); toast(`${Bk.pname(sid)}'s lunch moved to ${bkTime(fit)}–${bkTime(fit + lc.mins)}`); continue; }
+    const plan = BKF && BKF._lunchPlan && BKF._lunchPlan[sid]; const okAt = (m) => bkLunchOkAt(sid, rec.date, m, { skipId: rec.id, add });
+    if (plan != null && okAt(plan)) { if (bkLunchOutside(plan) && !(await ask(`Move ${Bk.pname(sid)}'s lunch to ${bkTime(plan)}? That's outside the usual ${bkTime(lc.from)}–${bkTime(lc.to)}.`, 'Yes — move it'))) continue; bkSetLunch(sid, rec.date, plan); toast(`${Bk.pname(sid)}'s lunch: ${bkTime(plan)}`); continue; }
+    if (okAt(ls)) continue;
+    const fit = bkLunchFit(sid, rec.date, { skipId: rec.id, add, prefer: ls }); if (fit != null && lu.virtual) continue; /* lunch that hasn't been moved by hand finds its own spot */ if (fit != null) { bkSetLunch(sid, rec.date, fit); toast(`${Bk.pname(sid)}'s lunch moved to ${bkTime(fit)}–${bkTime(fit + lc.mins)}`); continue; }
     const any = bkLunchFree(sid, rec.date, { skipId: rec.id, add });
-    if (any != null && await ask(`There's no time for ${Bk.pname(sid)}'s lunch between ${bkTime(lc.from)} and ${bkTime(lc.to)} now. Move it to ${bkTime(any)}?`, 'Yes — move it')) bkSetLunch(sid, rec.date, any);
+    if (any != null && await ask(`There's no time for ${Bk.pname(sid)}'s lunch between ${bkTime(lc.from)} and ${bkTime(lc.to)} now. The closest time that works is ${bkTime(any)}. Move it there?`, 'Yes — move it')) bkSetLunch(sid, rec.date, any);
   }
+}
+const BK_LONG = 240; // appointments over 4 hours can have lunch during them
+async function bkLongLunchAsk(f) { // a long appointment over the lunch window: lunch before, during or after?
+  const lc = Bk.lunchCfg(); if (!lc.on || f.lunch || f.mins <= BK_LONG || f._lunchAsked || !f.start) return true;
+  const o0 = f._orig; if (o0 && o0.date === f.date && o0.start === f.start && o0.mins === f.mins) return true; // already sorted when it was booked
+  const s0 = bkMin(f.start), e0 = s0 + f.mins; if (e0 <= bkMin(lc.from) || s0 >= bkMin(lc.to)) return true; // doesn't touch the lunch window
+  const add = { s: s0, e: e0, loc: Travel.loc(f), locOut: Travel.locOut(f), ref: f }; const sids = f.staff || [];
+  const pick = (dir) => { const o = {}; for (const sid of sids) { const p = Bk.person(sid); const hr = p && Bk.hours(p, f.date); if (!hr) return null; let best = null;
+      for (let m = dir < 0 ? s0 - lc.mins : e0; dir < 0 ? m >= bkMin(hr[0]) : m + lc.mins <= bkMin(hr[1]); m += dir * 15) if (bkLunchOkAt(sid, f.date, m, { skipId: f.id, add })) { best = m; break; }
+      if (best == null) return null; o[sid] = best; } return o; };
+  const bef = pick(-1), aft = pick(1); const dur = bkDefLunchIn({ ...f, mins: f.mins + lc.mins });
+  const tm = (o) => [...new Set(Object.values(o))].map(bkTime).join(' / ');
+  const opt = (v, l, ok) => `<label class="bk-radio" style="display:flex;margin:8px 0;font-size:16px;${ok ? '' : 'opacity:.5'}"><input type="radio" name="bk-lunchw" value="${v}" data-ask="lw" ${ok ? '' : 'disabled'} ${v === 'during' ? 'checked' : ''}> ${l}</label>`;
+  const ok = await askBox('Lunch for this long appointment?', `<p>This appointment is ${bkDur(f.mins)} and runs over the usual lunch time (${bkTime(lc.from)}–${bkTime(lc.to)}).</p>
+    ${opt('before', bef ? `Before it — lunch at <b>${tm(bef)}</b>` : 'Before it — no time', !!bef)}
+    ${opt('during', `During it — about <b>${bkTime(dur)}</b> (you decide on the day); the appointment is made ${lc.mins} min longer (${bkDur(f.mins + lc.mins)}) — not charged to the client`, true)}
+    ${opt('after', aft ? `After it — lunch at <b>${tm(aft)}</b>${Object.values(aft).some(bkLunchOutside) ? ' (outside the usual time)' : ''}` : 'After it — no time', !!aft)}`, 'OK', false, '‹ Back');
+  if (!ok) return false; const w = ASK_FORM.lw || 'during'; f._lunchAsked = true;
+  if (w === 'during') { f.lunch = { start: dur }; f.mins += lc.mins; f._minsTouched = true; }
+  else f._lunchPlan = { ...(f._lunchPlan || {}), ...(w === 'before' ? bef : aft) };
+  return true;
+}
+async function bkRuleOverride(f) { // the client's absolute rules (and who to book under) can be broken, but only after saying so
+  const hr = bkHardRules(f); if (!hr.length) { delete f.override; return true; }
+  const key = stable(hr.map((x) => x.msg)); if (f.override && f.override.key === key) return true;
+  const ok = await askBox('⛔ This breaks the client\'s booking rules', `${hr.map((x) => `<p style="font-size:16px;font-weight:600;color:var(--red)">${h(x.msg)}</p>`).join('')}<p class="hint">These are set on the business page (📅 Scheduling). Book it anyway only if the client has agreed. Who overrode it is saved with the appointment.</p>`, 'Override — book it anyway', true, '‹ Back');
+  if (!ok) return false; f.override = { key, msgs: hr.map((x) => x.msg), at: Date.now(), by: SBAuth.staff && SBAuth.staff.id }; return true;
 }
 async function bkSaveForm(skipRead) { // skipRead: the caller has already read the form and then changed BKF (moving it, cancelling…) — reading again would undo that
   if (!skipRead) bkFormRead(); const f = BKF; bkFormStaff(f); const t = Bk.type(f.type);
@@ -186,16 +226,19 @@ async function bkSaveForm(skipRead) { // skipRead: the caller has already read t
     const noPick = f.stops.find((s) => !s.yid); if (noPick) { toast(`Choose which yards at ${(IDX.farms.get(noPick.fid) || {}).name || 'the farm'}`); return false; }
   }
   if (f.status !== 'cancelled' && !skipRead) {
+    if (!(await bkLongLunchAsk(f))) return false;
     const need = bkNeedsLabour(f);
     if (need && !f.noLabour) { const r = await askBox('Additional labour?', `<p style="font-size:16px">${need === 'always' ? `<b>${h(Bk.who(f))}</b> always needs additional labour. Book someone for it?` : 'Do you want additional labour booked for this?'}</p>`, 'Yes — add additional labour', false, '‹ Back to the appointment', 'No — not needed');
       if (r === true) { if (bkAddLabour()) toast('Choose who is doing the additional labour, then Save'); return false; } if (r !== 'alt') return false; f.noLabour = true; }
     const hard = t.where === 'farm' ? f.stops.flatMap((s) => bkStopIssues(s, f.svcs, f.stops)).filter((x) => x.hard) : [];
     if (hard.length && !f._farmOk && !(await ask(hard.map((x) => '⛔ ' + x.msg).join('\n') + '\n\nBook it anyway?', 'Yes — book anyway', true))) return false;
+    if (!(await bkRuleOverride(f))) return false;
   }
   // remember the yard speed (for these yards when the farm has its own rate per yard, otherwise for the farm)
   if (f.rememberYard) f.svcs.forEach((x) => { const st = f.stops[x.stop || 0] || f.stops[0]; if (!st || !x.svc || !x.hph || Bk.svc(x.svc).mode !== 'perhead' || Bk.svc(x.svc).rateFrom !== 'farm') return; const per = Bk.fsched(st.fid).ratesPerYard && st.yid;
     const id = per ? `yrate:${st.fid}:${st.yid}:${x.svc}` : 'yard:' + st.fid + ':' + x.svc; let y = Bk.get(id); if (!y) { y = { id, cfg: per ? 'yrate' : 'yard', fid: st.fid, yid: per ? st.yid : undefined, svc: x.svc }; D.bkcfg.push(y); } if (y.hph !== x.hph || y.gone) { y.hph = x.hph; delete y.gone; touch(y); } });
-  const rec = { ...f }; ['_orig', 'rememberYard', '_minsTouched', '_farmOk', '_lunchPlan', 'repeat'].forEach((k) => delete rec[k]);
+  const rec = { ...f }; ['_orig', 'rememberYard', '_minsTouched', '_farmOk', '_lunchPlan', '_lunchAsked', 'repeat', '_pendingId'].forEach((k) => delete rec[k]); if (!rec.waitlist) delete rec.waitlist;
+  if (f._pendingId) { const pd = Bk.list('bkpending').find((x) => x.id === f._pendingId); if (pd) { pd.done = { at: Date.now(), booking: rec.id, by: SBAuth.staff && SBAuth.staff.id }; touch(pd); } }
   rec.svcs = f.svcs.filter((x) => x.svc).map((x) => { const o = { svc: x.svc, head: x.head || 0, staff: [...(x.staff || [])] }; if (x.stop) o.stop = x.stop; if (x.hph) o.hph = x.hph; return o; });
   rec.stops = f.stops.map((s) => ({ fid: s.fid, yid: s.yid || null })); rec.fids = Bk.fids(rec); rec.fid = rec.fids[0] || null; if (!rec.noLabour) delete rec.noLabour; if (!rec.look) delete rec.look; if (!rec.lunch) delete rec.lunch;
   const orig = f._orig; const before = orig ? bkClone(orig) : null;
@@ -223,11 +266,15 @@ function bkSeriesApply(before, after, scope) { // copy a change to the other app
   if (others.length) toast(`Also changed ${others.length} other appointment${others.length === 1 ? '' : 's'} in the series`);
 }
 async function bkTidyAsk(before) { // after a cancellation or move: offer to bring that day's later appointments forward
-  const list = bkTidy(before.staff || [], before.date, before.id); if (!list.length) return;
+  const list = bkTidy(before.staff || [], before.date, before.id);
+  if (before.date >= bkToday()) Bk.list('bookings').filter((b) => Bk.live(b) && b.waitlist && !b.proposal && b.id !== before.id && b.date > before.date && (b.staff || []).length && b.staff.every((sid) => (before.staff || []).includes(sid)) && !list.some((x) => x.b.id === b.id)).forEach((b) => { // waitlisted clients who'd like an earlier time
+    let best = null; for (const sid of b.staff) { const sl = bkSlots(sid, before.date, { type: b.type, stops: Bk.stops(b), mins: b.mins, skipId: b.id }).filter((x) => !x.lunchOut && x.lunch == null).map((x) => bkMin(x.start)); if (!sl.length) { best = null; break; } best = best == null ? Math.min(...sl) : Math.max(best, Math.min(...sl)); }
+    if (best != null && !bkClientRuleIssues(b, before.date, bkHHMM(best), b.mins).some((x) => x.hard)) list.push({ b, from: b.start, to: bkHHMM(best), date: before.date, wait: true }); });
+  if (!list.length) return;
   const ok = await askBox('Make the day more efficient?', `<p>There's now a gap on <b>${bkDate(before.date, { weekday: 'long', day: 'numeric', month: 'short' })}</b>. These later appointments could start earlier. Tick the ones to suggest to the client — each becomes <b>reschedule pending approval</b> (the new-time text goes to the client) and stays where it is until they agree.</p>
-    ${list.map((x, i) => `<label class="bk-radio" style="display:flex;margin:6px 0"><input type="checkbox" data-askchk="td_${i}" checked> ${h(Bk.who(x.b))}: ${bkTime(x.from)} → <b>${bkTime(x.to)}</b> <span class="hint">(${h((x.b.staff || []).map(Bk.pname).join(', '))})</span></label>`).join('')}`, 'Suggest the new times', false, 'No — leave them');
+    ${list.map((x, i) => `<label class="bk-radio" style="display:flex;margin:6px 0"><input type="checkbox" data-askchk="td_${i}" checked> ${x.wait ? '⏳ ' : ''}${h(Bk.who(x.b))}: ${x.wait ? bkDate(x.b.date) + ' ' : ''}${bkTime(x.from)} → <b>${x.wait ? bkDate(x.date) + ' ' : ''}${bkTime(x.to)}</b>${x.wait ? ' <span class="hint">(on the waitlist)</span>' : ''} <span class="hint">(${h((x.b.staff || []).map(Bk.pname).join(', '))})</span></label>`).join('')}`, 'Suggest the new times', false, 'No — leave them');
   if (!ok) return; let n = 0;
-  list.forEach((x, i) => { if (!ASK_FORM['td_' + i]) return; x.b.proposal = { date: before.date, start: x.to, mins: x.b.mins, staff: [...(x.b.staff || [])], at: Date.now(), by: SBAuth.staff && SBAuth.staff.id, smsSent: null, tidy: true }; touch(x.b); n++; });
+  list.forEach((x, i) => { if (!ASK_FORM['td_' + i]) return; x.b.proposal = { date: x.date || before.date, start: x.to, mins: x.b.mins, staff: [...(x.b.staff || [])], at: Date.now(), by: SBAuth.staff && SBAuth.staff.id, smsSent: null, tidy: true }; touch(x.b); n++; });
   if (n) { bkDone(`${n} new time${n === 1 ? '' : 's'} suggested — waiting for the client${n === 1 ? '' : 's'}`); if (SupaSync) SupaSync.kickSms = true; }
 }
 function bkProposeForm() {
@@ -242,7 +289,7 @@ function bkProposeForm() {
     if (!pr.date || !pr.start || !pr.staff.length) { toast('Choose the new date, time and who'); return; }
     f.proposal = pr; bkFormRefresh(true); toast('New time held — tap Save to keep it'); });
   setTimeout(() => { const g = (id) => document.getElementById(id); const sb = g('bkp-suggest'); if (!sb) return;
-    sb.onclick = () => { const list = bkSuggest({ type: f.type, stops: f.stops, mins: f.mins, svcs: f.svcs.filter((x) => x.svc && !Bk.svc(x.svc).alongside), urgent: f.urgent, skipId: f.id });
+    sb.onclick = () => { const list = bkSuggest({ type: f.type, stops: f.stops, mins: f.mins, svcs: f.svcs.filter((x) => x.svc && !Bk.svc(x.svc).alongside), urgent: f.urgent, skipId: f.id, bid: f.bid });
       g('bkp-sugg').innerHTML = list.length ? `<div class="bk-sugg">${list.map((r, i) => `<button type="button" class="bk-sopt" data-i="${i}"><b>${bkDate(r.date)} ${bkTime(r.start)}</b> · ${h(Bk.pname(r.staff))}<span class="hint">${r.near ? 'near ' + h(r.near.x.what) + ' · ' : ''}adds ~${r.extra} min driving</span></button>`).join('')}</div>` : '<div class="hint">Nothing free found.</div>';
       g('bkp-sugg').querySelectorAll('.bk-sopt').forEach((b) => (b.onclick = () => { const r = list[+b.dataset.i]; g('bkp-date').value = r.date; g('bkp-start').value = r.start; document.querySelectorAll('[data-askchk^="ps_"]').forEach((el) => (el.checked = el.dataset.askchk === 'ps_' + r.staff)); })); }; }, 80);
 }
@@ -354,11 +401,13 @@ function bkCfgOpen(x, cfgType) {
     <div class="f"><label for="bc-setup">Set-up and pack-up time (minutes)</label><input id="bc-setup" type="number" min="0" step="5" value="${x.setup || ''}"><div class="hint">Added on top, whether the time is set or worked out from the head count.</div></div>
     ${x.alongside ? '<div class="hint" style="margin:4px 0">Additional labour runs alongside the other procedures (a separate person) — it doesn\'t make the appointment longer.</div>' : ''}
     <label class="bk-radio" style="margin:4px 0"><input type="checkbox" id="bc-asklab" ${x.askLabour ? 'checked' : ''}> Ask whether additional labour is needed when this is booked</label>
+    <div class="f" style="margin-top:6px"><label>Checklists (one item per line)</label>${BK_PHASES.map(([ph, l]) => `<label for="bc-chk-${ph}" class="hint">${l} the appointment</label><textarea id="bc-chk-${ph}" rows="2">${h(((x.check || {})[ph] || []).join('\n'))}</textarea>`).join('')}<div class="hint">Shown on the appointment and the day sheet to tick off. Unticked "before" items show in Jobs the day before; unticked "after" items show once it's completed.</div></div>
     <div class="f" style="margin-top:6px"><label for="bc-yard">Counts as (for each farm's "What can be booked here")</label><select id="bc-yard"><option value="">Neither — farms don't limit it</option><option value="preg" ${x.yard === 'preg' ? 'selected' : ''}>Preg testing</option><option value="bull" ${x.yard === 'bull' ? 'selected' : ''}>Bull testing</option></select><div class="hint">On the business page each farm or yard can be set to preg testing only, bull testing only, or individual animal assessments only. Choose which of those this procedure is, so you're warned if it's booked where it isn't allowed.</div></div>`; }
   if (t === 'sms') body += `<div class="f"><label for="bc-use">When it's used</label><select id="bc-use">${[['booked', 'When an appointment is made'], ['reminder', 'Reminder 5 days before'], ['proposal', 'When a new time is suggested'], ['other', 'Sent by hand']].map(([v, l]) => `<option value="${v}" ${x.use === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div><div class="f"><label for="bc-text">Message</label><textarea id="bc-text" rows="5">${h(x.text || '')}</textarea><div class="hint">Fill-ins: {first} {name} {business} {type} {day} {date} {time} {farm} {at_farm} {vet} {old_date}</div></div>`;
+  if (t === 'bookunder') body += `<div class="f"><label>Book only with</label><div class="checks">${Bk.people().map((p) => `<label><input type="checkbox" data-bustaff="${p.id}" ${(x.staff || []).includes(p.id) ? 'checked' : ''}> ${h(p.preferred_name || p.full_name)}</label>`).join('')}</div><div class="hint">Leave all unticked for anyone.</div></div><label class="bk-radio" style="display:flex;margin:4px 0"><input type="checkbox" id="bc-emany" ${x.emergencyAny ? 'checked' : ''}> Anyone can do emergencies</label>`;
   if (t === 'futype') body += `<div class="f"><label for="bc-days">Due how many days after</label><input id="bc-days" type="number" min="0" value="${x.days || ''}"></div>`;
   if (!isNew && x.id !== 'svc-labour' && x.id !== 'bt-lunch') body += `<div class="actions"><button type="button" class="btn" data-act="bks-del" data-id="${x.id}" style="color:var(--red)">Remove</button></div>`;
-  openSheet((isNew ? 'New ' : 'Edit ') + ({ type: 'appointment type', service: 'procedure', blocktype: 'block type', sms: 'SMS template', futype: 'follow-up type' })[t], body, async () => {
+  openSheet((isNew ? 'New ' : 'Edit ') + ({ type: 'appointment type', service: 'procedure', blocktype: 'block type', sms: 'SMS template', futype: 'follow-up type', bookunder: '"who to book under" choice' })[t], body, async () => {
     const g = (id) => (document.getElementById(id) || {}).value; x.name = (g('bc-name') || '').trim(); if (!x.name) { toast('Enter a name'); return false; }
     if (t === 'type' || t === 'blocktype') { const c = bkHex(g('bc-colourtxt')) || bkHex(g('bc-colour')); if (!c) { toast('Enter a colour code like #2f7a55'); return false; } x.colour = c; x.pattern = (document.querySelector('input[name=bc-pat]:checked') || {}).value || 'light';
       x.who = {}; document.querySelectorAll('[data-bcwho]').forEach((el) => { if (el.checked) x.who[el.dataset.bcwho] = true; }); }
@@ -366,9 +415,11 @@ function bkCfgOpen(x, cfgType) {
     if (t === 'blocktype') x.where = g('bc-bwhere');
     if (t === 'service') { x.mode = g('bc-mode'); x.rateFrom = x.mode === 'perhead' ? ((document.querySelector('input[name=bc-rate]:checked') || {}).value || 'service') : null; x.mins = +g('bc-mins') || null; x.hph = +g('bc-hph') || null; x.setup = +g('bc-setup') || 0;
       if (x.mode === 'perhead' && x.rateFrom !== 'farm' && !x.hph) { toast('Enter the head per hour'); return false; } if (x.mode === 'fixed' && !x.mins) { toast('Enter the set time'); return false; }
-      x.askLabour = document.getElementById('bc-asklab').checked; x.yard = g('bc-yard') || null; }
+      x.askLabour = document.getElementById('bc-asklab').checked; x.yard = g('bc-yard') || null;
+      x.check = {}; BK_PHASES.forEach(([ph]) => { const l = (g('bc-chk-' + ph) || '').split('\n').map((t) => t.trim()).filter(Boolean); if (l.length) x.check[ph] = l; }); if (!Object.keys(x.check).length) delete x.check; }
     if (t === 'sms') { x.use = g('bc-use'); x.text = (g('bc-text') || '').trim(); if (!x.text) { toast('Write the message'); return false; } }
     if (t === 'futype') x.days = +g('bc-days') || 0;
+    if (t === 'bookunder') { x.staff = [...document.querySelectorAll('[data-bustaff]:checked')].map((el) => el.dataset.bustaff); if (!x.staff.length) x.staff = null; x.emergencyAny = document.getElementById('bc-emany').checked; }
     const ex = Bk.get(x.id); if (ex) { Object.keys(ex).forEach((k) => { if (!k.startsWith('_')) delete ex[k]; }); Object.assign(ex, x); touch(ex); } else { touch(x); D.bkcfg.push(x); }
     save(); Sync.soon(); setTimeout(renderAll, 0); return true; });
 }
@@ -392,23 +443,69 @@ function bkStaffOpen(s) {
     <div class="f"><label for="bs-buf">End-of-day time for records and restocking (minutes)</label><input id="bs-buf" type="number" min="0" step="15" value="${c.endBuffer || 0}" ${ed ? '' : 'disabled'}></div></div>
   <div class="grid2"><div class="f"><label for="bs-mob">Mobile (for the on-call list)</label><input id="bs-mob" inputmode="tel" value="${h(c.mobile || '')}" ${ed ? '' : 'disabled'}></div>
     <div class="f"><label for="bs-from">Usually starts the day at</label><select id="bs-from" ${ed ? '' : 'disabled'}><option value="base" ${c.startFrom !== 'home' ? 'selected' : ''}>Homebase</option><option value="home" ${c.startFrom === 'home' ? 'selected' : ''}>Home</option></select></div></div>
+  ${bkColourField(c.colour, null, 'bsc')}<div class="hint" style="margin:-4px 0 8px">Their colour on the calendar and the on-call roster.</div>
   <div class="f"><label for="bs-home">Home GPS (only needed when they start or finish at home)</label><input id="bs-home" value="${c.home && c.home.lat != null ? c.home.lat + ', ' + c.home.lng : ''}" ${ed ? '' : 'disabled'}><div class="hint">Paste the GPS from Google Maps (for example -35.02, 117.88).</div></div>
   <div class="f"><label>Can be booked for${adm ? '' : ' (admin only)'}</label><label class="bk-radio"><input type="checkbox" id="bs-all" ${c.canDo ? '' : 'checked'} ${adm ? '' : 'disabled'}> Everything</label><div class="checks">${Bk.cfg('service').map((x) => `<label><input type="checkbox" data-bscan="${x.id}" ${!c.canDo || c.canDo.includes(x.id) ? 'checked' : ''} ${adm ? '' : 'disabled'}> ${h(x.name)}</label>`).join('')}</div></div>`, async () => {
     const id = 'staff:' + s.id; let r = Bk.get(id); if (!r) { r = { id, cfg: 'staff', name: s.full_name }; D.bkcfg.push(r); }
     if (ed) { const hrs = {}; document.querySelectorAll('[data-bsday]').forEach((el) => { const d = el.dataset.bsday; if (el.checked) hrs[d] = [document.querySelector(`[data-bsfrom="${d}"]`).value, document.querySelector(`[data-bsto="${d}"]`).value]; });
       r.hours = hrs; r.mode = document.getElementById('bs-mode').value; r.locumHours = [document.getElementById('bs-lfrom').value, document.getElementById('bs-lto').value]; r.endBuffer = +document.getElementById('bs-buf').value || 0; r.availDates = r.availDates || c.availDates || {};
-      r.mobile = document.getElementById('bs-mob').value.trim(); r.startFrom = document.getElementById('bs-from').value;
+      r.mobile = document.getElementById('bs-mob').value.trim(); r.colour = bkHex((document.getElementById('bsc-colourtxt') || {}).value) || bkHex((document.getElementById('bsc-colour') || {}).value) || c.colour; r.startFrom = document.getElementById('bs-from').value;
       const gp = (document.getElementById('bs-home').value || '').match(/(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)/); r.home = gp ? { lat: +gp[1], lng: +gp[2] } : null;
       if (r.startFrom === 'home' && !r.home) { toast('Enter the home GPS, or choose Homebase'); return false; } }
     if (adm) r.canDo = document.getElementById('bs-all').checked ? null : [...document.querySelectorAll('[data-bscan]:checked')].map((el) => el.dataset.bscan);
     touch(r); save(); Sync.soon(); setTimeout(renderAll, 0); return true; });
 }
+let BZR = null; // the client rules being edited
+function bkRuleRow(r, i, grp) {
+  const kinds = Object.entries(BK_RULE_KINDS).map(([k, l]) => `<option value="${k}" ${r.kind === k ? 'selected' : ''}>${l}</option>`).join('');
+  const days = ['days', 'notdays'].includes(r.kind) ? `<div class="checks">${[1, 2, 3, 4, 5, 6, 0].map((d) => `<label><input type="checkbox" data-bzday="${d}" ${(r.days || []).includes(d) ? 'checked' : ''}> ${DOW_NAMES[d]}</label>`).join('')}</div>` : '';
+  const mons = ['months', 'notmonths'].includes(r.kind) ? `<div class="checks">${BK_MONTHS.map((m, j) => `<label><input type="checkbox" data-bzmon="${j + 1}" ${(r.months || []).includes(j + 1) ? 'checked' : ''}> ${m}</label>`).join('')}</div>` : '';
+  const tm = r.kind === 'time' ? `<div class="bk-hrow"><input type="time" step="900" data-bzfrom value="${r.from || '08:00'}" aria-label="From"><span>to</span><input type="time" step="900" data-bzto value="${r.to || '17:00'}" aria-label="To"></div>` : '';
+  return `<div class="bk-svcblk" data-bzrule="${grp}:${i}"><div class="bk-svcrow"><select data-bzkind aria-label="Kind of rule">${kinds}</select><button type="button" class="x" data-act="bz-del" data-g="${grp}" data-i="${i}" aria-label="Remove rule">×</button></div>${days}${mons}${tm}
+    <input data-bztext value="${h(r.text || '')}" aria-label="${r.kind === 'note' ? 'The rule' : 'Why (optional)'}" style="width:100%;margin-top:4px"><div class="hint">${r.kind === 'note' ? 'Shown when booking — the app can\'t check this one itself.' : 'Why (optional) — shown with the warning.'}</div></div>`;
+}
+function bkBzHtml() {
+  const x = BZR; const unders = Bk.cfg('bookunder');
+  return `<label class="bk-radio" style="margin:4px 0 10px;display:flex"><input type="checkbox" id="bz-lab" ${x.labour ? 'checked' : ''}> Always needs additional labour for non-emergency appointments (you're reminded every time they're booked)</label>
+    <div class="f"><label for="bz-under">Who to book under</label><select id="bz-under"><option value="">${unders.length ? 'No rule — whoever suits' : 'No choices set up yet (Settings → Scheduling)'}</option>${unders.map((u) => `<option value="${u.id}" ${x.under === u.id ? 'selected' : ''}>${h(u.name)}</option>`).join('')}</select><div class="hint">Change these choices in Settings → Scheduling → Who to book under.</div></div>
+    <div class="f"><label>Absolute rules (must)</label><div class="hint" style="margin-bottom:4px">For example "cannot book Mondays". Booking against one asks permission first, and suggested times keep to them.</div>${(x.must || []).map((r, i) => bkRuleRow(r, i, 'must')).join('')}<button type="button" class="btn small" data-act="bz-add" data-g="must">➕ Absolute rule</button></div>
+    <div class="f"><label>Preferred rules</label><div class="hint" style="margin-bottom:4px">For example "prefers afternoons". Booking against one gives a warning, and suggested times try to keep to them.</div>${(x.prefer || []).map((r, i) => bkRuleRow(r, i, 'prefer')).join('')}<button type="button" class="btn small" data-act="bz-add" data-g="prefer">➕ Preferred rule</button></div>
+    <details class="card bk-ai"><summary><b>🤖 Ask Claude to write the rules</b></summary><div class="hint" style="margin:6px 0">Describe the rules in your own words (for example "never before 10am, not in March or April while they're calving, prefers Tuesdays"). Tap the button and paste into Claude, then copy Claude's answer and paste it in the second box.</div>
+      <div class="f"><label for="bz-aiq">The rules in your words</label><textarea id="bz-aiq" rows="3">${h(x._aiq || '')}</textarea></div><div class="actions"><button type="button" class="btn" data-act="bz-ai">Copy for Claude &amp; open Claude</button></div>
+      <div class="f"><label for="bz-aia">Claude's answer</label><textarea id="bz-aia" rows="3"></textarea></div><div class="actions"><button type="button" class="btn primary" data-act="bz-aiuse">Add these rules</button></div></details>
+    <div class="f"><label for="bz-note">Booking note</label><input id="bz-note" value="${h(x.note || '')}"><div class="hint">Shown on the business page, for example who usually helps in the yards.</div></div>`;
+}
+function bkBzRead() { const x = BZR; const g = (id) => document.getElementById(id); if (!g('bz-lab')) return;
+  x.labour = g('bz-lab').checked; x.under = g('bz-under').value || null; x.note = g('bz-note').value.trim(); x._aiq = (g('bz-aiq') || {}).value || '';
+  document.querySelectorAll('[data-bzrule]').forEach((el) => { const [grp, i] = el.dataset.bzrule.split(':'); const r = x[grp][+i]; if (!r) return; const k = el.querySelector('[data-bzkind]').value;
+    r.kind = k; r.text = el.querySelector('[data-bztext]').value.trim();
+    if (el.querySelector('[data-bzday]')) r.days = [...el.querySelectorAll('[data-bzday]:checked')].map((c) => +c.dataset.bzday);
+    if (el.querySelector('[data-bzmon]')) r.months = [...el.querySelectorAll('[data-bzmon]:checked')].map((c) => +c.dataset.bzmon);
+    if (el.querySelector('[data-bzfrom]')) { r.from = bkRound15(el.querySelector('[data-bzfrom]').value); r.to = bkRound15(el.querySelector('[data-bzto]').value); } }); }
+function bkBzRefresh() { const el = document.getElementById('bz-body'); if (el) el.innerHTML = bkBzHtml(); }
+function bkBzAiText(b, req) {
+  return [`I work at Bovitech Veterinary Services (mobile cattle and sheep vets, Albany WA). Please turn these booking rules for our client "${b.name}" into JSON for our scheduling app.`, '', 'THE RULES:', req, '',
+    'Answer with ONLY a JSON object like {"must":[...],"prefer":[...]} — "must" for rules that can never be broken without permission, "prefer" for preferences. Each rule is one of:',
+    '{"kind":"days","days":[1,2]} (only on these weekdays; 0=Sunday, 1=Monday … 6=Saturday)', '{"kind":"notdays","days":[1]} (not on these weekdays)', '{"kind":"time","from":"10:00","to":"15:00"} (the appointment must start and finish between these 24-hour times)',
+    '{"kind":"months","months":[5,6]} (only in these months; 1=January)', '{"kind":"notmonths","months":[3,4]} (not in these months)', '{"kind":"note","text":"…"} (anything else, shown as a note)',
+    'Any rule can also have "text" saying why. Use quarter hours for times.'].join('\n');
+}
 function bkBschedOpen(bid) {
-  const b = IDX.biz.get(bid); if (!b || !Bk.need('book')) return; const x = Bk.bsched(bid);
-  openSheet('Scheduling — ' + b.name, `<label class="bk-radio" style="margin:4px 0 10px"><input type="checkbox" id="bz-lab" ${x.labour ? 'checked' : ''}> Always needs additional labour (you're reminded every time they're booked)</label>
-    <div class="f"><label for="bz-note">Booking note</label><input id="bz-note" value="${h(x.note || '')}"><div class="hint">Shown on the business page, for example who usually helps in the yards.</div></div>`, async () => {
-    const id = 'bsched:' + bid; let r = Bk.get(id); if (!r) { r = { id, cfg: 'bsched', bid, name: b.name }; D.bkcfg.push(r); }
-    r.labour = document.getElementById('bz-lab').checked; r.note = document.getElementById('bz-note').value.trim(); delete r.gone; touch(r); save(); Sync.soon(); setTimeout(renderAll, 0); return true; });
+  const b = IDX.biz.get(bid); if (!b || !Bk.need('book')) return; BZR = bkClone(Bk.bsched(bid)); BZR.must = BZR.must || []; BZR.prefer = BZR.prefer || [];
+  openSheet('Scheduling — ' + b.name, `<div id="bz-body">${bkBzHtml()}</div>`, async () => {
+    bkBzRead(); const x = BZR; const id = 'bsched:' + bid; let r = Bk.get(id); if (!r) { r = { id, cfg: 'bsched', bid, name: b.name }; D.bkcfg.push(r); }
+    const clean = (l) => l.filter((y) => (y.kind === 'note' ? y.text : ['days', 'notdays'].includes(y.kind) ? (y.days || []).length : ['months', 'notmonths'].includes(y.kind) ? (y.months || []).length : y.kind === 'time' ? y.from && y.to && y.to > y.from : false)).map((y) => { const o = { kind: y.kind }; if (y.text) o.text = y.text; if (['days', 'notdays'].includes(y.kind)) o.days = y.days; if (['months', 'notmonths'].includes(y.kind)) o.months = y.months; if (y.kind === 'time') { o.from = y.from; o.to = y.to; } return o; });
+    r.labour = x.labour; r.note = x.note; r.under = x.under || null; r.must = clean(x.must); r.prefer = clean(x.prefer); delete r.gone; touch(r); BZR = null; save(); Sync.soon(); setTimeout(renderAll, 0); return true; });
+  const sh = document.querySelector('#sheet .form');
+  sh.addEventListener('change', (e) => { if (e.target.matches('[data-bzkind]')) { bkBzRead(); bkBzRefresh(); } });
+  sh.addEventListener('click', async (e) => { const el = e.target.closest('[data-act^="bz-"]'); if (!el) return; const a = el.dataset.act; bkBzRead();
+    if (a === 'bz-add') { BZR[el.dataset.g].push({ kind: el.dataset.g === 'must' ? 'notdays' : 'time', days: [], from: '12:00', to: '17:00' }); bkBzRefresh(); }
+    if (a === 'bz-del') { BZR[el.dataset.g].splice(+el.dataset.i, 1); bkBzRefresh(); }
+    if (a === 'bz-ai') { const q = (BZR._aiq || '').trim(); if (!q) { toast('Describe the rules first'); return; } const t = bkBzAiText(b, q); try { await navigator.clipboard.writeText(t); toast('Copied — paste it into Claude'); } catch (x) { toast('Couldn\'t copy — select the text and copy it'); } window.open('https://claude.ai/new', '_blank', 'noopener'); }
+    if (a === 'bz-aiuse') { const raw = (document.getElementById('bz-aia').value || ''); const m = raw.match(/\{[\s\S]*\}/); let j = null; try { j = m && JSON.parse(m[0]); } catch (x) { j = null; }
+      if (!j || (!Array.isArray(j.must) && !Array.isArray(j.prefer))) { toast('That doesn\'t look like Claude\'s rules — copy the whole answer'); return; }
+      const ok = (r) => r && BK_RULE_KINDS[r.kind]; const fix = (r) => ({ kind: r.kind, text: String(r.text || ''), days: (r.days || []).map(Number).filter((d) => d >= 0 && d <= 6), months: (r.months || []).map(Number).filter((d) => d >= 1 && d <= 12), from: /^\d\d:\d\d$/.test(r.from || '') ? bkRound15(r.from) : undefined, to: /^\d\d:\d\d$/.test(r.to || '') ? bkRound15(r.to) : undefined });
+      const nm = (j.must || []).filter(ok).map(fix), np = (j.prefer || []).filter(ok).map(fix); BZR.must.push(...nm); BZR.prefer.push(...np); bkBzRefresh(); toast(`${nm.length + np.length} rule${nm.length + np.length === 1 ? '' : 's'} added — check them, then Save`); } });
 }
 function bkFschedOpen(fid) {
   const f = IDX.farms.get(fid); if (!f || !Bk.need('book')) return; const x = Bk.fsched(fid); const rs = bkRateSvcs(); const ys = bkYardsOf(f);
@@ -422,10 +519,11 @@ function bkFschedOpen(fid) {
     ${rs.length ? `<div class="f"><label>Speeds</label>${ys.length > 1 ? `<label class="bk-radio"><input type="radio" name="fz-perr" value="0" ${x.ratesPerYard ? '' : 'checked'}> The same rate across all yards</label><label class="bk-radio"><input type="radio" name="fz-perr" value="1" ${x.ratesPerYard ? 'checked' : ''}> A different rate for each yard</label>` : ''}
       <div class="fzr-all grid2" ${x.ratesPerYard && ys.length > 1 ? 'hidden' : ''}>${rs.map((sv) => rateIn(null, sv)).join('')}</div>
       <div class="fzr-per" ${x.ratesPerYard && ys.length > 1 ? '' : 'hidden'}>${ys.map((y) => `<div class="lbl" style="margin-top:6px">${h(y.name)}</div><div class="grid2">${rs.map((sv) => rateIn(y.yid, sv)).join('')}</div>`).join('')}<div class="hint">Empty = the farm's rate above, or the usual rate.</div></div></div>` : '<div class="hint">No procedures use a per-farm rate. Choose "Use the rate set for each farm or yard" on a procedure in Settings → Scheduling.</div>'}
+    <div class="f"><label for="fz-bio">Biosecurity order</label><select id="fz-bio"><option value="">Any order</option><option value="last" ${x.bio === 'last' ? 'selected' : ''}>Visit last in the day (dirty farm — e.g. disease on the property)</option></select><div class="hint">You're warned if another farm is booked after it the same day, and "make it more efficient" keeps it last.</div></div>
     <div class="f"><label for="fz-note">Note</label><input id="fz-note" value="${h(x.note || '')}"><div class="hint">For example why it's not serviced, or which yards to use.</div></div>`, async () => {
     const g = (id) => document.getElementById(id); const id = 'fsched:' + fid; let r = Bk.get(id); if (!r) { r = { id, cfg: 'fsched', fid, name: f.name || '' }; D.bkcfg.push(r); }
     const pery = (document.querySelector('input[name=fz-pery]:checked') || {}).value === '1', perr = (document.querySelector('input[name=fz-perr]:checked') || {}).value === '1';
-    r.perYard = pery && ys.length > 1; r.ratesPerYard = perr && ys.length > 1; r.use = g('fz-use').value; r.note = g('fz-note').value.trim(); r.yards = {};
+    r.perYard = pery && ys.length > 1; r.ratesPerYard = perr && ys.length > 1; r.use = g('fz-use').value; r.note = g('fz-note').value.trim(); r.bio = g('fz-bio').value || null; r.yards = {};
     ys.forEach((y) => { const u = g('fz-use-' + y.yid); if (u) r.yards[y.yid] = { use: u.value, note: (g('fz-note-' + y.yid) || {}).value || '' }; }); delete r.gone; touch(r);
     document.querySelectorAll('[data-fzrate]').forEach((el) => { const sv = el.dataset.fzrate, yid = el.dataset.yid; const v = +el.value || null; const rid = yid ? `yrate:${fid}:${yid}:${sv}` : 'yard:' + fid + ':' + sv; let y = Bk.get(rid);
       if (v) { if (!y) { y = { id: rid, cfg: yid ? 'yrate' : 'yard', fid, svc: sv }; if (yid) y.yid = yid; D.bkcfg.push(y); } if (y.hph !== v || y.gone) { y.hph = v; delete y.gone; touch(y); } } else if (y && !y.gone) { y.gone = true; touch(y); } });
@@ -486,7 +584,7 @@ document.addEventListener('click', async (e) => {
     case 'bkf-nolabour': bkFormRead(); BKF.noLabour = true; bkFormRefresh(true); break;
     case 'bkf-svcdel': bkFormRead(); BKF.svcs.splice(+d.i, 1); if (!BKF.svcs.length) BKF.svcs.push({ staff: [] }); bkAutoMins(); bkFormRefresh(true); break;
     case 'bkf-usesug': bkFormRead(); BKF.mins = bkSuggestMins(BKF.type, BKF.svcs, BKF.stops, BKF.lunch).mins; BKF._minsTouched = false; bkFormRefresh(true); break;
-    case 'bkf-suggest': { bkFormRead(); if (Bk.type(BKF.type).where === 'farm' && !BKF.stops.length) { toast('Choose the client, farm and yards first'); return; } const o = { type: BKF.type, stops: BKF.stops, mins: BKF.mins, svcs: BKF.svcs.filter((x) => x.svc && !Bk.svc(x.svc).alongside), urgent: BKF.urgent, skipId: BKF.id }; BK._sugg = bkSuggest(o); document.getElementById('bkf-sugg').innerHTML = bkSuggHtml(BK._sugg, o); break; }
+    case 'bkf-suggest': { bkFormRead(); if (Bk.type(BKF.type).where === 'farm' && !BKF.stops.length) { toast('Choose the client, farm and yards first'); return; } const o = { type: BKF.type, stops: BKF.stops, mins: BKF.mins, svcs: BKF.svcs.filter((x) => x.svc && !Bk.svc(x.svc).alongside), urgent: BKF.urgent, skipId: BKF.id, bid: BKF.bid }; BK._sugg = bkSuggest(o); document.getElementById('bkf-sugg').innerHTML = bkSuggHtml(BK._sugg, o); break; }
     case 'bkf-dayslots': bkFormRead(); document.getElementById('bkf-sugg').innerHTML = bkSlotsHtml(BKF); break;
     case 'bkf-slot': { const r = BK._slots && BK._slots[+d.i]; if (!r) return; bkFormRead(); BKF.start = r.start; const main = BKF.svcs.filter((x) => !x.svc || !Bk.svc(x.svc).alongside); if (!main.some((x) => (x.staff || []).includes(r.staff))) main.forEach((x) => (x.staff = [r.staff]));
       BKF._lunchPlan = { ...(BKF._lunchPlan || {}) }; if (r.lunch != null) BKF._lunchPlan[r.staff] = r.lunch; else delete BKF._lunchPlan[r.staff]; bkFormStaff(BKF); bkFormRefresh(true); toast(`${bkTime(r.start)} chosen${r.lunch != null ? ` — lunch ${bkTime(r.lunch)}` : ''}. Tap Save to book.`); break; }

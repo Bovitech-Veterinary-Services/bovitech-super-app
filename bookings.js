@@ -7,7 +7,7 @@
    Loaded before app.js; uses app.js helpers (D, S, h, uid, touch, save, toast, ask, openSheet…) only at run time.
    Everything syncs like contacts: each item is a record (kinds below). */
 'use strict';
-const BOOK_KINDS = ['bookings', 'blocks', 'oncall', 'bkcfg', 'followups', 'bklog'];
+const BOOK_KINDS = ['bookings', 'blocks', 'oncall', 'bkcfg', 'followups', 'bklog', 'bkpending'];
 const BK_FOLLOWUPS_ON = false; // follow-ups come back with the clinical records module
 window.BOOK_KINDS = BOOK_KINDS;
 const BK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M8 14h3v3H8z"/></svg>';
@@ -71,13 +71,15 @@ const BK_DEFAULTS = [
   { id: 'sms-reminder', cfg: 'sms', order: 2, use: 'reminder', name: 'Reminder (5 days before)', text: 'Hi {first}, a reminder of your appointment with Bovitech Veterinary Services on {day} {date} at {time}{at_farm}. Please reply YES to confirm, or call 0499 489 919 to change it.' },
   { id: 'sms-proposal', cfg: 'sms', order: 3, use: 'proposal', name: 'New time suggested', text: 'Hi {first}, could we move your appointment from {old_date} to {day} {date} at {time}? Please reply YES to accept, or call 0499 489 919.' },
 ];
-const BK_MIG = 4; // 2: more procedures and flags · 3: preg / bull testing take their speed from each farm · 4: lunch breaks, where blocks happen, who types can be booked for, on call midnight to midnight
+const BK_MIG = 5; // 5: who to book under // 2: more procedures and flags · 3: preg / bull testing take their speed from each farm · 4: lunch breaks, where blocks happen, who types can be booked for, on call midnight to midnight
 const BK_NEW_V2 = ['svc-bruc', 'svc-vasec', 'svc-trace', 'svc-mischalf', 'svc-miscfull'];
 const BK_USE = { '': 'Preg and bull testing', preg: 'Preg testing only (no bull testing)', bull: 'Bull testing only (no preg testing)', individual: 'Individual animal assessments only', none: 'Do not service' };
 const BK_STATUS = { unconfirmed: 'Unconfirmed', confirmed: 'Confirmed', done: 'Completed — not invoiced', invoiced: 'Completed and invoiced' };
 const BK_DEFAULT_BLOCKS = [{ id: 'blk-meeting', type: 'bt-meeting', staff: 'all', date: '2026-01-05', start: '08:00', end: '08:30', repeat: { every: 'weekdays' }, on: true, note: 'At homebase' }];
 const BK_PERMS = [['book', 'Add, change and move appointments'], ['blocks', 'Add and change blocks (meetings, RDOs, leave…)'], ['roster', 'Change the on-call roster'], ['settings', 'Change appointment types, procedures, block types and SMS templates']];
 
+function bkDefColour(s) { const n = (s.preferred_name || s.full_name || '').toLowerCase(); return /^(milly|amelia)/.test(n) ? '#2f9e44' : /^jess/.test(n) ? '#1c6fd1' : /^rory/.test(n) ? '#e8720c' : /^ally|^allison/.test(n) ? '#8a5a9e' : '#64748b'; } // Milly green, Jess blue, Rory orange
+const BK_LCACHE = new Map();
 const Bk = {
   on() { return !!(typeof PREF !== 'undefined' && PREF.showBook); },
   list(k) { return (D && D[k]) || (D[k] = []); },
@@ -93,7 +95,7 @@ const Bk = {
     BK._quiet = true; // the change log doesn't list the starting settings
     try {
       let n = 0; const have = new Set(Bk.list('bkcfg').map((x) => x.id));
-      if (!Bk.list('bkcfg').length) { BK_DEFAULTS.forEach((d) => { if (!have.has(d.id)) { const r = bkClone(d); touch(r); D.bkcfg.push(r); n++; } }); D.sync.bkMig = BK_MIG; }
+      if (!Bk.list('bkcfg').length) { BK_DEFAULTS.forEach((d) => { if (!have.has(d.id)) { const r = bkClone(d); touch(r); D.bkcfg.push(r); n++; } }); D.sync.bkMig = 4; } // (later steps below still run: they need the staff list)
       if (!Bk.list('blocks').length && !(D.sync.bkSeeded)) BK_DEFAULT_BLOCKS.forEach((d) => { const r = bkClone(d); touch(r); D.blocks.push(r); n++; });
       if ((D.sync.bkMig || 1) < 2) { // add the newer procedures and flags to an existing set (same fixed ids on every device, so nothing doubles up)
         BK_DEFAULTS.filter((d) => d.cfg === 'service').forEach((d) => { let r = Bk.get(d.id);
@@ -109,6 +111,12 @@ const Bk = {
         Bk.list('bkcfg').filter((r) => r.cfg === 'service' && r.alongside && r.id !== 'svc-labour').forEach((r) => { delete r.alongside; touch(r); n++; }); // only additional labour runs alongside
         Bk.list('oncall').forEach((o) => { if (o.who === undefined && (o.all || o.night || o.evening)) { o.who = o.all || o.evening || o.night; touch(o); n++; } }); // on call is now one person, midnight to midnight
         D.sync.bkMig = 4;
+      }
+      if ((D.sync.bkMig || 1) < 5 && Bk.people().length) { // "who to book under" choices (change or add to them in Settings → Scheduling)
+        const jess = Bk.people().find((x) => /^jess/i.test(x.preferred_name || x.full_name));
+        [{ id: 'bu-any', cfg: 'bookunder', order: 1, name: 'Anyone', staff: null }, { id: 'bu-jess', cfg: 'bookunder', order: 2, name: 'Jess only', staff: jess ? [jess.id] : [] }, { id: 'bu-jessem', cfg: 'bookunder', order: 3, name: 'Jess only unless emergency', staff: jess ? [jess.id] : [], emergencyAny: true }]
+          .forEach((d) => { if (!Bk.get(d.id)) { touch(d); D.bkcfg.push(d); n++; } });
+        D.sync.bkMig = 5;
       }
       if (n) D.sync.bkSeeded = true; save();
     } finally { BK._quiet = false; }
@@ -133,7 +141,7 @@ const Bk = {
     const tech = s.role === 'vet_tech' || s.role === 'assistant';
     const locum = !/@bovitech\.com\.au$/i.test(s.email || '') && s.role === 'vet';
     const end = tech ? '17:00' : '18:00';
-    const def = { mode: locum ? 'locum' : 'regular', hours: { 1: ['08:00', end], 2: ['08:00', end], 3: ['08:00', end], 4: ['08:00', end], 5: ['08:00', end] }, endBuffer: tech ? 0 : 45, canDo: tech ? ['svc-ai', 'svc-labour'] : null, availDates: {}, offDates: {}, locumHours: ['08:00', '18:00'], mobile: '', home: null, startFrom: 'base' };
+    const def = { mode: locum ? 'locum' : 'regular', hours: { 1: ['08:00', end], 2: ['08:00', end], 3: ['08:00', end], 4: ['08:00', end], 5: ['08:00', end] }, endBuffer: tech ? 0 : 45, canDo: tech ? ['svc-ai', 'svc-labour'] : null, availDates: {}, offDates: {}, locumHours: ['08:00', '18:00'], mobile: '', home: null, startFrom: 'base', colour: bkDefColour(s) };
     return { ...def, ...c, hours: c.hours || def.hours, availDates: c.availDates || {}, offDates: c.offDates || {} };
   },
   usualHours(s, date) { const c = Bk.scfg(s); return c.mode === 'locum' ? null : c.hours[bkDow(date)] || null; },
@@ -168,7 +176,11 @@ const Bk = {
     const p = Bk.person(staffId); const hr = p && Bk.hours(p, date); if (!hr) return null;
     if (Bk.blocksFor(date, staffId).some((b) => b.allDay)) return null; // on leave, at an event…
     if (bkMin(hr[0]) > bkMin(lc.def) || bkMin(hr[1]) < bkMin(lc.def) + lc.mins) return null;
-    return { start: lc.def, end: bkHHMM(bkMin(lc.def) + lc.mins), virtual: true };
+    // not moved yet: the usual time, or the closest time that works around that day's appointments (eaten wherever they are — no need to be back at homebase)
+    const sig = Bk.bookingsFor(date, staffId).map((b) => b.id + b.start + b.mins + stable(Bk.stops(b))).join('|') + Bk.blocksFor(date, staffId).map((b) => b.id + b.start + b.end).join('|') + stable(Bk.get('dayloc:' + staffId + ':' + date) || '') + lc.def + lc.from + lc.to + lc.mins + hr.join('');
+    const ck = staffId + date; const hit = BK_LCACHE.get(ck); if (hit && hit.sig === sig) return hit.v;
+    let at = bkMin(lc.def); if (!bkLunchOkAt(staffId, date, at)) { const f = bkLunchFit(staffId, date); at = f != null ? f : at; }
+    const v = { start: bkHHMM(at), end: bkHHMM(at + lc.mins), virtual: true }; BK_LCACHE.set(ck, { sig, v }); return v;
   },
   /* ---- appointments ---- */
   live(b) { return b.status !== 'cancelled' && !b.gone; },
@@ -195,6 +207,7 @@ const Bk = {
   svcText(b, sid) { const all = b.svcs || []; const l = sid ? all.filter((x) => Bk.sstaff(b, x).includes(sid)) : all; return (l.length ? l : all).map((x) => Bk.svc(x.svc).name + (x.head ? ' ×' + x.head : '')).join(', '); },
   fsched(fid) { return (fid && Bk.get('fsched:' + fid)) || {}; }, // a farm's booking rules (set on the business page)
   bsched(bid) { return (bid && Bk.get('bsched:' + bid)) || {}; },
+  pcol(id) { const p = Bk.person(id); return p ? Bk.scfg(p).colour || bkDefColour(p) : '#64748b'; }, // each person's own colour (Settings → Scheduling → People)
   pidText(b) { return (b.pids || []).map((p) => p.value).join(', '); },
   look(item, typeRec) { const l = item && item.look; return { colour: (l && l.colour) || typeRec.colour || '#777', pattern: (l && l.pattern) || typeRec.pattern || 'light' }; }, // default look from the type, or this one's own
 };
@@ -276,10 +289,10 @@ function bkDayLoc(staffId, date) { // where someone starts and finishes the day 
 
 /* ---------------- one person's day: blocks, lunch, appointments and the driving in between ---------------- */
 function bkBlockLoc(b) { const bt = Bk.btype(b.type); return (bt.where || 'base') === 'base' ? Travel.home() : null; }
-function bkDay(staffId, date, o = {}) { // o: { skipId, add (an appointment-like item to put in), moves {id: start}, noLunch }
+function bkDay(staffId, date, o = {}) { // o: { skipId, add (an appointment-like item to put in), moves {id: start}, noLunch, lunchAt (try lunch at this minute) }
   const p = Bk.person(staffId); const hr = p ? Bk.hours(p, date) : null; const items = [];
   Bk.blocksFor(date, staffId).forEach((b) => { const bt = Bk.btype(b.type); items.push({ kind: 'block', s: b.allDay ? 0 : bkMin(b.start), e: b.allDay ? 1440 : bkMin(b.end), loc: b.allDay ? null : bkBlockLoc(b), what: bt.name, ref: b }); });
-  const lu = o.noLunch ? null : Bk.lunch(staffId, date); if (lu && !lu.inAppt) items.push({ kind: 'lunch', s: bkMin(lu.start), e: bkMin(lu.end), loc: null, what: 'lunch', ref: lu });
+  const lc0 = Bk.lunchCfg(); const lu = o.noLunch ? null : o.lunchAt != null ? { start: bkHHMM(o.lunchAt), end: bkHHMM(o.lunchAt + lc0.mins), trial: true } : Bk.lunch(staffId, date); if (lu && !lu.inAppt) items.push({ kind: 'lunch', s: bkMin(lu.start), e: bkMin(lu.end), loc: null, what: 'lunch', ref: lu });
   Bk.bookingsFor(date, staffId).filter((b) => b.id !== o.skipId).forEach((b) => { const s = o.moves && o.moves[b.id] != null ? o.moves[b.id] : bkMin(b.start); items.push({ kind: 'appt', s, e: s + b.mins, loc: Travel.loc(b), locOut: Travel.locOut(b), what: Bk.who(b), ref: b }); });
   Bk.proposalsFor(date, staffId).filter((b) => b.id !== o.skipId && !(o.moves && o.moves[b.id] != null)).forEach((b) => { const s = bkMin(b.proposal.start); items.push({ kind: 'held', s, e: s + (b.proposal.mins || b.mins), loc: Travel.loc(b), locOut: Travel.locOut(b), what: 'held for ' + Bk.who(b), ref: b }); });
   if (o.add) items.push({ kind: 'new', s: o.add.s, e: o.add.e, loc: o.add.loc, locOut: o.add.locOut, what: 'this appointment', ref: o.add.ref });
@@ -287,7 +300,8 @@ function bkDay(staffId, date, o = {}) { // o: { skipId, add (an appointment-like
   const dl = bkDayLoc(staffId, date);
   // the drives: from the start of the day to the first place, between places, and back at the end
   const legs = []; let cur = dl.start, curName = dl.startName, prevEnd = hr ? bkMin(hr[0]) : 0, anyAway = false, lastAt = prevEnd;
-  items.forEach((it) => { if (it.kind === 'lunch' || !it.loc) { if (it.kind !== 'lunch' && it.kind !== 'block') prevEnd = Math.max(prevEnd, it.e); return; }
+  items.forEach((it) => { if (it.kind === 'lunch') { prevEnd = Math.max(prevEnd, it.e); if (it.s >= lastAt) lastAt = Math.max(lastAt, it.e); return; } // lunch is eaten wherever you are, before driving on
+    if (!it.loc) { if (it.kind !== 'block') prevEnd = Math.max(prevEnd, it.e); return; }
     const need = Travel.mins(cur, it.loc); if (need > 0) legs.push({ from: curName, to: it.loc.label || it.what, need, end: it.s, start: it.s - need, prevEnd, item: it });
     cur = it.locOut || it.loc; curName = (it.locOut || it.loc).label || it.what; prevEnd = Math.max(prevEnd, it.e); lastAt = it.e; if (!(it.loc && it.loc.home)) anyAway = true; });
   if (anyAway) { const need = Travel.mins(cur, dl.end); if (need > 0) legs.push({ from: curName, to: dl.endName, need, start: lastAt, end: lastAt + need, prevEnd: lastAt, home: true }); } // home straight after the last place (phone calls can happen on the way)
@@ -333,7 +347,7 @@ function bkYardTag(fid, yid) { const fs = bkYardUse(fid, yid); const f = IDX.far
 function bkFarmTag(fid) { const fs = Bk.fsched(fid); return fs.perYard ? ' — rules differ by yard' : bkYardTag(fid, null); }
 function bkNeedsLabour(f) { // ask about additional labour: some procedures always ask, and some clients always need it
   const svcs = (f.svcs || []).filter((x) => x.svc); if (svcs.some((x) => Bk.svc(x.svc).alongside)) return null;
-  if (f.bid && Bk.bsched(f.bid).labour) return 'always';
+  if (f.bid && Bk.bsched(f.bid).labour && !f.urgent) return 'always'; // (not for emergencies)
   return svcs.some((x) => Bk.svc(x.svc).askLabour) ? 'ask' : null;
 }
 
@@ -356,6 +370,8 @@ function bkProblems(bk, alt) { // bk: appointment-like; alt: check the held new 
       if (back > bkMin(hr[1])) out.push(`${nm} wouldn't be back until ${bkTime(back)} (finishes ${bkTime(hr[1])})`);
       else if (c.endBuffer && back > bkMin(hr[1]) - c.endBuffer) out.push(`Uses ${nm}'s end-of-day time for records and restocking`); } });
   if (Bk.type(bk.type).where === 'farm' && !Bk.stops(bk).length) out.push('No farm chosen — travel can\'t be worked out');
+  bkClientRuleIssues(bk, date, start, mins).forEach((x) => out.push((x.hard ? '⛔ ' : '') + x.msg));
+  (staff || []).forEach((sid) => bkBioIssues(sid, date, bk).forEach((m) => out.push(m)));
   return [...new Set([...out, ...bkRuleProblems(bk)])];
 }
 function bkRuleProblems(bk) { // farm and yard rules, people, herds / flocks, labour — these don't depend on the time
@@ -365,22 +381,29 @@ function bkRuleProblems(bk) { // farm and yard rules, people, herds / flocks, la
   (bk.svcs || []).forEach((x) => { if (x.svc && !Bk.sstaff(bk, x).length) out.push(`Nobody chosen for ${Bk.svc(x.svc).name}`); });
   const bz = bk.bid && IDX.biz && IDX.biz.get(bk.bid);
   if (bz && (bz.patientIds || []).length && !(bk.pids || []).length) out.push('No herd / flock chosen');
+  bkUnderIssues(bk).forEach((x) => out.push('⛔ ' + x.msg));
+  if (isFarm && st.length > 1) st.slice(0, -1).forEach((x) => { if (Bk.fsched(x.fid).bio === 'last' && st.some((y, i) => i > st.indexOf(x) && y.fid !== x.fid)) out.push(`Biosecurity: ${Bk.stopName(x)} should be the last farm visited`); });
   if (bkNeedsLabour(bk) === 'always' && !bk.noLabour) out.push(`${Bk.who(bk)} always needs additional labour — none booked`);
   return out;
 }
 
 /* ---------------- lunch: find a time for it inside the usual window ---------------- */
-function bkLunchSpans(staffId, date, o) { const day = bkDay(staffId, date, { ...o, noLunch: true }); return { day, busy: day.items.filter((x) => x.kind !== 'lunch' && !(x.kind === 'block' && x.ref.allDay)).map((x) => [x.s, x.e]).concat(day.legs.map((l) => [l.start, l.end])) }; }
-function bkLunchFit(staffId, date, o = {}) { // o: { add, skipId, moves, prefer } → a start time (minutes) inside the window, or null
-  const lc = Bk.lunchCfg(); const { day, busy } = bkLunchSpans(staffId, date, o); if (!day.hr) return null;
-  const want = o.prefer != null ? o.prefer : bkMin(lc.def); const c = [];
-  for (let s = bkMin(lc.from); s + lc.mins <= bkMin(lc.to); s += 15) if (!busy.some(([a, b]) => a < s + lc.mins && b > s)) c.push(s);
+function bkLunchOkAt(staffId, date, at, o = {}) { // can lunch go at this minute? (not during anything, and still time for every drive afterwards)
+  const lc = Bk.lunchCfg(); const day = bkDay(staffId, date, { ...o, lunchAt: at }); const hr = day.hr; if (!hr) return false;
+  if (at < bkMin(hr[0]) || at + lc.mins > bkMin(hr[1])) return false;
+  if (day.items.some((x) => x.kind !== 'lunch' && !(x.kind === 'block' && x.ref.allDay) && x.s < at + lc.mins && x.e > at)) return false;
+  const bad = (d) => d.legs.filter((l) => l.start < l.prevEnd).length; return bad(day) <= bad(bkDay(staffId, date, { ...o, noLunch: true }));
+}
+function bkLunchFit(staffId, date, o = {}) { // o: { add, skipId, moves, prefer } → a start time (minutes) inside the usual window, or null
+  const lc = Bk.lunchCfg(); const want = o.prefer != null ? o.prefer : bkMin(lc.def); const c = [];
+  for (let s = bkMin(lc.from); s + lc.mins <= bkMin(lc.to); s += 15) if (bkLunchOkAt(staffId, date, s, o)) c.push(s);
   return c.sort((a, b) => Math.abs(a - want) - Math.abs(b - want))[0] ?? null;
 }
-function bkLunchFree(staffId, date, o = {}) { // any time at all for lunch, even outside the window (needs approval)
-  const lc = Bk.lunchCfg(); const { day, busy } = bkLunchSpans(staffId, date, o); if (!day.hr) return null;
-  const want = bkMin(lc.def); const c = []; for (let s = bkMin(day.hr[0]); s + lc.mins <= bkMin(day.hr[1]); s += 15) if (!busy.some(([a, b]) => a < s + lc.mins && b > s)) c.push(s);
-  return c.sort((a, b) => Math.abs(a - want) - Math.abs(b - want))[0] ?? null;
+function bkLunchFree(staffId, date, o = {}) { // when nothing fits in the window: the closest time to it that works (needs approval)
+  const lc = Bk.lunchCfg(); const p = Bk.person(staffId); const hr = p && Bk.hours(p, date); if (!hr) return null;
+  const from = bkMin(lc.from), to = bkMin(lc.to); const dist = (s) => (s < from ? from - s : s + lc.mins > to ? s + lc.mins - to : 0);
+  const c = []; for (let s = bkMin(hr[0]); s + lc.mins <= bkMin(hr[1]); s += 15) if (bkLunchOkAt(staffId, date, s, o)) c.push(s);
+  return c.sort((a, b) => dist(a) - dist(b) || Math.abs(a - bkMin(lc.def)) - Math.abs(b - bkMin(lc.def)))[0] ?? null;
 }
 function bkLunchOutside(startMin) { const lc = Bk.lunchCfg(); return startMin < bkMin(lc.from) || startMin + lc.mins > bkMin(lc.to); }
 function bkSetLunch(staffId, date, startMin) { // move (or with null, remove) someone's lunch that day
@@ -439,15 +462,18 @@ function bkSlots(staffId, date, o) { // o: { type, stops, mins, skipId } → [{ 
 function bkSuggest(o) { // o: { type, stops | fids, mins, svcs, urgent, skipId, from, staff (only these people) }
   const stops = o.stops || (o.fids || (o.fid ? [o.fid] : [])).map((fid) => ({ fid, yid: null }));
   const t = Bk.type(o.type); const target = t.where === 'farm' ? Travel.stopPt(stops[0]) : t.where === 'base' ? Travel.home() : null;
-  const ppl = Bk.people().filter((s) => (!o.staff || !o.staff.length || o.staff.includes(s.id)) && (o.svcs || []).every((x) => Bk.canDo(s, x.svc)));
+  const u = o.bid && bkUnder(o.bid); const only = u && !u.gone && u.staff && u.staff.length && !(u.emergencyAny && o.urgent) ? u.staff : null; // "who to book under" for this client
+  const ppl = Bk.people().filter((s) => (!o.staff || !o.staff.length || o.staff.includes(s.id)) && (!only || only.includes(s.id)) && (o.svcs || []).every((x) => Bk.canDo(s, x.svc)));
+  const cr = o.bid ? Bk.bsched(o.bid) : {};
   const today = bkToday(); const from = o.from && o.from > today ? o.from : today; const res = [];
   for (let i = 0; i < 42; i++) { const d = bkAdd(from, i);
     for (const s of ppl) { const sl = bkSlots(s.id, d, { type: o.type, stops, mins: o.mins, skipId: o.skipId }).filter((x) => !x.lunchOut); if (!sl.length) continue;
       const day = bkDay(s.id, d, { skipId: o.skipId }); const farmsThatDay = day.items.filter((x) => (x.kind === 'appt' || x.kind === 'held') && x.loc && !x.loc.home);
       const near = target && !target.home ? farmsThatDay.map((x) => ({ m: Travel.mins(x.loc, target), x })).sort((a, b) => a.m - b.m)[0] : null;
-      const best = sl.map((x) => ({ x, extra: bkExtraDrive(s.id, d, o, x.start, stops) })).sort((a, b) => a.extra - b.extra || bkMin(a.x.start) - bkMin(b.x.start))[0];
-      res.push({ date: d, staff: s.id, start: best.x.start, extra: best.extra, near: near && near.m <= 20 ? near : null, days: i, logic: best.x.logic, lunch: best.x.lunch }); } }
-  const score = (r) => (o.urgent ? r.days * 1000 + bkMin(r.start) : r.extra + r.days * 1.5 - (r.near ? 25 : 0));
+      const okSl = sl.filter((x) => !(cr.must || []).some((r) => r.kind !== 'note' && !bkRuleOk(r, d, x.start, o.mins))); if (!okSl.length) continue; // the client's "must" rules
+      const best = okSl.map((x) => ({ x, extra: bkExtraDrive(s.id, d, o, x.start, stops), pref: (cr.prefer || []).filter((r) => r.kind !== 'note' && !bkRuleOk(r, d, x.start, o.mins)).length })).sort((a, b) => a.pref - b.pref || a.extra - b.extra || bkMin(a.x.start) - bkMin(b.x.start))[0];
+      res.push({ date: d, staff: s.id, start: best.x.start, extra: best.extra, pref: best.pref, near: near && near.m <= 20 ? near : null, days: i, logic: best.x.logic, lunch: best.x.lunch }); } }
+  const score = (r) => (o.urgent ? r.days * 1000 + bkMin(r.start) : r.extra + r.days * 1.5 - (r.near ? 25 : 0) + (r.pref || 0) * 60);
   return res.sort((a, b) => score(a) - score(b)).slice(0, 8);
 }
 function bkExtraDrive(sid, date, o, start, stops) { // how much more driving this appointment adds to that person's day
@@ -513,3 +539,100 @@ function bkLogApply(e, dir) { // dir 'undo' puts back what was there before; 're
 }
 function bkLogChangedSince(e, dir) { return e.items.filter((it) => { const r = bkLogFind(it.k, it.id); const cur = r ? stable(bkPlain(r)) : null; const exp = dir === 'undo' ? it.after : it.before; return (exp ? stable(exp) : null) !== cur; }); }
 window.bkLogInit = bkLogInit; window.bkLogCapture = bkLogCapture;
+
+/* ---------------- each client's booking rules (business page → 📅 Scheduling) ---------------- */
+const BK_RULE_KINDS = { days: 'Only on these days', notdays: 'Not on these days', time: 'Only between these times', months: 'Only in these months', notmonths: 'Not in these months', note: 'Something else (shown as a note)' };
+const BK_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function bkRuleOk(r, date, start, mins) { // does an appointment on this date and time keep to the rule?
+  const d = bkDow(date), m = +date.slice(5, 7), s0 = start ? bkMin(start) : null;
+  switch (r.kind) { case 'days': return (r.days || []).includes(d); case 'notdays': return !(r.days || []).includes(d);
+    case 'time': return s0 == null || (s0 >= bkMin(r.from || '00:00') && s0 + (mins || 0) <= bkMin(r.to || '24:00'));
+    case 'months': return (r.months || []).includes(m); case 'notmonths': return !(r.months || []).includes(m); default: return true; }
+}
+function bkRuleWords(r) {
+  const dl = (r.days || []).slice().sort((a, b) => ((a + 6) % 7) - ((b + 6) % 7)).map((x) => DOW_NAMES[x]).join(', '), ml = (r.months || []).slice().sort((a, b) => a - b).map((x) => BK_MONTHS[x - 1]).join(', ');
+  const t = ({ days: 'Only on ' + dl, notdays: 'Not on ' + dl, time: `Only between ${bkTime(r.from || '00:00')} and ${bkTime(r.to || '24:00')}`, months: 'Only in ' + ml, notmonths: 'Not in ' + ml, note: r.text || '' })[r.kind] || '';
+  return t + (r.text && r.kind !== 'note' ? ` (${r.text})` : '');
+}
+function bkUnder(bid) { const x = Bk.bsched(bid); return x.under ? Bk.get(x.under) : null; }
+function bkUnderIssues(bk) { // who this client should be booked with
+  const u = bk.bid && bkUnder(bk.bid); if (!u || !u.staff || !u.staff.length || u.gone) return []; if (u.emergencyAny && bk.urgent) return [];
+  const main = [...new Set((bk.svcs || []).filter((x) => x.svc && !Bk.svc(x.svc).alongside).flatMap((x) => Bk.sstaff(bk, x)))];
+  const wrong = main.filter((id) => !u.staff.includes(id)); return wrong.length ? [{ hard: true, msg: `${Bk.who(bk)}: book under "${u.name}" — not ${wrong.map(Bk.pname).join(', ')}` }] : [];
+}
+function bkClientRuleIssues(bk, date, start, mins) {
+  const x = bk.bid ? Bk.bsched(bk.bid) : {}; const out = [];
+  (x.must || []).filter((r) => r.kind !== 'note' && !bkRuleOk(r, date, start, mins)).forEach((r) => out.push({ hard: true, msg: `${Bk.who(bk)} rule: ${bkRuleWords(r)}` }));
+  (x.prefer || []).filter((r) => r.kind !== 'note' && !bkRuleOk(r, date, start, mins)).forEach((r) => out.push({ msg: `${Bk.who(bk)} prefers: ${bkRuleWords(r)}` }));
+  return out;
+}
+function bkHardRules(bk) { return [...bkUnderIssues(bk), ...(bk.date && bk.start ? bkClientRuleIssues(bk, bk.date, bk.start, bk.mins).filter((x) => x.hard) : [])]; }
+
+/* ---------------- biosecurity order: some farms should be the last visit of the day ---------------- */
+function bkBioIssues(sid, date, bk) {
+  const day = bkDay(sid, date, { skipId: bk.id, add: { s: bkMin(bk.start), e: bkMin(bk.start) + bk.mins, loc: Travel.loc(bk), locOut: Travel.locOut(bk), ref: bk } });
+  const visits = day.items.filter((x) => (x.kind === 'appt' || x.kind === 'new') && x.loc && !x.loc.home); const out = [];
+  visits.forEach((v, i) => { const st = Bk.stops(v.ref); const last = st.find((y) => Bk.fsched(y.fid).bio === 'last'); if (!last) return; const later = visits.slice(i + 1).find((w) => Bk.stops(w.ref).some((y) => y.fid !== last.fid));
+    if (later && (v.kind === 'new' || later.kind === 'new')) out.push(`Biosecurity: ${Bk.stopName(last)} should be ${Bk.pname(sid)}'s last farm that day — ${later.kind === 'new' ? 'this appointment' : later.what} comes after it`); });
+  return out;
+}
+
+/* ---------------- warnings, cautions, side notes and biosecurity from the client, the people, the farms and the yards ---------------- */
+function bkWarnings(b) { // → [{ lvl: 'major' | 'minor' | 'assess' | 'side' | 'bio' | 'safety', from, text }]
+  const out = []; if (typeof notesOf !== 'function') return out;
+  const add = (lvl, from, t) => { if ((t || '').trim()) out.push({ lvl, from, text: t.trim() }); };
+  const bz = b.bid && IDX.biz && IDX.biz.get(b.bid); const c = b.cid && D.contacts.find((x) => x.id === b.cid);
+  [[bz, 'business', bz && bz.name], [c, 'contact', c && fullName(c)]].forEach(([rec, type, nm]) => { if (!rec) return;
+    notesOf(rec, type, 'warn').forEach((n) => add('major', nm, n.t)); notesOf(rec, type, 'caution').forEach((n) => add('minor', nm, n.t)); notesOf(rec, type, 'side').forEach((n) => add('side', nm, n.t)); });
+  if (bz && (bz.biosec || '').trim()) add('bio', bz.name, bz.biosec);
+  const seen = new Set();
+  Bk.stops(b).forEach((st) => { const f = IDX.farms && IDX.farms.get(st.fid); if (!f) return;
+    if (!seen.has(f.id)) { seen.add(f.id); const nm = f.name || 'Farm';
+      notesOf(f, 'farm', 'warn').forEach((n) => add('major', nm, n.t)); notesOf(f, 'farm', 'repair').forEach((n) => add('major', nm + ' (repairs)', n.t)); notesOf(f, 'farm', 'assess').forEach((n) => add('assess', nm, n.t));
+      notesOf(f, 'farm', 'caution').forEach((n) => add('minor', nm, n.t)); notesOf(f, 'farm', 'minor').forEach((n) => add('minor', nm + ' (repairs)', n.t));
+      const sf = f.safety || {}; if (sf.status && sf.status !== 'ok') add(sf.status === 'stop' ? 'major' : 'minor', nm + ' (safety)', sf.note || (sf.status === 'stop' ? 'No routine work until fixed' : 'Caution'));
+      if (typeof farmBiosecOf === 'function') farmBiosecOf(f).forEach((x) => add('bio', nm, x.txt));
+      if (Bk.fsched(f.id).bio === 'last') add('bio', nm, 'Visit this farm last in the day'); }
+    const y = st.yid && bkYardsOf(f).find((x) => x.yid === st.yid); if (y && y.safety && y.safety.status && y.safety.status !== 'ok') add(y.safety.status === 'stop' ? 'major' : 'minor', Bk.stopName(st) + ' (safety)', y.safety.note || 'Check the yards'); });
+  return out;
+}
+const BK_WLVL = { major: ['⛔', 'Major'], safety: ['⛔', 'Safety'], assess: ['🆕', 'New — need to assess'], minor: ['⚠️', 'Minor'], bio: ['🦠', 'Biosecurity'], side: ['📝', 'Side note'] };
+
+/* ---------------- checklists for each procedure: before, during and after the appointment ---------------- */
+const BK_PHASES = [['before', 'Before'], ['during', 'During'], ['after', 'After']];
+function bkChecklist(b) { // → [{ phase, svc, text, key }]
+  const out = []; const seen = new Set();
+  (b.svcs || []).forEach((x) => { const sv = x.svc && Bk.get(x.svc); if (!sv || !sv.check) return; BK_PHASES.forEach(([ph]) => (sv.check[ph] || []).forEach((t) => { const key = ph + ':' + t; if (seen.has(key)) return; seen.add(key); out.push({ phase: ph, svc: sv.name, text: t, key }); })); });
+  return out;
+}
+const bkTicked = (b, key) => !!(b.ticks && b.ticks[key]);
+function bkPatientEmoji(b) { return [...new Set((b.pids || []).map((p) => (typeof pidEmo === 'function' ? pidEmo(p) : '').trim()).filter(Boolean))].join(''); }
+
+/* ---------------- make a day (or a week) more efficient ---------------- */
+function bkStopOrder(b, prevLoc, nextLoc) { // the quickest order for an appointment's farms / yards, from where they're coming and to where they're going next
+  const st = Bk.stops(b); if (st.length < 2 || st.length > 6) return null;
+  const pts = st.map((x) => Travel.stopPt(x)); const cost = (ord) => { let m = Travel.mins(prevLoc, pts[ord[0]]); for (let i = 1; i < ord.length; i++) m += Travel.mins(pts[ord[i - 1]], pts[ord[i]]); return m + Travel.mins(pts[ord[ord.length - 1]], nextLoc); };
+  const perms = (a) => (a.length <= 1 ? [a] : a.flatMap((x, i) => perms([...a.slice(0, i), ...a.slice(i + 1)]).map((p) => [x, ...p])));
+  const base = st.map((_, i) => i); const lastI = st.findIndex((x) => Bk.fsched(x.fid).bio === 'last');
+  let best = { ord: base, m: cost(base) }; perms(base).forEach((o) => { if (lastI >= 0 && o.findIndex((i) => st[i].fid === st[lastI].fid) < o.length - st.filter((x) => x.fid === st[lastI].fid).length) return; const m = cost(o); if (m < best.m) best = { ord: o, m }; });
+  const saving = cost(base) - best.m; return saving >= 5 ? { ord: best.ord, saving, stops: best.ord.map((i) => st[i]) } : null;
+}
+function bkEfficient(dates, staffIds) { // → [{ kind: 'earlier' | 'order' | 'swap', b, … , why }]
+  const out = []; const seen = new Set();
+  dates.forEach((date) => { if (date < bkToday()) return;
+    staffIds.forEach((sid) => { const day = bkDay(sid, date); if (!day.hr) return;
+      // the farms / yards on one appointment in a better order
+      day.items.forEach((it, i) => { if (it.kind !== 'appt' || seen.has('o' + it.ref.id) || Bk.done(it.ref)) return; const prev = day.items.slice(0, i).reverse().find((x) => x.loc) || null, next = day.items.slice(i + 1).find((x) => x.loc) || null;
+        const r = bkStopOrder(it.ref, prev ? prev.locOut || prev.loc : day.dl.start, next ? next.loc : day.dl.end); if (r) { seen.add('o' + it.ref.id); out.push({ kind: 'order', b: it.ref, stops: r.stops, ord: r.ord, saving: r.saving, why: `${Bk.who(it.ref)} (${bkDate(date)}): visit ${r.stops.map((x) => Bk.stopName(x)).join(' → ')} — saves ~${r.saving} min driving` }); } });
+      // two appointments the other way round
+      const ap = day.items.filter((x) => x.kind === 'appt' && (x.ref.staff || []).length === 1 && !x.ref.proposal && !Bk.done(x.ref));
+      for (let i = 0; i + 1 < ap.length; i++) { const A = ap[i].ref, B = ap[i + 1].ref; if (seen.has('s' + A.id) || seen.has('s' + B.id)) continue;
+        const before = day.legs.reduce((a, l) => a + l.need, 0); const s1 = bkMin(A.start); const moves = { [B.id]: s1 }; const dB = Travel.mins(Travel.locOut(B), Travel.loc(A)); moves[A.id] = bkQ(s1 + B.mins + dB);
+        const d2 = bkDay(sid, date, { moves }); const after = d2.legs.reduce((a, l) => a + l.need, 0); const ok = !d2.items.some((x, j) => j && x.kind !== 'lunch' && d2.items.slice(0, j).some((y) => y.kind !== 'lunch' && !(y.kind === 'block' && y.ref.allDay) && !(x.kind === 'block' && x.ref.allDay) && y.e > x.s)) && !d2.legs.some((l) => l.start < l.prevEnd) && moves[A.id] + A.mins <= bkMin(day.hr[1]);
+        if (ok && before - after >= 10) { seen.add('s' + A.id); seen.add('s' + B.id); out.push({ kind: 'swap', a: A, b: B, aTo: bkHHMM(moves[A.id]), bTo: bkHHMM(moves[B.id]), saving: before - after, why: `${Bk.pname(sid)} ${bkDate(date)}: ${Bk.who(B)} first at ${bkTime(moves[B.id])}, then ${Bk.who(A)} at ${bkTime(moves[A.id])} — saves ~${before - after} min driving` }); } }
+    });
+    // starting earlier (e.g. the first appointment at 9 instead of 9:15) and closing gaps
+    bkTidy(staffIds, date, null).forEach((x) => { if (seen.has('e' + x.b.id) || seen.has('s' + x.b.id)) return; seen.add('e' + x.b.id); out.push({ kind: 'earlier', b: x.b, to: x.to, why: `${Bk.who(x.b)} (${bkDate(date)}): ${bkTime(x.from)} → ${bkTime(x.to)}` }); });
+  });
+  return out;
+}
