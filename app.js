@@ -8,7 +8,7 @@ const RATING_SET = new Set(RATINGS);
 const RATING_SHORT = { aplus: 'A+', a: 'A', b: 'B', c: 'C' };
 // which photo wins when we must pick one automatically (user is still asked via the job list)
 const PHOTO_PRIORITY = ['dna', 'blockedc', 'blockedn', 'payup', 'newfac', 'newassess', 'newmaybe', 'aplus', 'a', 'b', 'c', 'bvs', 'bfriends', 'sheepreg', 'sheepocc', 'occ', 'industry', 'prac', 'phone', 'family', 'inactive']; // default order; Inactive is overridden by every other tag
-const APP_VERSION = '1.8 (29 Oct 2026)'; // Clients module, includes Bovitech Contacts v17.26
+const APP_VERSION = '1.8.1 (30 Oct 2026)'; // Clients module, includes Bovitech Contacts v17.26
 // current photo priority: the order saved in Settings (synced), then any photo tags not yet placed
 function photoOrder() {
   const withPhoto = D.tags.filter((t) => tagPhotoSrc(t.id)).map((t) => t.id);
@@ -1067,8 +1067,11 @@ async function changed() {
 }
 /* ---------------- confirm pop-up (replaces the browser's confirm box; phone Back = cancel) ---------------- */
 let CONFIRM = null;
-function askBox(title, html, okLabel = 'Yes — go ahead', danger = false, noLabel = "Cancel — don't change anything", altLabel = '') { // resolves true (ok), 'alt' (second choice) or false (back / cancel)
+let ASKQ = Promise.resolve(); // one pop-up at a time: a second one waits until the first is answered
+function askBox(...args) { const p = ASKQ.then(() => askBox1(...args)); ASKQ = p.catch(() => {}); return p; }
+function askBox1(title, html, okLabel = 'Yes — go ahead', danger = false, noLabel = "Cancel — don't change anything", altLabel = '') { // resolves true (ok), 'alt' (second choice) or false (back / cancel)
   return new Promise((res) => {
+    document.querySelectorAll('#askbox').forEach((x) => x.remove()); // never two on top of each other
     const bg = document.createElement('div'); bg.className = 'sheet-bg'; bg.id = 'askbox'; bg.style.zIndex = 80;
     bg.innerHTML = `<div class="sheet" style="max-width:620px"><div class="sheet-h"><button class="btn" data-act="ask-no">‹ Back</button><h2>${h(title)}</h2></div><div class="form">${html}
       <div class="actions" style="margin-top:16px"><button class="btn ${danger ? 'red' : 'primary'}" data-act="ask-yes" style="font-size:17px;padding:11px 16px">${h(okLabel)}</button>${altLabel ? `<button class="btn primary" data-act="ask-alt" style="font-size:17px;padding:11px 16px">${h(altLabel)}</button>` : ''}<button class="btn" data-act="ask-no">${h(noLabel)}</button></div>${jobCtxBtn()}</div></div>`;
@@ -1076,7 +1079,7 @@ function askBox(title, html, okLabel = 'Yes — go ahead', danger = false, noLab
   });
 }
 let ASK_FORM = {};
-function closeAsk(v, fromPop) { if (!CONFIRM) return; const r = CONFIRM.res; CONFIRM = null; const el = $('#askbox'); ASK_FORM = {}; if (el) { el.querySelectorAll('[data-ask]').forEach((x) => { if (x.type === 'radio' && !x.checked) return; ASK_FORM[x.dataset.ask] = x.value; }); el.querySelectorAll('[data-askchk]').forEach((x) => (ASK_FORM[x.dataset.askchk] = x.checked)); } const ta = el && el.querySelector('textarea'); if (v === true && ta) v = ta.value.trim() || true; if (el) el.remove(); if (!fromPop) { NAV.ignorePop++; history.back(); } updateBackBtn(); r(v); }
+function closeAsk(v, fromPop) { if (!CONFIRM) { document.querySelectorAll('#askbox').forEach((x) => x.remove()); updateBackBtn(); return; } /* a pop-up left behind just closes */ const r = CONFIRM.res; CONFIRM = null; const el = $('#askbox'); ASK_FORM = {}; if (el) { el.querySelectorAll('[data-ask]').forEach((x) => { if (x.type === 'radio' && !x.checked) return; ASK_FORM[x.dataset.ask] = x.value; }); el.querySelectorAll('[data-askchk]').forEach((x) => (ASK_FORM[x.dataset.askchk] = x.checked)); } const ta = el && el.querySelector('textarea'); if (v === true && ta) v = ta.value.trim() || true; if (el) el.remove(); if (!fromPop) { NAV.ignorePop++; history.back(); } updateBackBtn(); r(v); }
 document.addEventListener('click', (e) => { const el = e.target.closest('[data-act=ask-yes],[data-act=ask-no],[data-act=ask-alt]'); if (!el) return; e.stopPropagation(); closeAsk(el.dataset.act === 'ask-yes' ? true : el.dataset.act === 'ask-alt' ? 'alt' : false); }, true);
 const askText = (t) => `<p style="font-size:16px;line-height:1.45;white-space:pre-wrap">${h(t)}</p>`;
 async function ask(msg, okLabel, danger) { const ok = await askBox('Please confirm', askText(msg), okLabel || 'Yes — go ahead', danger); if (ok) { S.skipConfirm = true; setTimeout(() => (S.skipConfirm = false), 0); } return ok; } // already confirmed → no second pop-up

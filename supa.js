@@ -47,7 +47,7 @@ const SBAuth = {
   keep(js) { this.s = { access_token: js.access_token, refresh_token: js.refresh_token, expires_at: js.expires_at || Math.floor(Date.now() / 1000) + (js.expires_in || 3600), user: { id: js.user.id, email: js.user.email } }; this.save(); },
   /* step 1: email + password. Returns { done } when this device is already trusted, or what's needed next. */
   async signIn(email, password) {
-    const js = await this.auth('token?grant_type=password', { email: email.trim().toLowerCase(), password });
+    let js; try { js = await this.auth('token?grant_type=password', { email: email.trim().toLowerCase(), password }); } catch (e) { if (e.status === 400 && /invalid_credentials|invalid_grant/.test(e.code || '') || /invalid login credentials/i.test(e.message)) e.badPw = true; e.tokenStep = true; throw e; } // only this step means the password is wrong
     this.keep(js);
     return this.afterPassword();
   },
@@ -205,7 +205,9 @@ async function onLoginSubmit(e) {
     }
     signedIn();
   } catch (err) {
-    out.textContent = LG.mode === 'password' && err.status === 400 ? 'That email and password don’t match. Check them and try again.'
+    out.textContent = LG.mode === 'password' && err.badPw ? 'That email and password don’t match. Check them and try again.'
+      : LG.mode === 'password' && err.tokenStep ? `Sign-in was refused: ${err.message}${err.code ? ' (' + err.code + ')' : ''}`
+      : LG.mode === 'password' && !err.offline ? `Your password was accepted, but signing in couldn't finish: ${err.message}${err.status ? ' (' + err.status + (err.code ? ' ' + err.code : '') + ')' : ''}. Tell the office (or Claude) exactly what this says.`
       : LG.mode !== 'password' && (err.status === 422 || err.status === 400 || /invalid|expired/i.test(err.message)) ? "That code didn't work — codes change every 30 seconds, so type the one showing now." : err.message;
   } finally { if (go.isConnected) { go.disabled = false; go.textContent = label; } }
 }
