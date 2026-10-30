@@ -212,6 +212,8 @@ document.addEventListener('click', async (e) => {
   const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return; const a = el.dataset.act; const d = el.dataset;
   switch (a) {
     case 'bk-eff': bkEffOpen(); break;
+    case 'bk-gocal': S.tab = 'book'; BK.page = 'cal'; BK.view = 'day'; BK.date = d.d; S.sel = null; renderAll(); window.scrollTo(0, 0); break;
+    case 'bk-bizbook': if (!Bk.need('book')) return; { const c = bkContactsOf(d.bid).find(bkMobile); bkOpen(null, { bid: d.bid, cid: c ? c.id : null, date: BK.date < bkToday() ? bkToday() : BK.date }); } break;
     case 'bks-go': BK.date = bkAdd(BK.date, +d.v); renderAll(); break;
     case 'bks-print': window.print(); break;
     case 'bks-copy': { const t = bkSheetText(bkSheetSid(), BK.date); try { await navigator.clipboard.writeText(t); toast('Copied — paste it into a text or email'); } catch (x) { toast('Couldn\'t copy on this device'); } break; }

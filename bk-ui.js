@@ -44,7 +44,7 @@ function bkDayHtml() {
   const colHtml = (s) => {
     const c = Bk.scfg(s); const day = bkDay(s.id, date); const hrsOn = day.hr;
     let shade = '';
-    if (!hrsOn) shade = `<div class="bk-off" style="top:0;height:${H}px"><span>${c.mode === 'locum' ? 'Not available' : 'Not working'}</span></div>`;
+    if (!hrsOn) shade = `<div class="bk-off" style="top:0;height:${H}px"><span>${Bk.weekend(date) ? (bkOncallWho(date) === s.id ? '📟 On call for emergencies only' : 'On call for emergencies only') : c.mode === 'locum' ? 'Not available' : 'Not working'}</span></div>`;
     else { shade = `<div class="bk-off" style="top:0;height:${Math.max(0, y(hrsOn[0]))}px"></div><div class="bk-off" style="top:${y(hrsOn[1])}px;height:${Math.max(0, H - y(hrsOn[1]))}px"></div>`;
       if (c.endBuffer) shade += `<div class="bk-buffer" style="top:${y(bkMin(hrsOn[1]) - c.endBuffer)}px;height:${c.endBuffer * BK_PX}px"><span>Records &amp; restock</span></div>`; }
     const parts = day.items.map((it) => {
@@ -62,7 +62,7 @@ function bkDayHtml() {
     const legs = day.legs.map((l) => { const bad = l.start < l.prevEnd; const top = Math.max(l.start, l.prevEnd); return `<div class="bk-drive ${bad ? 'bad' : ''} ${l.home ? 'home' : ''}" style="top:${y(top)}px;height:${Math.max(12, (l.end - top) * BK_PX)}px"><span>🚗 ~${l.need} min ${l.home ? 'back to ' + h(l.to) : 'from ' + h(l.from)}${bad ? ' — not enough time' : ''}</span></div>`; }).join('');
     return `<div class="bk-col" data-staff="${s.id}" style="height:${H}px">${shade}${legs}${parts}</div>`;
   };
-  if (!cols.length) return `<div class="card bk-empty">${bkHoliday(date) ? `<b>🎉 ${h(bkHoliday(date))}</b> — public holiday: nobody works (like a weekend), only the on-call vet for emergencies. Use ➕ Make available (tick "Show everyone" below) if someone is working. ` : ''}Nobody ticked above is working on ${bkDate(date, { weekday: 'long', day: 'numeric', month: 'long' })}.${Bk.people().length ? ' Tick "Show everyone" below to book anyway, or to make someone available.' : ' The staff list loads the first time you sign in with internet.'}<div class="hint" style="margin-top:6px">On call: ${bkOncallText(date)}</div></div>`;
+  if (!cols.length) return `<div class="card bk-empty">${bkHoliday(date) ? `<b>🎉 ${h(bkHoliday(date))}</b> — public holiday: nobody works (like a weekend), only the on-call vet for emergencies. Use ➕ Make available (tick "Show everyone" below) if someone is working. ` : ''}${Bk.weekend(date) && !bkHoliday(date) ? '<b>Weekend</b> — on call for emergencies only. ' : ''}Nobody ticked above is working on ${bkDate(date, { weekday: 'long', day: 'numeric', month: 'long' })}.${Bk.people().length ? ' Tick "Show everyone" below to book anyway, or to make someone available.' : ' The staff list loads the first time you sign in with internet.'}<div class="hint" style="margin-top:6px">On call: ${bkOncallText(date)}</div></div>`;
   return `<div class="bk-oncall" data-act="bk-page" data-v="roster" style="--c:${bkOncallWho(date) ? Bk.pcol(bkOncallWho(date)) : 'transparent'}">📟 On call: ${bkOncallText(date)}</div>
   <div class="bk-dayscroll v"><div class="bk-day" style="grid-template-columns:44px repeat(${cols.length}, minmax(150px, 1fr))">
     <div class="bk-colh bk-corner"></div>${cols.map((s, ci) => { const hr = Bk.hours(s, date); const usual = Bk.usualHours(s, date); const c = Bk.scfg(s); const dl = bkDayLoc(s.id, date); const swapped = !!(c.availDates[date] || c.offDates[date]);
@@ -276,6 +276,14 @@ function bkBizCard(b) {
     <div class="hint" style="margin-top:4px">Used when booking: the head-per-hour rates set how long those procedures take at each farm or yard, and "what can be booked here" warns you if an appointment doesn't fit.</div></div>`;
 }
 window.bkBizCard = bkBizCard;
+function bkBizAppts(b) { // the business page: its booked appointments (tap one to open it, 📅 to see that day on the calendar)
+  if (!Bk.on()) return ''; const t = bkToday(); const all = Bk.list('bookings').filter((x) => !x.gone && x.bid === b.id).sort((x, y) => (x.date + x.start).localeCompare(y.date + y.start));
+  if (!all.length && !isClientBiz(b)) return ''; const up = all.filter((x) => Bk.live(x) && x.date >= t), past = all.filter((x) => !up.includes(x)).reverse();
+  const row = (x) => { const tt = Bk.type(x.type); const lk = bkLookStyle(x, tt); return `<div class="kv bk-bizappt" style="align-items:center"><div class="v bk-chip ${lk.cls} ${Bk.unconf(x) ? 'unconf' : ''}" style="--c:${lk.c};flex:1;margin:0" data-act="bk-open" data-id="${x.id}" title="Open this appointment"><b>${bkDate(x.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })} ${bkTime(x.start)}</b> · ${bkPatientEmoji(x)}${h(tt.name)}${Bk.farmName(x) ? ' — ' + h(Bk.farmName(x)) : ''}<br><span class="hint">${h((x.svcs || []).filter((y) => y.svc).map((y) => Bk.svc(y.svc).name + (y.head ? ' ×' + y.head : '')).join(', '))}${(x.staff || []).length ? ' · ' + h(x.staff.map(Bk.pname).join(', ')) : ''} · <i>${h(x.status === 'cancelled' ? 'Cancelled' : Bk.statusText(x))}</i></span></div><button class="btn small" data-act="bk-gocal" data-d="${x.date}" title="Show ${bkDate(x.date)} on the calendar">📅 Calendar</button></div>`; };
+  return `<div class="card"><h3><span class="sp">📅 Appointments (${up.length} coming up)</span>${Bk.can('book') ? `<button class="btn small" data-act="bk-bizbook" data-bid="${b.id}">➕ Appointment</button>` : ''}</h3>${up.map(row).join('') || '<div class="hint">Nothing booked.</div>'}
+    ${past.length ? `<details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Past and cancelled (${past.length})</summary>${past.slice(0, 60).map(row).join('')}</details>` : ''}</div>`;
+}
+window.bkBizAppts = bkBizAppts;
 
 /* ---------------- Ask Claude (Scheduling Jobs and On call): copies the question with what's on this page ---------------- */
 const BK_AI_NAME = { pending: 'To schedule list and waitlist', jobs: 'Scheduling jobs', roster: 'On-call roster', followups: 'Follow-ups' };
