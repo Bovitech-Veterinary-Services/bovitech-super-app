@@ -76,7 +76,7 @@ const OcG = {
     if (!google.accounts.oauth2.hasGrantedAllScopes(r, this.scope)) throw new Error('Please tick the Google Calendar box so the app can keep the on-call calendar up to date.');
     this.tok = { t: r.access_token, exp: Date.now() + r.expires_in * 1000 }; try { localStorage.setItem('bvp-ocgtok', JSON.stringify(this.tok)); } catch (e) { } return this.tok.t;
   },
-  async api(path, opt = {}) { const t = await this.get(false); const r = await fetch('https://www.googleapis.com/calendar/v3' + path, { ...opt, headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json', ...(opt.headers || {}) } });
+  async api(path, opt = {}) { const t = await this.get(false); const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 25000); let r; try { r = await fetch('https://www.googleapis.com/calendar/v3' + path, { ...opt, signal: ac.signal, headers: { Authorization: 'Bearer ' + t, 'Content-Type': 'application/json', ...(opt.headers || {}) } }); } catch (e) { throw new Error(e.name === 'AbortError' ? 'Google Calendar didn\'t answer — check the internet and try again' : 'Can\'t reach Google Calendar — check the internet'); } finally { clearTimeout(tm); }
     if (r.status === 401) { this.tok = null; try { localStorage.removeItem('bvp-ocgtok'); } catch (e) { } throw Object.assign(new Error('Google sign-in expired — tap "Sync now"'), { signin: true }); }
     if (r.status === 403) { const js = await r.json().catch(() => ({})); throw new Error(/has not been used|disabled/i.test(JSON.stringify(js)) ? 'The Google Calendar API isn\'t switched on for the practice\'s Google Cloud project yet (see the manual).' : 'Google refused: ' + ((js.error || {}).message || r.status)); }
     if (!r.ok && r.status !== 204 && r.status !== 410) throw new Error('Google Calendar: ' + r.status + ' ' + (await r.text()).slice(0, 160)); return r.status === 204 || r.status === 410 ? null : r.json(); },
@@ -86,7 +86,9 @@ const OcG = {
     let who = ''; try { const u = await (await fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + this.tok.t } })).json(); who = u.email || ''; } catch (e) { }
     D.settings.ocCal = { id: cal.id, account: who || this.account, at: Date.now() }; touch(D.settings); save(); Sync.soon(); return cal.id; },
   want(from, to) { const m = {}; for (let d = from; d <= to; d = bkAdd(d, 1)) { const w = bkOncallWho(d); if (w) m[d] = { t: 'On call: ' + Bk.pname(w), c: Bk.gcol(w) }; } return m; },
-  async sync(force) { if (this.busy) return 0; this.busy = true; let n = 0;
+  async sync(force) { // force: from Sync now — waits for a sync already running, then does a full check
+    if (this.busy && Date.now() - this.busy < 120000) { if (!force) return 0; for (let i = 0; i < 60 && this.busy; i++) await new Promise((r) => setTimeout(r, 1000)); }
+    this.busy = Date.now(); let n = 0;
     try { const cal = await this.ensureCal(); const from = bkAdd(bkToday(), -14), to = bkAdd(bkToday(), 180); const want = this.want(from, to);
       const key = stable(want); if (!force && key === localStorage.getItem('bvp-ocghash')) return 0;
       const have = {}; let pageToken = ''; do { const r = await this.api(`/calendars/${encodeURIComponent(cal)}/events?privateExtendedProperty=${encodeURIComponent('bvp=oncall')}&timeMin=${from}T00:00:00Z&timeMax=${bkAdd(to, 2)}T00:00:00Z&singleEvents=true&maxResults=2500${pageToken ? '&pageToken=' + pageToken : ''}`); (r.items || []).forEach((ev) => { const d = ((ev.extendedProperties || {}).private || {}).date; if (d) { if (have[d]) { this.api(`/calendars/${encodeURIComponent(cal)}/events/${ev.id}`, { method: 'DELETE' }).catch(() => {}); } else have[d] = ev; } }); pageToken = r.nextPageToken || ''; } while (pageToken);
@@ -95,9 +97,9 @@ const OcG = {
         else if (w && ev && (ev.summary !== w.t || (ev.colorId || '') !== w.c)) { await this.api(`/calendars/${encodeURIComponent(cal)}/events/${ev.id}`, { method: 'PATCH', body: JSON.stringify({ summary: w.t, colorId: w.c || null }) }); n++; }
         else if (!w && ev) { await this.api(`/calendars/${encodeURIComponent(cal)}/events/${ev.id}`, { method: 'DELETE' }); n++; } }
       try { localStorage.setItem('bvp-ocghash', key); localStorage.setItem('bvp-ocgat', String(Date.now())); } catch (e) { }
-      if (n || force) { D.settings.ocCal = { ...(D.settings.ocCal || {}), at: Date.now() }; touch(D.settings); save(); Sync.soon(); }
+      D.settings.ocCal = { ...(D.settings.ocCal || {}), at: Date.now(), n }; touch(D.settings); save(); Sync.soon(); // "last updated" moves on every check, even when nothing changed
       return n;
-    } finally { this.busy = false; } },
+    } finally { this.busy = 0; } },
   auto() { if (!this.dev() || !navigator.onLine || !window.SBAuth || !SBAuth.staff || !this.valid() || !Bk.on()) return; this.sync(false).catch(() => {}); },
 };
 window.OcG = OcG;
@@ -110,7 +112,7 @@ function bkOcGoogleLine() { const c = (D.settings || {}).ocCal; return c && c.id
 function bkOcGoogleCard() {
   if (navigator.onLine && typeof loadScript === 'function') setTimeout(() => loadScript('https://accounts.google.com/gsi/client').catch(() => {}), 0); // ready before the tap, so browsers don't block the sign-in pop-up
   const c = (D.settings || {}).ocCal || {}; const adm = (window.SBAuth && SBAuth.isAdmin()) || Bk.can('settings'); const me = OcG.dev();
-  return `<div class="card"><h3>📅 Connect Google Calendar (on-call roster)</h3><div class="hint" style="margin-bottom:6px">Keeps a "${OcG.name}" calendar in ${h(c.account || OcG.account)} up to date with the roster (one all-day event per day, 2 weeks back to 6 months ahead). One device does it — normally the office computer. Share the calendar with each vet's Google account (in Google Calendar) so it shows on their phones.${adm ? ' The first time, the Google Calendar API has to be switched on for the practice\'s Google Cloud project (see the manual).' : ''}</div>
-    <div class="kv"><div class="k">Status</div><div class="v">${c.id ? `Connected${c.at ? ` · last updated ${new Date(c.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` : ''}` : 'Not connected yet'}${me ? ' · <b>this device keeps it up to date</b>' + (OcG.valid() ? '' : ' (tap anywhere to sign in to Google again)') : ''}</div></div>
+  return `<div class="card"><h3>📅 Connect Google Calendar (on-call roster)</h3><div class="hint" style="margin-bottom:6px">Keeps a "${OcG.name}" calendar in ${h(c.account || OcG.account)} up to date with the roster (one all-day event per day, 2 weeks back to 6 months ahead). One device does it — normally the office computer. Share the calendar with each vet's Google account (in Google Calendar) so it shows on their phones and computers. Each vet's on-call days show in their own Google Calendar colour (Settings → Scheduling → People).${adm ? ' The first time, the Google Calendar API has to be switched on for the practice\'s Google Cloud project (see the manual).' : ''}</div>
+    <div class="kv"><div class="k">Status</div><div class="v">${c.id ? `Connected${c.at ? ` · last synced ${new Date(c.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}${c.n != null ? ` (${c.n} change${c.n === 1 ? '' : 's'})` : ''}` : ''}` : 'Not connected yet'}${me ? ' · <b>this device keeps it up to date</b>' + (OcG.valid() ? '' : ' (tap anywhere to sign in to Google again)') : ''}</div></div>
     ${adm ? `<div class="actions">${me ? '<button class="btn small primary" data-act="ocg-sync">Sync now</button><button class="btn small" data-act="ocg-stop">Stop doing it from this device</button>' : `<button class="btn small primary" data-act="ocg-connect">${c.id ? 'Do it from this device' : 'Connect Google Calendar'}</button>`}</div>` : ''}</div>`;
 }

@@ -231,3 +231,27 @@ document.addEventListener('change', (e) => {
   if (t.id === 'bks-date' && t.value) { BK.date = t.value; renderAll(); }
   if (t.dataset && t.dataset.bkstick != null) { const b = bkRec(t.dataset.id); if (!b) return; b.ticks = { ...(b.ticks || {}) }; if (t.checked) b.ticks[t.dataset.bkstick] = true; else delete b.ticks[t.dataset.bkstick]; touch(b); save(); Sync.soon(); }
 });
+
+/* ---------------- public holidays: check the worked-out list against an online list of WA holidays ---------------- */
+const BK_HOL_SRC = 'https://date.nager.at/api/v3/PublicHolidays/', BK_HOL_GOV = 'https://www.wa.gov.au/service/employment/workplace-agreements/public-holidays-western-australia';
+async function bkHolCheck() {
+  if (!Bk.need('settings')) return; if (!navigator.onLine) { toast('Connect to the internet first'); return; }
+  const y0 = new Date().getFullYear(); const years = [y0, y0 + 1]; let online = [];
+  toast('Checking the WA public holidays…');
+  try { for (const y of years) { const r = await fetch(BK_HOL_SRC + y + '/AU', { cache: 'no-store' }); if (!r.ok) throw new Error('status ' + r.status); const js = await r.json();
+      js.filter((x) => (!x.counties || x.counties.includes('AU-WA')) && (!x.types || x.types.includes('Public'))).forEach((x) => online.push({ date: x.date, name: x.localName || x.name })); } }
+  catch (e) { await askBox("Couldn't check online", `<p>The online list of public holidays couldn't be reached (${h(e.message || 'no answer')}).</p><p>You can check by hand on the <a href="${BK_HOL_GOV}" target="_blank" rel="noopener">WA government public holidays page</a>: tick <b>We work</b> for a day that isn't a holiday, or <b>➕ Practice closure</b> to add one.</p>`, 'OK', false, 'Close'); return; }
+  const c0 = bkHolCfg(); const mine = years.flatMap((y) => bkWaOfficial(y)); const onDates = new Set(online.map((x) => x.date)), myDates = new Set(mine.map((x) => x.date));
+  const adds = online.filter((x, i, a) => !myDates.has(x.date) && a.findIndex((z) => z.date === x.date) === i), drops = mine.filter((x) => !onDates.has(x.date));
+  let r = Bk.get('hols'); if (!r) { r = { id: 'hols', cfg: 'hols', name: 'Public holidays', work: {}, extra: [] }; D.bkcfg.push(r); }
+  const stamp = (n) => { r.checked = { at: Date.now(), by: SBAuth.staff && SBAuth.staff.id, n, updated: n ? Date.now() : ((c0.checked || {}).updated || null) }; touch(r); };
+  if (!adds.length && !drops.length) { stamp(0); bkDone(`✓ WA public holidays checked for ${years.join(' and ')} — no changes`); return; }
+  const row = (x, k, on, why) => `<label class="bk-radio" style="display:flex;margin:6px 0"><input type="checkbox" data-askchk="${k}" ${on ? 'checked' : ''}> <span><b>${bkDate(x.date, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</b> — ${h(x.name)} <span class="hint">${why}</span></span></label>`;
+  const ok = await askBox('Public holiday changes found', `<p class="hint">Compared with an online list of WA public holidays for ${years.join(' and ')}. Tick the changes to make. If unsure, check the <a href="${BK_HOL_GOV}" target="_blank" rel="noopener">WA government list</a> first.</p>
+    ${adds.length ? `<div class="lbl">On the online list but not in the app — add them</div>${adds.map((x, i) => row(x, 'ha_' + i, true, '')).join('')}` : ''}
+    ${drops.length ? `<div class="lbl" style="margin-top:8px">In the app but not on the online list — remove them?</div>${drops.map((x, i) => row(x, 'hd_' + i, false, '(left unticked — online lists sometimes miss WA-only days such as Easter Sunday or the extra Monday)')).join('')}` : ''}`, 'Make these changes', false, 'Cancel');
+  if (!ok) return; let n = 0; r.add = [...(r.add || [])]; r.drop = { ...(r.drop || {}) };
+  adds.forEach((x, i) => { if (ASK_FORM['ha_' + i]) { r.add.push({ date: x.date, name: x.name }); n++; } }); drops.forEach((x, i) => { if (ASK_FORM['hd_' + i]) { r.drop[x.date] = true; n++; } });
+  stamp(n); bkDone(n ? `${n} public holiday change${n === 1 ? '' : 's'} made` : 'Checked — nothing changed');
+}
+document.addEventListener('click', (e) => { const el = e.target.closest && e.target.closest('[data-act=bks-holcheck],[data-act=bkj-holcheck]'); if (el) bkHolCheck(); });

@@ -101,13 +101,15 @@ function bkWaHolidays(y) {
   out.sort((a, b) => a.date.localeCompare(b.date)); BK_HOLS.set(y, out); return out;
 }
 function bkHolCfg() { return Bk.get('hols') || { work: {}, extra: [] }; }
+function bkWaOfficial(y) { // the worked-out list, with any changes accepted from "Check for changes" (official additions, and days that aren't holidays after all)
+  const c = bkHolCfg(); const drop = c.drop || {}; return [...bkWaHolidays(y).filter((x) => !drop[x.date]), ...(c.add || []).filter((x) => x.date.slice(0, 4) === String(y))].sort((a, b) => a.date.localeCompare(b.date)); }
 function bkHolidayList(from, to) { // the public holidays (and practice closures) between two dates
-  const c = bkHolCfg(); const out = []; for (let y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) bkWaHolidays(y).forEach((x) => { if (x.date >= from && x.date <= to) out.push({ ...x, work: !!(c.work || {})[x.date] }); });
+  const c = bkHolCfg(); const out = []; for (let y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) bkWaOfficial(y).forEach((x) => { if (x.date >= from && x.date <= to) out.push({ ...x, work: !!(c.work || {})[x.date] }); });
   (c.extra || []).forEach((x) => { if (x.date >= from && x.date <= to) out.push({ ...x, extra: true }); }); return out.sort((a, b) => a.date.localeCompare(b.date));
 }
 function bkHoliday(date) { // → the holiday's name, or null (also null when it's been marked as a working day)
   if (!date || typeof D === 'undefined' || !D) return null; const c = bkHolCfg(); if ((c.work || {})[date]) return null;
-  const x = bkWaHolidays(+date.slice(0, 4)).filter((y) => y.date === date).map((y) => y.name); const e = (c.extra || []).filter((y) => y.date === date).map((y) => y.name || 'Practice closed');
+  const x = bkWaOfficial(+date.slice(0, 4)).filter((y) => y.date === date).map((y) => y.name); const e = (c.extra || []).filter((y) => y.date === date).map((y) => y.name || 'Practice closed');
   const all = [...x, ...e]; return all.length ? all.join(' / ') : null;
 }
 const Bk = {
@@ -280,6 +282,11 @@ function bkYardsOf(f) { // the yards pins on a farm (the main pin counts when it
   const seen = {}; out.forEach((y) => { seen[y.name] = (seen[y.name] || 0) + 1; }); const n = {}; out.forEach((y) => { if (seen[y.name] > 1) { n[y.name] = (n[y.name] || 0) + 1; y.name += ' ' + n[y.name]; } });
   return out;
 }
+function bkTurns(f) { return f && typeof farmTurns === 'function' ? farmTurns(f).filter((t) => t.p && t.p.lat != null) : []; } // a farm's turn-off pins
+function bkBestTurn(st, from) { // the quickest turn-off to use from where you're coming from (homebase if not known)
+  const f = st && IDX.farms && IDX.farms.get(st.fid); const ts = bkTurns(f); if (ts.length < 2) return null; const o = from || Travel.home();
+  return ts.map((t) => ({ t, m: Travel.mins(o, Travel.stopPt({ ...st, tk: t.key })) })).sort((a, b) => a.m - b.m)[0].t.key;
+}
 function bkYardUse(fid, yid) { const fs = Bk.fsched(fid); if (fs.perYard && yid && fs.yards && fs.yards[yid]) return fs.yards[yid]; return fs; } // the rule for these yards
 function bkRate(fid, yid, svc) { // head per hour at these yards: their own rate, or the farm's, when the procedure uses each farm's rate
   if (!fid) return null; const fs = Bk.fsched(fid);
@@ -292,7 +299,7 @@ function bkYard(fid, svc) { const y = fid ? Bk.get('yard:' + fid + ':' + svc) : 
 const Travel = {
   home() { const h0 = (D.settings && D.settings.home) || {}; return h0.lat != null ? { lat: +h0.lat, lng: +h0.lng, home: true, label: 'homebase' } : null; },
   pt(f) { if (!f) return null; if (f.turn && f.turn.lat != null) return { lat: +f.turn.lat, lng: +f.turn.lng, f, label: f.name || 'the farm' }; if (f.lat != null) return { lat: +f.lat, lng: +f.lng, f, label: f.name || 'the farm' }; return null; },
-  stopPt(st) { const f = st && IDX.farms && IDX.farms.get(st.fid); if (!f) return null; const p = Travel.pt(f); if (!p) return null; const y = st.yid && bkYardsOf(f).find((x) => x.yid === st.yid); return { ...p, yard: y || null, fid: f.id, label: Bk.stopName(st) }; },
+  stopPt(st) { const f = st && IDX.farms && IDX.farms.get(st.fid); if (!f) return null; let p = Travel.pt(f); const t2 = st.tk && st.tk !== 'main' ? bkTurns(f).find((x) => x.key === st.tk) : null; if (t2) p = { lat: +t2.p.lat, lng: +t2.p.lng, label: f.name || 'the farm' }; /* another turn-off: worked out by distance */ if (!p) return null; const y = st.yid && bkYardsOf(f).find((x) => x.yid === st.yid); return { ...p, yard: y || null, fid: f.id, label: Bk.stopName(st) }; },
   loc(b) { const t = Bk.type(b.type); if (t.where === 'phone') return null; if (t.where === 'base') return Travel.home(); return Travel.stopPt(Bk.stops(b)[0]) || null; }, // where it starts
   locOut(b) { const t = Bk.type(b.type); if (t.where !== 'farm') return Travel.loc(b); const st = Bk.stops(b); return Travel.stopPt(st[st.length - 1]) || null; }, // where it finishes
   legs(stops) { const out = []; for (let i = 1; i < stops.length; i++) { const a = Travel.stopPt(stops[i - 1]), b = Travel.stopPt(stops[i]); out.push({ from: stops[i - 1], to: stops[i], mins: Travel.mins(a, b) }); } return out; },
