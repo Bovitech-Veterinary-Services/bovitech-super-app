@@ -28,7 +28,7 @@ const bkWeekStart = (s) => bkAdd(s, -((bkDow(s) + 6) % 7)); // Monday
 const bkQ = (m) => Math.ceil(m / 15) * 15; // appointments start on the quarter hour
 const bkRound15 = (t) => { if (!t) return t; const m = bkMin(t); return bkHHMM(Math.min(1425, Math.round(m / 15) * 15)); };
 const DOW_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-const BK = { view: 'day', date: bkToday(), page: 'cal', showAll: false, showCancelled: false, jobFilter: '' };
+const BK = { view: 'day', date: bkToday(), page: 'cal', showAll: true, showCancelled: false, jobFilter: '' };
 try { const p = JSON.parse(localStorage.getItem('bvp-bkview') || '{}'); if (p.view) BK.view = p.view; } catch (e) { }
 const bkClone = (x) => JSON.parse(JSON.stringify(x));
 

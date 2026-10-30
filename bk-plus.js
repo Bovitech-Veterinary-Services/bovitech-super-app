@@ -234,13 +234,22 @@ document.addEventListener('change', (e) => {
 
 /* ---------------- public holidays: check the worked-out list against an online list of WA holidays ---------------- */
 const BK_HOL_SRC = 'https://date.nager.at/api/v3/PublicHolidays/', BK_HOL_GOV = 'https://www.wa.gov.au/service/employment/workplace-agreements/public-holidays-western-australia';
+async function bkHolFromGoogle(years, err) { // second source: Google's "Holidays in Australia" calendar (needs Google sign-in, like the on-call calendar)
+  const ok = await askBox('Check with Google instead?', `<p>The online list of public holidays couldn't be reached (${h((err && err.message) || 'no answer')}).</p><p>The app can check against <b>Google's Australian public holidays</b> instead — you'll be asked to sign in to Google (the practice account, bovitechvetservices@gmail.com, is fine).</p><p class="hint">Or check by hand on the <a href="${BK_HOL_GOV}" target="_blank" rel="noopener">WA government public holidays page</a>: tick <b>We work</b> for a day that isn't a holiday, or <b>➕ Practice closure</b> to add one.</p>`, 'Check with Google', false, 'Cancel');
+  if (!ok) return null;
+  try { if (!OcG.valid()) await OcG.get(true); const out = []; const cal = encodeURIComponent('en.australian#holiday@group.v.calendar.google.com');
+    const r = await OcG.api(`/calendars/${cal}/events?timeMin=${years[0]}-01-01T00:00:00Z&timeMax=${years[years.length - 1] + 1}-01-01T00:00:00Z&singleEvents=true&maxResults=500`);
+    (r.items || []).forEach((ev) => { const d = (ev.start || {}).date; const ds = ev.description || ''; if (!d || !/public holiday/i.test(ds)) return; if (/ in /i.test(ds) && !/Western Australia/i.test(ds)) return; out.push({ date: d, name: String(ev.summary || '').replace(/\s*\((Western Australia|WA)\)\s*$/i, '') }); });
+    if (!out.length) throw new Error('Google sent no holidays'); return out; }
+  catch (e2) { toast("Couldn't check with Google either: " + e2.message); return null; }
+}
 async function bkHolCheck() {
   if (!Bk.need('settings')) return; if (!navigator.onLine) { toast('Connect to the internet first'); return; }
   const y0 = new Date().getFullYear(); const years = [y0, y0 + 1]; let online = [];
   toast('Checking the WA public holidays…');
   try { for (const y of years) { const r = await fetch(BK_HOL_SRC + y + '/AU', { cache: 'no-store' }); if (!r.ok) throw new Error('status ' + r.status); const js = await r.json();
       js.filter((x) => (!x.counties || x.counties.includes('AU-WA')) && (!x.types || x.types.includes('Public'))).forEach((x) => online.push({ date: x.date, name: x.localName || x.name })); } }
-  catch (e) { await askBox("Couldn't check online", `<p>The online list of public holidays couldn't be reached (${h(e.message || 'no answer')}).</p><p>You can check by hand on the <a href="${BK_HOL_GOV}" target="_blank" rel="noopener">WA government public holidays page</a>: tick <b>We work</b> for a day that isn't a holiday, or <b>➕ Practice closure</b> to add one.</p>`, 'OK', false, 'Close'); return; }
+  catch (e) { online = await bkHolFromGoogle(years, e); if (!online) return; }
   const c0 = bkHolCfg(); const mine = years.flatMap((y) => bkWaOfficial(y)); const onDates = new Set(online.map((x) => x.date)), myDates = new Set(mine.map((x) => x.date));
   const adds = online.filter((x, i, a) => !myDates.has(x.date) && a.findIndex((z) => z.date === x.date) === i), drops = mine.filter((x) => !onDates.has(x.date));
   let r = Bk.get('hols'); if (!r) { r = { id: 'hols', cfg: 'hols', name: 'Public holidays', work: {}, extra: [] }; D.bkcfg.push(r); }
