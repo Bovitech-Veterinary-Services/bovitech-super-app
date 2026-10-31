@@ -58,13 +58,15 @@ document.addEventListener('click', async (e) => { const el = e.target.closest &&
   else if (a === 'oc-csv') { const f = (document.getElementById('oc-from') || {}).value, t = (document.getElementById('oc-to') || {}).value; if (!f || !t || t < f) { toast('Choose the dates'); return; }
     const blob = new Blob([bkOcCsv(f, t)], { type: 'text/csv' }); const u = URL.createObjectURL(blob); const l = document.createElement('a'); l.href = u; l.download = `on-call-${f}-to-${t}.csv`; document.body.appendChild(l); l.click(); l.remove(); setTimeout(() => URL.revokeObjectURL(u), 2000); toast('On-call list downloaded'); }
   else if (a === 'ocg-connect') { if (!SBAuth.isAdmin() && !Bk.need('settings')) return; toast('Opening Google sign-in… (allow pop-ups if your browser asks)'); try { await OcG.get(true); await OcG.ensureCal(); OcG.claim(); const n = await OcG.sync(true); toast(`✓ Google Calendar connected — ${n} change${n === 1 ? '' : 's'} sent`); } catch (x) { toast(x.message); } renderAll(); }
-  else if (a === 'ocg-sync') { try { if (!OcG.valid()) await OcG.get(true); if (!((D.settings.ocCal || {}).devId)) OcG.claim(); const n = await OcG.sync(true); toast(`✓ Synced — ${n} change${n === 1 ? '' : 's'}`); } catch (x) { toast(x.message); } renderAll(); }
+  else if (a === 'ocg-sync') { el.disabled = true; el.textContent = 'Syncing…'; OcG.note('Syncing…'); try { if (!OcG.valid()) await OcG.get(true); if (!((D.settings.ocCal || {}).devId)) OcG.claim(); const n = await OcG.sync(true); OcG.note(`✓ Synced — ${n} change${n === 1 ? '' : 's'}`); toast(`✓ Synced — ${n} change${n === 1 ? '' : 's'}`); } catch (x) { OcG.note('⚠ ' + x.message); toast(x.message); } renderAll(); }
   else if (a === 'ocg-stop') { try { localStorage.removeItem('bvp-ocgcal'); localStorage.removeItem('bvp-ocgtok'); } catch (x) { } OcG.tok = null; if (D.settings.ocCal && D.settings.ocCal.devId === OcG.myId()) { D.settings.ocCal = { ...D.settings.ocCal, devId: null, devName: null }; touch(D.settings); save(); Sync.soon(); } toast("This device no longer updates the on-call Google Calendar"); renderAll(); }
 });
 
 /* ---------------- the "Bovitech On Call" Google Calendar (all-day events, kept up to date from one device) ---------------- */
 const OcG = {
   scope: 'https://www.googleapis.com/auth/calendar', account: 'bovitechvetservices@gmail.com', name: 'Bovitech On Call', tok: null, busy: false,
+  note(t) { try { localStorage.setItem('bvp-ocgnote', JSON.stringify({ t, at: Date.now() })); } catch (e) { } }, // the last Sync now result on this device
+  lastNote() { try { return JSON.parse(localStorage.getItem('bvp-ocgnote') || 'null'); } catch (e) { return null; } },
   myId() { try { let v = localStorage.getItem('bvp-ocgid'); if (!v) { v = uid('og'); localStorage.setItem('bvp-ocgid', v); } return v; } catch (e) { return 'x'; } },
   dev() { // is THIS device (not this login) the one that keeps the calendar up to date? Only one device does it.
     let on = false; try { on = localStorage.getItem('bvp-ocgcal') === '1'; } catch (e) { } if (!on) return false;
@@ -76,7 +78,8 @@ const OcG = {
     if (typeof CONFIG === 'undefined' || !CONFIG.googleClientId) throw new Error('Google sign-in is not set up yet.');
     await loadScript('https://accounts.google.com/gsi/client');
     if (!window.google || !google.accounts || !google.accounts.oauth2) { if (typeof SCRIPT_P !== 'undefined') delete SCRIPT_P['https://accounts.google.com/gsi/client']; throw new Error("Google sign-in didn't load — check the internet connection and try again"); }
-    const r = await new Promise((res, rej) => { const c = google.accounts.oauth2.initTokenClient({ client_id: CONFIG.googleClientId, scope: this.scope, hint: ((D.settings || {}).ocCal || {}).account || this.account, callback: (x) => (x.error ? rej(new Error(x.error)) : res(x)), error_callback: (e) => rej(new Error(e.type === 'popup_closed' ? 'Google sign-in was closed' : 'Google sign-in did not open — allow pop-ups for this app')) }); c.requestAccessToken({ prompt: '' }); });
+    const r = await new Promise((res, rej) => { const tm = setTimeout(() => rej(new Error("Google sign-in didn't finish — if no Google window opened, allow pop-ups for this app (on an iPhone, open the app in Safari rather than from the home screen) and try again")), 90000); const done = (f) => (x) => { clearTimeout(tm); f(x); };
+      const c = google.accounts.oauth2.initTokenClient({ client_id: CONFIG.googleClientId, scope: this.scope, hint: ((D.settings || {}).ocCal || {}).account || this.account, callback: done((x) => (x.error ? rej(new Error('Google: ' + x.error)) : res(x))), error_callback: done((e) => rej(new Error(e.type === 'popup_closed' ? 'Google sign-in was closed' : 'Google sign-in did not open — allow pop-ups for this app'))) }); c.requestAccessToken({ prompt: '' }); });
     if (!google.accounts.oauth2.hasGrantedAllScopes(r, this.scope)) throw new Error('Please tick the Google Calendar box so the app can keep the on-call calendar up to date.');
     this.tok = { t: r.access_token, exp: Date.now() + r.expires_in * 1000 }; try { localStorage.setItem('bvp-ocgtok', JSON.stringify(this.tok)); } catch (e) { } return this.tok.t;
   },
@@ -104,7 +107,7 @@ const OcG = {
       D.settings.ocCal = { ...(D.settings.ocCal || {}), at: Date.now(), n }; touch(D.settings); save(); Sync.soon(); // "last updated" moves on every check, even when nothing changed
       return n;
     } finally { this.busy = 0; } },
-  auto() { if (!this.dev() || !navigator.onLine || !window.SBAuth || !SBAuth.staff || !this.valid() || !Bk.on()) return; this.sync(false).catch(() => {}); },
+  auto() { if (!this.dev() || !navigator.onLine || !window.SBAuth || !SBAuth.staff || !this.valid() || !Bk.on()) return; this.sync(false).catch((e) => this.note('⚠ ' + e.message)); },
 };
 window.OcG = OcG;
 setInterval(() => OcG.auto(), 2 * 60 * 1000);
@@ -118,6 +121,7 @@ function bkOcGoogleCard() {
   const c = (D.settings || {}).ocCal || {}; const adm = (window.SBAuth && SBAuth.isAdmin()) || Bk.can('settings'); const me = OcG.dev();
   return `<div class="card"><h3>📅 Connect Google Calendar (on-call roster)</h3><div class="hint" style="margin-bottom:6px">Keeps a "${OcG.name}" calendar in ${h(c.account || OcG.account)} up to date with the roster (one all-day event per day, 2 weeks back to 6 months ahead). One device does it — normally the office computer. Share the calendar with each vet's Google account (in Google Calendar) so it shows on their phones and computers. Each vet's on-call days show in their own Google Calendar colour (Settings → Scheduling → People).${adm ? ' The first time, the Google Calendar API has to be switched on for the practice\'s Google Cloud project (see the manual).' : ''}</div>
     <div class="kv"><div class="k">Status</div><div class="v">${c.id ? `Connected${c.at ? ` · last synced ${new Date(c.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}${c.n != null ? ` (${c.n} change${c.n === 1 ? '' : 's'})` : ''}` : ''}` : 'Not connected yet'}</div></div>
+    ${me && OcG.lastNote() ? `<div class="kv"><div class="k">Last Sync now</div><div class="v">${new Date(OcG.lastNote().at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })} — ${h(OcG.lastNote().t)}</div></div>` : ''}
     <div class="kv"><div class="k">Kept up to date by</div><div class="v">${me ? '<b>This device</b>' + (c.devName ? ` (${h(c.devName)})` : '') + (OcG.valid() ? '' : ' — tap anywhere to sign in to Google again') : c.devName ? `${h(c.devName)}${c.devBy ? ' — set up by ' + h(Bk.pname(c.devBy)) : ''}` : c.id ? 'No device at the moment — tap "Do it from this device"' : '—'}<br><span class="hint">This is one device (a particular phone or computer), not a login — signing in with the same login on another device doesn't change it. Choosing "Do it from this device" on another device moves the job there.</span></div></div>
     <div class="hint" style="margin:6px 0"><b>How to fix if someone's Google Calendar is not showing individual colours for on call:</b> in Google Calendar, signed in as <a href="mailto:bovitechvetservices@gmail.com">bovitechvetservices@gmail.com</a>, open the settings for “Bovitech On Call”. Under “Share with specific people”, change each vet’s account to <b>Make changes to events</b>.</div>
     ${adm ? `<div class="actions">${me ? '<button class="btn small primary" data-act="ocg-sync">Sync now</button><button class="btn small" data-act="ocg-stop">Stop doing it from this device</button>' : `<button class="btn small primary" data-act="ocg-connect">${c.id ? 'Do it from this device' : 'Connect Google Calendar'}</button>`}</div>` : ''}</div>`;

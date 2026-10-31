@@ -212,6 +212,13 @@ document.addEventListener('click', async (e) => {
   const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return; const a = el.dataset.act; const d = el.dataset;
   switch (a) {
     case 'bk-eff': bkEffOpen(); break;
+    case 'bk-ocswap': { e.stopPropagation(); if (!Bk.need('roster')) return; const date = d.d; const cur = bkOncallWho(date), pw = bkOncallFromPat(date), rec = bkOncallRec(date); const vets = Bk.people().filter((s) => s.role === 'vet');
+      const opt = (v, l, on) => `<label class="bk-radio" style="display:flex;margin:8px 0;font-size:16px"><input type="radio" name="oc-who" value="${v}" data-ask="who" ${on ? 'checked' : ''}> ${l}</label>`;
+      const ok = await askBox(`On call — ${bkDate(date, { weekday: 'long', day: 'numeric', month: 'long' })}`, `<p class="hint">Midnight to midnight.${bkHoliday(date) ? ' 🎉 ' + h(bkHoliday(date)) + '.' : ''}${pw ? ` The usual pattern has <b>${h(Bk.pname(pw))}</b>.` : ''}</p>
+        ${vets.map((s) => opt(s.id, `<span class="bk-occhip" style="--c:${Bk.pcol(s.id)}">${h(s.preferred_name || s.full_name)}</span>${s.id === pw ? ' <span class="hint">(usual pattern)</span>' : ''}`, cur === s.id && !(rec && rec.who === undefined && false))).join('')}
+        ${pw && rec ? opt('__pat', 'Back to the usual pattern', false) : ''}${opt('__none', 'Nobody', rec && rec.who === null)}
+        <p class="hint">Other days and the usual pattern are on the On call tab.</p>`, 'Save', false, 'Cancel');
+      if (!ok) return; const v = ASK_FORM.who; if (!v) return; bkOncallSet(date, v === '__pat' ? undefined : v === '__none' ? null : v); bkDone(`On call ${bkDate(date)}: ${v === '__pat' ? Bk.pname(pw) + ' (pattern)' : v === '__none' ? 'nobody' : Bk.pname(v)}`); break; }
     case 'bk-gocal': S.tab = 'book'; BK.page = 'cal'; BK.view = 'day'; BK.date = d.d; S.sel = null; renderAll(); window.scrollTo(0, 0); break;
     case 'bk-bizbook': if (!Bk.need('book')) return; { const c = bkContactsOf(d.bid).find(bkMobile); bkOpen(null, { bid: d.bid, cid: c ? c.id : null, date: BK.date < bkToday() ? bkToday() : BK.date }); } break;
     case 'bks-go': BK.date = bkAdd(BK.date, +d.v); renderAll(); break;
