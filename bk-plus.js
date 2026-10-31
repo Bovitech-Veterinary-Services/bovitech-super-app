@@ -82,7 +82,7 @@ function bkSheetHtml() {
   const sid = bkSheetSid(); const date = BK.date; const p = Bk.person(sid);
   const pick = `<div class="bk-top bk-noprint"><div class="bk-nav"><button class="btn small" data-act="bks-go" data-v="-1" aria-label="Back a day">‹</button><button class="btn small" data-act="bk-today">Today</button><button class="btn small" data-act="bks-go" data-v="1" aria-label="Forward a day">›</button><input type="date" id="bks-date" value="${date}" aria-label="Date">
     <select id="bks-who" aria-label="Whose day">${Bk.people().map((s) => `<option value="${s.id}" ${s.id === sid ? 'selected' : ''}>${h(s.preferred_name || s.full_name)}${Bk.hours(s, date) || Bk.bookingsFor(date, s.id).length ? '' : ' (not working)'}</option>`).join('')}</select></div>
-    <div class="bk-nav"><button class="btn small" data-act="bks-print">🖨 Print</button><button class="btn small" data-act="bks-copy">📋 Copy as text</button></div></div>`;
+    <div class="bk-nav"><button class="btn small" data-act="bks-print">🖨 Print</button><button class="btn small" data-act="bks-copy">📋 Copy as text</button>${navigator.share ? '<button class="btn small" data-act="bks-share">📤 Share to Keep, Notes…</button>' : ''}</div></div>`;
   if (!p) return `<div class="d-wrap bk-wrap">${pick}<div class="card"><div class="hint">The staff list loads the first time you sign in with internet.</div></div></div>`;
   const { day, rows } = bkSheetData(sid, date); const oc = bkOncallWho(date);
   const body = rows.map((r) => {
@@ -223,6 +223,7 @@ document.addEventListener('click', async (e) => {
     case 'bk-bizbook': if (!Bk.need('book')) return; { const c = bkContactsOf(d.bid).find(bkMobile); bkOpen(null, { bid: d.bid, cid: c ? c.id : null, date: BK.date < bkToday() ? bkToday() : BK.date }); } break;
     case 'bks-go': BK.date = bkAdd(BK.date, +d.v); renderAll(); break;
     case 'bks-print': window.print(); break;
+    case 'bks-share': { const sid = bkSheetSid(); const t = bkSheetText(sid, BK.date); try { await navigator.share({ title: `Day sheet — ${Bk.pname(sid)} ${bkDate(BK.date)}`, text: t }); } catch (x) { if (x && x.name !== 'AbortError') toast("Couldn't share on this device — use Copy as text"); } break; }
     case 'bks-copy': { const t = bkSheetText(bkSheetSid(), BK.date); try { await navigator.clipboard.writeText(t); toast('Copied — paste it into a text or email'); } catch (x) { toast('Couldn\'t copy on this device'); } break; }
     case 'bkp-new': bkPendOpen(null); break;
     case 'bkp-edit': { const x = Bk.list('bkpending').find((y) => y.id === d.id); if (x) bkPendOpen(x); break; }
@@ -316,4 +317,5 @@ function bkWxJobs() { // appointments in the next week where the forecast is hot
     if (fl.length) out.push({ k: 'wx', b, t: 'Weather', d: `${bkDate(b.date, { weekday: 'short', day: 'numeric', month: 'short' })} ${bkTime(b.start)} — ${Bk.who(b)}${Bk.farmName(b) ? ' at ' + Bk.farmName(b) : ''}: ${fl.map((x) => x[1]).join(', ')} (${bkWxText(w)})` }); });
   return out;
 }
+document.addEventListener('change', (e) => { const el = e.target; if (!el.dataset || el.dataset.act !== 'bks-sheetmob') return; if (!Bk.need('settings')) return; const v = el.value.trim(); if (v && !/^(\+?61|0)4\d{8}$/.test(v.replace(/\s/g, ''))) { toast('That doesn\'t look like an Australian mobile'); return; } const p = Bk.person(el.dataset.staff); const id = 'staff:' + el.dataset.staff; let r = Bk.get(id); if (!r) { r = { id, cfg: 'staff', name: p ? p.full_name : '' }; D.bkcfg.push(r); } if (v) r.sheetMobile = v; else delete r.sheetMobile; touch(r); bkDone(`${Bk.pname(el.dataset.staff)}'s day sheets: ${v || 'their usual mobile'}`); });
 document.addEventListener('change', (e) => { const el = e.target; if (!el.dataset || el.dataset.act !== 'bks-sheettime') return; if (!Bk.need('settings')) return; let r = Bk.get('sheets'); if (!r) { r = { id: 'sheets', cfg: 'sheets', name: 'Day sheets' }; D.bkcfg.push(r); } r.time = el.value; touch(r); bkDone('Day sheets will be sent at ' + bkTime(el.value)); });

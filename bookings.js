@@ -592,6 +592,9 @@ function bkRuleWords(r) {
   const t = ({ days: 'Only on ' + dl, notdays: 'Not on ' + dl, time: `Only between ${bkTime(r.from || '00:00')} and ${bkTime(r.to || '24:00')}`, months: 'Only in ' + ml, notmonths: 'Not in ' + ml, note: r.text || '' })[r.kind] || '';
   return t + (r.text && r.kind !== 'note' ? ` (${r.text})` : '');
 }
+function bkSmsTo(bid) { // who gets a business's automatic texts: the ones ticked on the business page, or its primary contact
+  const x = Bk.bsched(bid); const cur = (IDX.bizContacts && IDX.bizContacts.get(bid)) || []; const t = (x.smsTo || []).filter((cid) => cur.some((c) => c.id === cid)); if (t.length) return t;
+  const b = IDX.biz && IDX.biz.get(bid); const p = b && typeof primaryOf === 'function' ? primaryOf(b) : null; return p ? [p.id] : []; }
 function bkUnder(bid) { const x = Bk.bsched(bid); return x.under ? Bk.get(x.under) : null; }
 function bkUnderIssues(bk) { // who this client should be booked with
   const u = bk.bid && bkUnder(bk.bid); if (!u || !u.staff || !u.staff.length || u.gone) return []; if (u.emergencyAny && bk.urgent) return [];

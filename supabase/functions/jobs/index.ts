@@ -143,7 +143,7 @@ async function daySheets(today: string, keys: Set<string>, send: (row: any) => P
   const sheets = ((await (await sb(`/rest/v1/records?select=id,data,deleted,updated_at&kind=eq.bksheet&id=like.*${today}`)).json()) as any[]).filter((r) => !r.deleted && r.data && r.data.sid && r.data.date === today).map((r) => ({ ...r.data, at: Date.parse(r.updated_at) }));
   if (!sheets.length) return; const cfg = await recs("bkcfg");
   for (const sh of sheets) {
-    const sc = cfg.find((c) => c.id === "staff:" + sh.sid) || {}; if (sc.sheetSms === false) continue; const ph = auMobile(sc.mobile || ""); if (!ph) continue;
+    const sc = cfg.find((c) => c.id === "staff:" + sh.sid) || {}; if (sc.sheetSms === false) continue; const ph = auMobile(sc.sheetMobile || sc.mobile || ""); if (!ph) continue; // its own number for day sheets, or their usual mobile
     const pre = `daysheet:${sh.sid}:${today}:`; const sentAny = [...keys].some((k) => k.startsWith(pre)); if (keys.has(pre + sh.hash)) continue;
     if (!sentAny && !sh.text) continue; // nothing on, and nothing sent yet
     if (sentAny && sh.at && Date.now() - sh.at < 5 * 60e3) continue; // still being changed — wait a few minutes so several changes go in one text
@@ -175,9 +175,9 @@ async function smsRun() {
   };
   const keys = new Set(((await (await sb(`/rest/v1/sms_log?select=key&at=gte.${addDays(today, -120)}&key=not.is.null`)).json()) as any[]).map((x) => x.key));
   const bsched = (id: string) => cfg.find((x) => x.id === "bsched:" + id && !x.gone) || {};
-  const extraIds = [...new Set(bookings.flatMap((b) => (b.bid ? bsched(b.bid).smsTo || [] : [])).filter((id: string) => !contacts.some((c) => c.id === id)))];
+  const extraIds = [...new Set(bookings.flatMap((b) => { const bz = businesses.find((x) => x.id === b.bid); return b.bid ? [...(bsched(b.bid).smsTo || []), ...(bz && bz.primaryContact ? [bz.primaryContact] : [])] : []; }).filter((id: string) => !contacts.some((c) => c.id === id)))];
   if (extraIds.length) contacts.push(...(await recs("contacts", extraIds as string[])));
-  for (const b0 of bookings) { const to: string[] = b0.bid && (bsched(b0.bid).smsTo || []).length ? bsched(b0.bid).smsTo : [b0.cid]; // "texts go to" on the business, or the person chosen on the appointment
+  for (const b0 of bookings) { const bz0 = businesses.find((x) => x.id === b0.bid); const to: string[] = b0.bid && (bsched(b0.bid).smsTo || []).length ? bsched(b0.bid).smsTo : bz0 && bz0.primaryContact ? [bz0.primaryContact] : [b0.cid]; // the business's "texts go to", else its primary contact, else the person on the appointment // "texts go to" on the business, or the person chosen on the appointment
    for (let ti = 0; ti < to.length; ti++) { const b = b0; const sfx = ti ? ":" + to[ti] : "";
     const c = contacts.find((x) => x.id === to[ti]); const ph = c && auMobile(((c.mobiles || [])[0] || {}).value); if (!ph) continue;
     const base = { booking_id: b.id, contact_id: c.id, business_id: b.bid || null, phone: ph };
