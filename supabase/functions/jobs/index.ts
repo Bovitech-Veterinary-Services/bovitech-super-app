@@ -174,18 +174,22 @@ async function smsRun() {
     return t.replace(/\{(\w+)\}/g, (m, k) => (k in vals ? vals[k] : m)).replace(/\s+([.,])/g, "$1");
   };
   const keys = new Set(((await (await sb(`/rest/v1/sms_log?select=key&at=gte.${addDays(today, -120)}&key=not.is.null`)).json()) as any[]).map((x) => x.key));
-  for (const b of bookings) {
-    const c = contacts.find((x) => x.id === b.cid); const ph = c && auMobile(((c.mobiles || [])[0] || {}).value); if (!ph) continue;
+  const bsched = (id: string) => cfg.find((x) => x.id === "bsched:" + id && !x.gone) || {};
+  const extraIds = [...new Set(bookings.flatMap((b) => (b.bid ? bsched(b.bid).smsTo || [] : [])).filter((id: string) => !contacts.some((c) => c.id === id)))];
+  if (extraIds.length) contacts.push(...(await recs("contacts", extraIds as string[])));
+  for (const b0 of bookings) { const to: string[] = b0.bid && (bsched(b0.bid).smsTo || []).length ? bsched(b0.bid).smsTo : [b0.cid]; // "texts go to" on the business, or the person chosen on the appointment
+   for (let ti = 0; ti < to.length; ti++) { const b = b0; const sfx = ti ? ":" + to[ti] : "";
+    const c = contacts.find((x) => x.id === to[ti]); const ph = c && auMobile(((c.mobiles || [])[0] || {}).value); if (!ph) continue;
     const base = { booking_id: b.id, contact_id: c.id, business_id: b.bid || null, phone: ph };
     const madeRecently = b.createdAt && Date.now() - b.createdAt < 3 * 864e5;
-    if (b.sms && b.sms.send && !b.sms.booked && !b.sms.skip && madeRecently && !keys.has("booked:" + b.id) && tpl("booked")) {
-      const row = await claim({ ...base, kind: "booked", key: "booked:" + b.id, body: fill(tpl("booked").text, b, c), status: "queued" }); if (row) await send(row); }
-    if (b.date === addDays(today, 5) && hm >= 8 * 60 + 30 && !(b.sms && b.sms.noReminder) && !keys.has(`reminder:${b.id}:${b.date}`) && tpl("reminder")) {
-      const row = await claim({ ...base, kind: "reminder", key: `reminder:${b.id}:${b.date}`, body: fill(tpl("reminder").text, b, c), status: "queued" }); if (row) await send(row); }
+    if (b.sms && b.sms.send && !b.sms.booked && !b.sms.skip && madeRecently && !keys.has("booked:" + b.id + sfx) && tpl("booked")) {
+      const row = await claim({ ...base, kind: "booked", key: "booked:" + b.id + sfx, body: fill(tpl("booked").text, b, c), status: "queued" }); if (row) await send(row); }
+    if (b.date === addDays(today, 5) && hm >= 8 * 60 + 30 && !(b.sms && b.sms.noReminder) && !keys.has(`reminder:${b.id}:${b.date}${sfx}`) && tpl("reminder")) {
+      const row = await claim({ ...base, kind: "reminder", key: `reminder:${b.id}:${b.date}${sfx}`, body: fill(tpl("reminder").text, b, c), status: "queued" }); if (row) await send(row); }
     const p = b.proposal;
-    if (p && !p.smsSent && !p.smsSkip && !keys.has(`proposal:${b.id}:${p.at}`) && tpl("proposal")) {
-      const row = await claim({ ...base, kind: "proposal", key: `proposal:${b.id}:${p.at}`, body: fill(tpl("proposal").text, b, c, { date: p.date, start: p.start, staff: (p.staff || b.staff || []).join(",") }), status: "queued" }); if (row) await send(row); }
-  }
+    if (p && !p.smsSent && !p.smsSkip && !keys.has(`proposal:${b.id}:${p.at}${sfx}`) && tpl("proposal")) {
+      const row = await claim({ ...base, kind: "proposal", key: `proposal:${b.id}:${p.at}${sfx}`, body: fill(tpl("proposal").text, b, c, { date: p.date, start: p.start, staff: (p.staff || b.staff || []).join(",") }), status: "queued" }); if (row) await send(row); }
+  } }
   // still not confirmed 48 hours before: tell the office so they can ring
   for (const b of bookings) {
     if (b.status && b.status !== "unconfirmed") continue; if (b.proposal) continue; const at = Date.parse(`${b.date}T${b.start || "08:00"}:00+08:00`); const left = at - Date.now();
@@ -195,7 +199,7 @@ async function smsRun() {
     if (row && RESEND) await sendMail(`Not confirmed yet: ${who} — ${nice(b.date, { weekday: "short", day: "numeric", month: "short" })} ${niceTime(b.start)}`, row.body + (c && (c.mobiles || [])[0] ? `\nMobile: ${c.mobiles[0].value}` : "") + "\n\nIt's also in the app: Scheduling → Jobs → Not confirmed — ring them.").catch((e) => errors.push(String(e)));
   }
   // each person's day sheet at 8am, and again if their day changes
-  if (hm >= 8 * 60) await daySheets(today, keys, send, errors);
+  { const sc = (await recs("bkcfg")).find((c) => c.id === "sheets" && !c.gone) || {}; const [th, tm] = String(sc.time || "08:00").split(":").map(Number); if (sc.on && hm >= th * 60 + (tm || 0)) await daySheets(today, keys, send, errors); }
   return { sent: sent.length, errors };
 }
 // replies and delivery reports from the phone app

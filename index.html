@@ -186,6 +186,7 @@ body.show-detail #detail{display:block}
 .grid2{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:10px}
 @media(max-width:520px){.grid2.stack{grid-template-columns:minmax(0,1fr)}}
 .rep{display:flex;gap:6px;margin-bottom:6px}
+.rep:has(.repchk){flex-wrap:wrap;margin-bottom:10px}.rep .repchk{order:9;flex:1 1 100%!important;display:flex;gap:16px;font-size:13.5px;color:var(--ink2);padding:0 2px}.rep .repchk label{display:inline-flex;gap:5px;align-items:center}
 .rep .x{border:0;background:none;color:var(--red);font-size:22px;padding:0 6px;cursor:pointer}
 .checks{display:flex;flex-wrap:wrap;gap:6px}
 .checks label{display:inline-flex;gap:6px;align-items:center;border:1px solid var(--line);background:#fff;border-radius:99px;padding:4px 10px;font-size:14px;cursor:pointer}

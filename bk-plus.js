@@ -316,3 +316,4 @@ function bkWxJobs() { // appointments in the next week where the forecast is hot
     if (fl.length) out.push({ k: 'wx', b, t: 'Weather', d: `${bkDate(b.date, { weekday: 'short', day: 'numeric', month: 'short' })} ${bkTime(b.start)} — ${Bk.who(b)}${Bk.farmName(b) ? ' at ' + Bk.farmName(b) : ''}: ${fl.map((x) => x[1]).join(', ')} (${bkWxText(w)})` }); });
   return out;
 }
+document.addEventListener('change', (e) => { const el = e.target; if (!el.dataset || el.dataset.act !== 'bks-sheettime') return; if (!Bk.need('settings')) return; let r = Bk.get('sheets'); if (!r) { r = { id: 'sheets', cfg: 'sheets', name: 'Day sheets' }; D.bkcfg.push(r); } r.time = el.value; touch(r); bkDone('Day sheets will be sent at ' + bkTime(el.value)); });
