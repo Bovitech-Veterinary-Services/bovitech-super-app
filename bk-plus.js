@@ -271,3 +271,48 @@ async function bkHolCheck() {
   stamp(n); bkDone(n ? `${n} public holiday change${n === 1 ? '' : 's'} made` : 'Checked — nothing changed');
 }
 document.addEventListener('click', (e) => { const el = e.target.closest && e.target.closest('[data-act=bks-holcheck],[data-act=bkj-holcheck]'); if (el) bkHolCheck(); });
+
+/* ---------------- day sheets for the 8am text: kept up to date whenever anything changes (the server sends them) ---------------- */
+let BK_SHEET_T = null;
+function bkSheetSoon() { if (BK_SHEET_T) clearTimeout(BK_SHEET_T); BK_SHEET_T = setTimeout(() => { BK_SHEET_T = null; try { if (bkSheetSync()) { save(); Sync.soon(); } } catch (e) { console.warn('day sheets', e); } }, 4000); }
+function bkSheetSync() { // today and the next 2 weeks, for everyone; only writes when a sheet's text has changed
+  if (!Bk.on() || !Bk.people().length) return 0; Bk.list('bksheet'); const t = bkToday(); let n = 0; const hs = (x) => { let v = 5381; for (let i = 0; i < x.length; i++) v = ((v << 5) + v + x.charCodeAt(i)) >>> 0; return v.toString(36); };
+  for (let i = 0; i <= 14; i++) { const d = bkAdd(t, i);
+    for (const p of Bk.people()) { const on = Bk.hours(p, d) || Bk.bookingsFor(d, p.id).length; const text = on && Bk.bookingsFor(d, p.id).length ? bkSheetText(p.id, d) : ''; const h0 = hs(text); const id = p.id + ':' + d;
+      let r = D.bksheet.find((x) => x.id === id); if (r && r.hash === h0 && !r.gone) continue; if (!r && !text) continue;
+      if (!r) { r = { id, sid: p.id, date: d }; D.bksheet.push(r); } Object.assign(r, { text, hash: h0 }); /* the same on every device, so two devices never clash */ delete r.gone; touch(r); n++; } }
+  D.bksheet.forEach((r) => { if (!r.gone && r.date < bkAdd(t, -7)) { r.gone = true; touch(r); n++; } }); // old ones go after a week
+  return n;
+}
+window.bkSheetSoon = bkSheetSoon;
+
+/* ---------------- weather (free forecast from Open-Meteo, 16 days, cached for 3 hours) ---------------- */
+const BKWX = { mem: {}, busy: {}, t: null };
+const BK_WX_EMO = (c) => (c == null ? '' : c === 0 ? '☀️' : c <= 2 ? '🌤' : c === 3 ? '☁️' : c <= 48 ? '🌫' : c <= 57 ? '🌦' : c <= 67 ? '🌧' : c <= 77 ? '🌨' : c <= 82 ? '🌧' : c <= 86 ? '🌨' : '⛈');
+function bkWxKey(p) { return (+p.lat).toFixed(2) + ',' + (+p.lng).toFixed(2); }
+function bkWx(p, date) { // that place's forecast for that day, or null (and it's fetched in the background)
+  if (!p || p.lat == null || !date) return null; const k = bkWxKey(p); let m = BKWX.mem[k];
+  if (!m) { try { m = JSON.parse(localStorage.getItem('bvp-wx:' + k) || 'null'); } catch (e) { m = null; } if (m) BKWX.mem[k] = m; }
+  if ((!m || Date.now() - m.at > 3 * 3600e3) && !BKWX.busy[k] && navigator.onLine) bkWxLoad(p, k);
+  return m && m.days ? m.days[date] || null : null;
+}
+async function bkWxLoad(p, k) {
+  BKWX.busy[k] = true;
+  try { const u = `https://api.open-meteo.com/v1/forecast?latitude=${(+p.lat).toFixed(3)}&longitude=${(+p.lng).toFixed(3)}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max&timezone=Australia%2FPerth&forecast_days=16`;
+    const js = await (await fetch(u)).json(); const d = js.daily || {}; const days = {};
+    (d.time || []).forEach((t, i) => { days[t] = { code: d.weather_code[i], tmax: Math.round(d.temperature_2m_max[i]), tmin: Math.round(d.temperature_2m_min[i]), rain: Math.round((d.precipitation_sum[i] || 0) * 10) / 10, pop: d.precipitation_probability_max ? d.precipitation_probability_max[i] : null, wind: Math.round(d.wind_speed_10m_max[i] || 0), gust: Math.round((d.wind_gusts_10m_max || [])[i] || 0) }; });
+    const m = { at: Date.now(), days }; BKWX.mem[k] = m; try { localStorage.setItem('bvp-wx:' + k, JSON.stringify(m)); } catch (e) { }
+    if (typeof S !== 'undefined' && S.tab === 'book') { clearTimeout(BKWX.t); BKWX.t = setTimeout(() => { if (!document.querySelector('.sheet-bg')) renderAll(); }, 400); }
+  } catch (e) { /* no signal — try again later */ } finally { setTimeout(() => { BKWX.busy[k] = false; }, 60000); }
+}
+function bkWxFlags(w) { if (!w) return []; const f = [];
+  if (w.code >= 95) f.push(['storm', '⛈ Storms']); if (w.tmax >= 32) f.push(['heat', `🥵 Hot — ${w.tmax}°`]); if (w.rain >= 10) f.push(['rain', `🌧 Heavy rain — ${w.rain} mm`]); if (w.gust >= 60 || w.wind >= 40) f.push(['wind', `💨 Windy — gusts ${w.gust} km/h`]); return f; }
+function bkWxText(w) { return w ? `${BK_WX_EMO(w.code)} ${w.tmax}° / ${w.tmin}°${w.rain ? ` · ${w.rain} mm${w.pop != null ? ' (' + w.pop + '%)' : ''}` : ''} · wind ${w.wind} km/h` : ''; }
+function bkWxLine(date) { const home = Travel.home(); const w = bkWx(home, date); if (!w) return ''; const fl = bkWxFlags(w); return `<div class="bk-wx ${fl.length ? 'warn' : ''}" title="Forecast for homebase (Open-Meteo)">${bkWxText(w)} <span class="hint">homebase</span>${fl.map((x) => ` <b>${x[1]}</b>`).join('')}</div>`; }
+function bkWxBadge(b) { const p = Travel.loc(b) || Travel.home(); const w = bkWx(p, b.date); const fl = bkWxFlags(w); return fl.length ? `<span class="bk-wxb" title="${h(bkWxText(w))} at ${h(Bk.farmName(b) || 'the farm')}">${fl.map((x) => x[1].split(' ')[0]).join('')}</span> ` : ''; }
+function bkWxJobs() { // appointments in the next week where the forecast is hot, very wet, windy or stormy
+  const out = []; const t = bkToday(), end = bkAdd(t, 7);
+  Bk.list('bookings').filter((b) => Bk.live(b) && b.date >= t && b.date <= end && !Bk.done(b) && Bk.type(b.type).where === 'farm').forEach((b) => { const p = Travel.loc(b); const w = bkWx(p, b.date); const fl = bkWxFlags(w);
+    if (fl.length) out.push({ k: 'wx', b, t: 'Weather', d: `${bkDate(b.date, { weekday: 'short', day: 'numeric', month: 'short' })} ${bkTime(b.start)} — ${Bk.who(b)}${Bk.farmName(b) ? ' at ' + Bk.farmName(b) : ''}: ${fl.map((x) => x[1]).join(', ')} (${bkWxText(w)})` }); });
+  return out;
+}

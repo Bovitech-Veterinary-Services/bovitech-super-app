@@ -139,6 +139,18 @@ async function claim(row: Record<string, unknown>) { // insert first so the same
   const js = await r.json(); return js[0] || null;
 }
 const setLog = (id: number, patch: Record<string, unknown>) => sb(`/rest/v1/sms_log?id=eq.${id}`, { method: "PATCH", body: JSON.stringify(patch), headers: { Prefer: "return=minimal" } });
+async function daySheets(today: string, keys: Set<string>, send: (row: any) => Promise<void>, errors: string[]) {
+  const sheets = ((await (await sb(`/rest/v1/records?select=id,data,deleted,updated_at&kind=eq.bksheet&id=like.*${today}`)).json()) as any[]).filter((r) => !r.deleted && r.data && r.data.sid && r.data.date === today).map((r) => ({ ...r.data, at: Date.parse(r.updated_at) }));
+  if (!sheets.length) return; const cfg = await recs("bkcfg");
+  for (const sh of sheets) {
+    const sc = cfg.find((c) => c.id === "staff:" + sh.sid) || {}; if (sc.sheetSms === false) continue; const ph = auMobile(sc.mobile || ""); if (!ph) continue;
+    const pre = `daysheet:${sh.sid}:${today}:`; const sentAny = [...keys].some((k) => k.startsWith(pre)); if (keys.has(pre + sh.hash)) continue;
+    if (!sentAny && !sh.text) continue; // nothing on, and nothing sent yet
+    if (sentAny && sh.at && Date.now() - sh.at < 5 * 60e3) continue; // still being changed — wait a few minutes so several changes go in one text
+    const body = (sentAny ? "UPDATED day sheet — " : "") + (sh.text || "Nothing booked for you today.").slice(0, 1500);
+    const row = await claim({ kind: "daysheet", key: pre + sh.hash, phone: ph, body, staff_id: sh.sid, status: "queued" }); if (row) { keys.add(pre + sh.hash); await send(row); }
+  }
+}
 async function smsRun() {
   const now = perthNow(), today = ymd(now), hm = now.getHours() * 60 + now.getMinutes();
   const sent: any[] = []; const errors: string[] = []; let budget = 30;
@@ -174,6 +186,16 @@ async function smsRun() {
     if (p && !p.smsSent && !p.smsSkip && !keys.has(`proposal:${b.id}:${p.at}`) && tpl("proposal")) {
       const row = await claim({ ...base, kind: "proposal", key: `proposal:${b.id}:${p.at}`, body: fill(tpl("proposal").text, b, c, { date: p.date, start: p.start, staff: (p.staff || b.staff || []).join(",") }), status: "queued" }); if (row) await send(row); }
   }
+  // still not confirmed 48 hours before: tell the office so they can ring
+  for (const b of bookings) {
+    if (b.status && b.status !== "unconfirmed") continue; if (b.proposal) continue; const at = Date.parse(`${b.date}T${b.start || "08:00"}:00+08:00`); const left = at - Date.now();
+    if (left <= 0 || left > 48 * 3600e3 || keys.has("ring:" + b.id + ":" + b.date)) continue;
+    const c = contacts.find((x) => x.id === b.cid); const bz = businesses.find((x) => x.id === b.bid); const who = bz ? bz.name : c ? [c.first, c.last].filter(Boolean).join(" ") : "a client";
+    const row = await claim({ kind: "notice", key: "ring:" + b.id + ":" + b.date, booking_id: b.id, contact_id: c ? c.id : null, business_id: b.bid || null, phone: c ? ((c.mobiles || [])[0] || {}).value || null : null, body: `Not confirmed yet: ${who} — ${nice(b.date, { weekday: "long", day: "numeric", month: "short" })} ${niceTime(b.start)}. Please ring them.`, status: "sent" });
+    if (row && RESEND) await sendMail(`Not confirmed yet: ${who} — ${nice(b.date, { weekday: "short", day: "numeric", month: "short" })} ${niceTime(b.start)}`, row.body + (c && (c.mobiles || [])[0] ? `\nMobile: ${c.mobiles[0].value}` : "") + "\n\nIt's also in the app: Scheduling → Jobs → Not confirmed — ring them.").catch((e) => errors.push(String(e)));
+  }
+  // each person's day sheet at 8am, and again if their day changes
+  if (hm >= 8 * 60) await daySheets(today, keys, send, errors);
   return { sent: sent.length, errors };
 }
 // replies and delivery reports from the phone app
@@ -189,7 +211,15 @@ async function smsHook(body: any) {
     const contacts = await recs("contacts");
     const c = contacts.find((x) => (x.mobiles || []).some((m: any) => String(m.value || "").replace(/\D/g, "").replace(/^61/, "0") === digits));
     const bid = c && (c.links || []).find((l: any) => !l.past)?.bid;
-    await sb("/rest/v1/sms_log", { method: "POST", body: JSON.stringify({ kind: "reply", phone: ph || pl.sender, body: String(pl.message || "").slice(0, 2000), contact_id: c ? c.id : null, business_id: bid || null, status: "received", gateway_id: pl.messageId || null, at: pl.receivedAt || new Date().toISOString() }), headers: { Prefer: "return=minimal" } });
+    const msg = String(pl.message || "").slice(0, 2000);
+    const ins = await sb("/rest/v1/sms_log", { method: "POST", body: JSON.stringify({ kind: "reply", phone: ph || pl.sender, body: msg, contact_id: c ? c.id : null, business_id: bid || null, status: "received", gateway_id: pl.messageId || null, at: pl.receivedAt || new Date().toISOString() }), headers: { Prefer: "return=representation" } });
+    try { // "Y" / "Yes": confirm their next unconfirmed appointment (the reply still goes to the office)
+      const row = (await ins.json().catch(() => []))[0];
+      if (row && c && /^\W*(y|ye|yes|yep|yeah|yes please|yes thanks|confirm|confirmed)\W*$/i.test(msg.trim())) {
+        const today = ymd(perthNow()); const bk = (await recs("bookings")).filter((b) => b.status !== "cancelled" && !b.gone && b.date >= today && (!b.status || b.status === "unconfirmed") && (b.cid === c.id || (bid && b.bid === bid))).sort((a, b) => (a.date + a.start).localeCompare(b.date + b.start))[0];
+        if (bk) await sb("/rest/v1/rpc/sms_autoconfirm", { method: "POST", body: JSON.stringify({ booking: bk.id, sms_id: row.id, note_: `✓ Confirmed automatically: ${nice(bk.date, { weekday: "short", day: "numeric", month: "short" })} ${niceTime(bk.start)}` }) });
+      }
+    } catch (e) { console.error("autoconfirm", e); }
     return { ok: true };
   }
   return { ok: true, ignored: ev };

@@ -7,7 +7,7 @@
    Loaded before app.js; uses app.js helpers (D, S, h, uid, touch, save, toast, ask, openSheet…) only at run time.
    Everything syncs like contacts: each item is a record (kinds below). */
 'use strict';
-const BOOK_KINDS = ['bookings', 'blocks', 'oncall', 'bkcfg', 'followups', 'bklog', 'bkpending'];
+const BOOK_KINDS = ['bookings', 'blocks', 'oncall', 'bkcfg', 'followups', 'bklog', 'bkpending', 'bksheet']; // bksheet: each person's day sheet text, for the 8am SMS
 const BK_FOLLOWUPS_ON = false; // follow-ups come back with the clinical records module
 window.BOOK_KINDS = BOOK_KINDS;
 const BK_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/><path d="M8 14h3v3H8z"/></svg>';
@@ -539,10 +539,10 @@ function bkTidy(staffIds, date, skipId) { // → [{ b, from, to }] — later app
 /* ---------------- the Scheduling change log: every change to appointments, blocks, the roster and Scheduling settings, with undo ---------------- */
 const BKLOG = { snap: null };
 const bkPlain = (r) => { const o = {}; Object.keys(r).forEach((k) => { if (!k.startsWith('_')) o[k] = r[k]; }); return o; };
-const bkLogKinds = BOOK_KINDS.filter((k) => k !== 'bklog');
+const bkLogKinds = BOOK_KINDS.filter((k) => k !== 'bklog' && k !== 'bksheet');
 function bkLogInit() { BKLOG.snap = new Map(); bkLogKinds.forEach((k) => (D[k] || []).forEach((r) => BKLOG.snap.set(k + ':' + r.id, stable(bkPlain(r))))); }
 function bkLogCapture() { // called on every save: anything changed on this device since the last save is written to the log
-  if (!D || !Array.isArray(D.contacts)) return; if (!BKLOG.snap) { bkLogInit(); return; }
+  if (!D || !Array.isArray(D.contacts)) return; if (typeof bkSheetSoon === 'function') bkSheetSoon(); if (!BKLOG.snap) { bkLogInit(); return; }
   const items = [];
   bkLogKinds.forEach((k) => (D[k] || []).forEach((r) => { const key = k + ':' + r.id; const now = stable(bkPlain(r)); const was = BKLOG.snap.get(key);
     if (was === now) return; BKLOG.snap.set(key, now); if (!r._dirty || BK._quiet) return; // pulled from another device, or the starting settings
