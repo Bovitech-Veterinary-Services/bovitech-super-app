@@ -430,6 +430,30 @@ details.notelog{display:inline-block;margin-left:6px;font-size:12px}details.note
 .adminbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;background:#fff6c7;border:1px solid #e7c200;border-radius:10px;padding:8px 10px;margin:0 0 10px;font-size:14px}.adminbar>span:first-child{font-weight:800}
 .farmrow{display:flex;gap:2px;align-items:flex-start}.farmrowc{flex:1;min-width:0}.farmrow>.draghandle{padding-top:12px}
 .resolvedsec summary{cursor:pointer}
+
+/* clinical records */
+.cr-pill{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;background:#ececec;color:#444;vertical-align:middle;white-space:nowrap}
+.cr-pill.draft{background:#fff3c4;color:#6b4f00}.cr-pill.final{background:#e3f5e6;color:#1d5b2c}.cr-pill.notready{background:#ececec;color:#555}.cr-pill.pending{background:#ffe8d1;color:#7a3300}.cr-pill.approved{background:#e3edfb;color:#14315f}.cr-pill.sent{background:#efe3f7;color:#4a2066}.cr-pill.paid{background:#e3f5e6;color:#1d5b2c}.cr-pill.over{background:#fdeaea;color:#a1111b}
+.cr-warn{background:#fff3c4;color:#6b4f00;border:1px solid #f1d77a;border-radius:10px;padding:8px 12px;margin:0 0 10px;font-size:14px}
+.cr-gst{background:#e3edfb;color:#14315f;border:1px solid #b8cdf0;border-radius:8px;padding:4px 10px;margin:0 0 8px;font-size:13px;font-weight:600}
+.cr-over{border-left:4px solid #d71f2b}
+.cr-row{display:flex;gap:6px;align-items:center;flex-wrap:wrap;margin:4px 0}.cr-row select,.cr-row input{max-width:100%}
+.cr-item{border:1px solid var(--line,#e4e0d9);border-radius:10px;padding:8px 10px;margin:6px 0}
+.cr-chks{display:flex;flex-wrap:wrap;gap:4px 14px}
+.cr-fs{border:0;padding:0;margin:0;min-width:0}.cr-fs[disabled]{opacity:.75}
+.cr-edit select{max-width:100%}
+.cr-must{background:#fdeaea;border-radius:8px;padding:6px 8px}.cr-must:has(input:checked){background:#e3f5e6}
+.cr-lines{width:100%;border-collapse:collapse;font-size:14px}.cr-lines th,.cr-lines td{border-bottom:1px solid var(--line,#e4e0d9);padding:4px 6px;text-align:left;vertical-align:top}.cr-lines td:nth-child(n+2){white-space:nowrap}.cr-lines input{width:100%;min-width:60px}
+.cr-eline{border-bottom:1px solid var(--line,#e4e0d9);padding:6px 0}.cr-eline>input{width:100%;box-sizing:border-box}.cr-vline{display:flex;gap:10px;justify-content:space-between;border-bottom:1px solid var(--line,#e4e0d9);padding:5px 0}.cr-vline b{white-space:nowrap}
+.cr-tot{text-align:right;margin:8px 0;line-height:1.7}
+.cr-steps{display:flex;flex-wrap:wrap;gap:4px;font-size:13px;color:#888;margin-bottom:6px}.cr-steps .on{color:var(--ink,#141414);font-weight:700;text-decoration:underline}
+.cr-pdres{background:color-mix(in srgb,#2f7a55 7%,transparent);border-radius:8px;padding:8px 10px;margin:6px 0}
+.cr-chute{position:fixed;inset:0;z-index:200;background:var(--bg,#fff);padding:10px 12px calc(16px + env(safe-area-inset-bottom));overflow:auto}
+.cr-ch-h{display:flex;gap:10px;align-items:center;font-size:20px}
+.cr-chb{display:grid;grid-template-columns:repeat(auto-fill,minmax(74px,1fr));gap:6px;margin:8px 0}.cr-chb button{font-size:22px;font-weight:700;padding:16px 4px;border-radius:12px;border:2px solid #2f7a55;background:#e3f5e6;color:#1d5b2c}.cr-chb button small{font-size:11px;font-weight:500}
+.cr-chb button.n{background:#fdeaea;border-color:#d71f2b;color:#a1111b;grid-column:span 2}.cr-chb button.r{background:#fff3c4;border-color:#d9a400;color:#6b4f00;grid-column:span 2}.cr-chb button.big{grid-column:span 2;padding:26px 4px}.cr-chb button:active{transform:scale(.96)}
+.cr-last{font-size:15px;line-height:1.6;margin:6px 0;color:#555}
+.cr-cnt{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:8px 0}.cr-cntr{border:1px solid var(--line,#e4e0d9);border-radius:12px;padding:8px;text-align:center}.cr-cntr .cr-row{justify-content:center}
 </style>
 </head>
 <body>
@@ -459,6 +483,8 @@ window.addEventListener('error',function(e){show(e.message||e.error)});window.ad
 <script src="bk-form.js"></script>
 <script src="bk-oncall.js"></script>
 <script src="bk-plus.js"></script>
+<script src="cr.js"></script>
+<script src="cr-ui.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
