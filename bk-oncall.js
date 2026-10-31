@@ -14,7 +14,7 @@ function bkOncallSet(date, who) { // who: a person, null (nobody), or undefined 
 const BK_DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
 function bkRosterHtml() {
   const vets = Bk.people().filter((s) => s.role === 'vet'); const a = bkWeekStart(BK.date); const days = [...Array(28)].map((_, i) => bkAdd(a, i)); const ed = Bk.can('roster');
-  const p = Bk.get('ocpat') || { weeks: 2, start: bkWeekStart(bkToday()), grid: {} }; const pat = bkOncallPat();
+  const act = Bk.get('ocpat') || { weeks: 2, start: bkWeekStart(bkToday()), grid: {} }; const p = BK.ocDraft || act; const pat = bkOncallPat(); const dirty = !!BK.ocDraft && stable({ w: BK.ocDraft.weeks, s: BK.ocDraft.start, g: BK.ocDraft.grid || {} }) !== stable({ w: act.weeks, s: act.start, g: act.grid || {} }); const saved = Bk.cfg('ocsaved');
   const sel = (d) => { const rec = bkOncallRec(d), pw = bkOncallFromPat(d); const cur = rec ? (rec.who === null ? '__none' : rec.who) : pw ? '__pat' : '';
     return `<select data-act="bk-oc" data-d="${d}" ${ed ? '' : 'disabled'} aria-label="On call ${bkDate(d)}">${!pw && !rec ? '<option value="">Choose…</option>' : ''}${pw ? `<option value="__pat" ${cur === '__pat' ? 'selected' : ''}>${h(Bk.pname(pw))} (pattern)</option>` : ''}${vets.map((s) => `<option value="${s.id}" ${cur === s.id ? 'selected' : ''}>${h(s.preferred_name || s.full_name)}</option>`).join('')}<option value="__none" ${cur === '__none' ? 'selected' : ''}>Nobody</option></select>`; };
   const cell = (w, dw) => `<select data-act="ocp-cell" data-k="${w}-${dw}" ${ed ? '' : 'disabled'} aria-label="Week ${w + 1} ${DOW_NAMES[dw]}"><option value="">—</option>${vets.map((s) => `<option value="${s.id}" ${(p.grid || {})[w + '-' + dw] === s.id ? 'selected' : ''}>${h(s.initials || s.preferred_name)}</option>`).join('')}</select>`;
@@ -23,11 +23,13 @@ function bkRosterHtml() {
     <div class="bk-nav"><button class="btn small" data-act="bk-rgo" data-v="-28">‹ 4 weeks</button><button class="btn small" data-act="bk-rgo" data-v="28">4 weeks ›</button></div></div>
   ${bkAiCard('roster')}
   <div class="hint" style="margin-bottom:8px">One vet on call each day, midnight to midnight. The usual pattern fills the roster; change any day by hand (it says "changed"), or pick the "(pattern)" choice to put it back.${ed ? '' : ' You can see the roster but not change it.'}</div>
-  <details class="card" ${BK.ocpOpen || !pat ? 'open' : ''} data-ocp="1"><summary><b>🔁 Usual pattern</b> <span class="hint">${pat ? `${pat.weeks}-week cycle` : 'not set yet'}</span></summary>
+  <details class="card" ${BK.ocpOpen || !pat ? 'open' : ''} data-ocp="1"><summary><b>🔁 Regular pattern</b> <span class="hint">${pat ? `${h(act.pname || 'not named')} · ${pat.weeks}-week cycle` : 'not set yet'}${dirty ? ' · <b style="color:var(--red)">changes not saved</b>' : ''}</span></summary>
     <div class="grid2" style="margin-top:6px"><div class="f"><label for="ocp-weeks">Repeats every</label><select id="ocp-weeks" data-act="ocp-weeks" ${ed ? '' : 'disabled'}>${[1, 2, 3, 4].map((n) => `<option value="${n}" ${(p.weeks || 2) === n ? 'selected' : ''}>${n} week${n === 1 ? '' : 's'}</option>`).join('')}</select></div>
       <div class="f"><label for="ocp-start">Week 1 starts on (a Monday)</label><input id="ocp-start" type="date" data-act="ocp-start" value="${p.start || ''}" ${ed ? '' : 'disabled'}></div></div>
     <div class="bk-dayscroll"><table class="bk-ocpat"><thead><tr><th></th>${BK_DOW_ORDER.map((dw) => `<th>${DOW_NAMES[dw]}</th>`).join('')}</tr></thead><tbody>${[...Array(p.weeks || 2)].map((_, w) => `<tr><th>Week ${w + 1}</th>${BK_DOW_ORDER.map((dw) => `<td>${cell(w, dw)}</td>`).join('')}</tr>`).join('')}</tbody></table></div>
-    ${ed ? `<div class="actions" style="margin-top:6px"><button class="btn small" data-act="ocp-usual">Fill in our usual pattern (Jess and Milly)</button></div><div class="hint">Jess every Friday, Milly every Monday, every second weekend each, Thursday goes to whoever isn't on that weekend, and Tuesday + Wednesday alternate weekly. Check it, then change any cell.</div>` : ''}</details>
+    ${dirty ? '<div class="bk-warnbox">These changes aren\'t in use yet — tap <b>💾 Save this as the regular pattern</b> to use them for the roster (days changed by hand stay as they are).</div>' : '<div class="hint">Change any cell, then save it. The roster below uses the regular pattern for every day not changed by hand.</div>'}
+    ${ed ? `<div class="actions" style="margin-top:6px"><button class="btn small primary" data-act="ocp-save">💾 Save this as the regular pattern</button>${dirty ? '<button class="btn small" data-act="ocp-discard">Discard changes</button>' : ''}</div>` : ''}
+    <div class="lbl" style="margin-top:10px">Saved patterns</div>${saved.map((x) => `<div class="kv" style="align-items:center"><div class="v"><b>${h(x.name)}</b>${act.saved === x.id && !dirty ? ' <span class="pill" style="background:#2f7a55;color:#fff">in use</span>' : ''}<br><span class="hint">${x.weeks}-week cycle · week 1 starts ${bkDate(x.start)}</span></div>${ed ? `<button class="btn small" data-act="ocs-use" data-id="${x.id}">Use this one</button><button class="btn small" data-act="ocs-ren" data-id="${x.id}" aria-label="Rename">✏️</button><button class="btn small" data-act="ocs-del" data-id="${x.id}" aria-label="Delete">🗑</button>` : ''}</div>`).join('') || '<div class="hint">None yet — saving the regular pattern keeps a named copy here (for example "Normal", "Christmas" or "Milly on leave"), so you can switch back to it any time.</div>'}</details>
   <details class="card"><summary><b>⬇ Export (CSV)</b> <span class="hint">for vControl</span></summary>
     <div class="grid2" style="margin-top:6px"><div class="f"><label for="oc-from">From</label><input id="oc-from" type="date" value="${bkToday()}"></div><div class="f"><label for="oc-to">To</label><input id="oc-to" type="date" value="${bkAdd(bkToday(), 90)}"></div></div>
     <div class="actions"><button class="btn small primary" data-act="oc-csv">Download CSV</button></div><div class="hint">One row per day: date, day, start 00:00, end 23:59, vet and their mobile (set mobiles in Settings → Scheduling → People).</div></details>
@@ -43,14 +45,26 @@ function bkOcCsv(from, to) {
   return rows.join('\r\n') + '\r\n';
 }
 document.addEventListener('change', (e) => { const el = e.target; const a = el.dataset && el.dataset.act; if (!a || !/^ocp-/.test(a)) return; if (!Bk.need('roster')) { renderAll(); return; }
-  const p = bkOcPatRec();
+  const act = bkOcPatRec(); const p = BK.ocDraft = BK.ocDraft || bkClone({ weeks: act.weeks, start: act.start, grid: act.grid || {} }); // edits are a draft until saved
   if (a === 'ocp-cell') { p.grid = { ...(p.grid || {}) }; if (el.value) p.grid[el.dataset.k] = el.value; else delete p.grid[el.dataset.k]; }
   if (a === 'ocp-weeks') p.weeks = +el.value || 2;
   if (a === 'ocp-start' && el.value) p.start = bkWeekStart(el.value);
-  touch(p); BK.ocpOpen = true; save(); Sync.soon(); renderAll(); });
+  BK.ocpOpen = true; renderAll(); });
 document.addEventListener('toggle', (e) => { if (e.target.dataset && e.target.dataset.ocp) BK.ocpOpen = e.target.open; }, true);
 document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return; const a = el.dataset.act;
   if (a === 'bk-rgo') { BK.date = bkAdd(BK.date, +el.dataset.v); renderAll(); }
+  else if (a === 'ocp-save' || a === 'ocs-use' || a === 'ocs-ren' || a === 'ocs-del' || a === 'ocp-discard') { if (!Bk.need('roster')) return; const act = bkOcPatRec();
+    if (a === 'ocp-discard') { BK.ocDraft = null; renderAll(); return; }
+    if (a === 'ocp-save') { const src = BK.ocDraft || act; const cur = act.saved && Bk.get(act.saved);
+      const ok = await askBox('Save as the regular pattern', `<div class="f"><label for="ocs-n">Name for this pattern</label><input id="ocs-n" data-ask="n" value="${h((cur && cur.name) || act.pname || '')}"></div><div class="hint">It becomes the regular pattern for the roster, and a copy is kept under Saved patterns. Using the same name as a saved pattern updates that one.</div>`, 'Save', false, 'Cancel');
+      if (!ok) return; const nm = (ASK_FORM.n || '').trim(); if (!nm) { toast('Give the pattern a name'); return; }
+      let sv = Bk.cfg('ocsaved').find((x) => x.name.toLowerCase() === nm.toLowerCase()); if (!sv) { sv = { id: uid('ocs'), cfg: 'ocsaved', name: nm }; D.bkcfg.push(sv); }
+      Object.assign(sv, { name: nm, weeks: src.weeks || 2, start: src.start || bkWeekStart(bkToday()), grid: bkClone(src.grid || {}) }); touch(sv);
+      Object.assign(act, { weeks: sv.weeks, start: sv.start, grid: bkClone(sv.grid), saved: sv.id, pname: nm }); touch(act); BK.ocDraft = null; bkDone(`"${nm}" is now the regular on-call pattern`); return; }
+    const sv = Bk.get(el.dataset.id); if (!sv) return;
+    if (a === 'ocs-use') { if (!(await ask(`Use "${sv.name}" as the regular on-call pattern? Days changed by hand on the roster stay as they are.`, 'Yes — use it'))) return; Object.assign(act, { weeks: sv.weeks, start: sv.start, grid: bkClone(sv.grid || {}), saved: sv.id, pname: sv.name }); touch(act); BK.ocDraft = null; bkDone(`"${sv.name}" is now the regular pattern`); return; }
+    if (a === 'ocs-ren') { const ok = await askBox('Rename this pattern', `<div class="f"><label for="ocs-r">Name</label><input id="ocs-r" data-ask="n" value="${h(sv.name)}"></div>`, 'Save', false, 'Cancel'); if (!ok || !(ASK_FORM.n || '').trim()) return; sv.name = ASK_FORM.n.trim(); touch(sv); if (act.saved === sv.id) { act.pname = sv.name; touch(act); } bkDone('Renamed'); return; }
+    if (a === 'ocs-del') { if (!(await ask(`Delete the saved pattern "${sv.name}"?${act.saved === sv.id ? ' The roster keeps using it until you choose another.' : ''}`, 'Yes — delete', true))) return; sv.gone = true; touch(sv); if (act.saved === sv.id) { delete act.saved; touch(act); } bkDone('Pattern deleted'); return; } }
   else if (a === 'ocp-usual') { if (!Bk.need('roster')) return; const ppl = Bk.people(); const J = ppl.find((s) => /^jess/i.test(s.preferred_name || s.full_name)), M = ppl.find((s) => /^(milly|amelia)/i.test(s.preferred_name || s.full_name));
     if (!J || !M) { toast("Couldn't find Jess and Milly on the staff list"); return; } if (Object.keys((Bk.get('ocpat') || {}).grid || {}).length && !(await ask('Replace the pattern you have with the usual Jess and Milly pattern?', 'Yes — replace it'))) return;
     const p = bkOcPatRec(); const j = J.id, m = M.id; p.weeks = 2; p.grid = { '0-1': m, '0-2': j, '0-3': j, '0-4': m, '0-5': j, '0-6': j, '0-0': j, '1-1': m, '1-2': m, '1-3': m, '1-4': j, '1-5': j, '1-6': m, '1-0': m };
