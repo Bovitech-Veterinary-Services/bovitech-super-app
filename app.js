@@ -8,7 +8,7 @@ const RATING_SET = new Set(RATINGS);
 const RATING_SHORT = { aplus: 'A+', a: 'A', b: 'B', c: 'C' };
 // which photo wins when we must pick one automatically (user is still asked via the job list)
 const PHOTO_PRIORITY = ['dna', 'blockedc', 'blockedn', 'payup', 'newfac', 'newassess', 'newmaybe', 'aplus', 'a', 'b', 'c', 'bvs', 'bfriends', 'sheepreg', 'sheepocc', 'occ', 'industry', 'prac', 'phone', 'family', 'inactive']; // default order; Inactive is overridden by every other tag
-const APP_VERSION = '2.4 (1 Nov 2026)'; // Clients module, includes Bovitech Contacts v17.26
+const APP_VERSION = '2.5 (1 Nov 2026)'; // Clients module, includes Bovitech Contacts v17.26
 // current photo priority: the order saved in Settings (synced), then any photo tags not yet placed
 function photoOrder() {
   const withPhoto = D.tags.filter((t) => tagPhotoSrc(t.id)).map((t) => t.id);
@@ -22,6 +22,7 @@ const splitLook = () => ({ labels: true, line: true, pos: 'top', ...(D.settings.
 const prioIdx = (id) => { const o = photoOrder(); const i = o.indexOf(id); return i < 0 ? 999 : i; };
 const MAX_STOPS = 9;
 const ICONS = {
+  pat: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 10c0-2 1.5-3 3-3h10c1.5 0 3 1 3 3v4c0 1-1 2-2 2v3M6 16v3M4 10l-2-2M20 10l2-2"/><circle cx="9" cy="11" r="0.6"/><circle cx="15" cy="11" r="0.6"/></svg>',
   contacts: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21c0-4 3-7 7-7s7 3 7 7"/><path d="M17 4a4 4 0 0 1 0 8M22 21c0-3-1.5-5.5-4-6.5"/></svg>',
   biz: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 21V9l9-6 9 6v12"/><path d="M9 21v-7h6v7"/></svg>',
   route: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="6" cy="19" r="2.5"/><circle cx="18" cy="5" r="2.5"/><path d="M8.5 19H15a3.5 3.5 0 0 0 0-7H9a3.5 3.5 0 0 1 0-7h6.5"/></svg>',
@@ -540,7 +541,7 @@ const REQ_DEF = ['email', 'phone', 'business', 'gps', 'pic', 'pid', 'category'];
 const reqOn = (k) => (D.settings.required || REQ_DEF).includes(k);
 const TPL_CONTACT = '*General info*\n-\n\n*Relationships*\n-\n\n*Preg test info*\n-Frequency:\n-Type:\n-Speed:\n-Comment:\n\n*Bull test info*\n-Frequency:\n-Speed:\n-Power:\n-Comment:\n\n*Book under*\n-\n\n*WARNING*\n-';
 const TPL_BIZ = '*General info*\n-\n\n*Billing*\n-\n\n*WARNING*\n-';
-const TAB_DEFAULTS = { cmain: 'Contacts', book: 'Scheduling', contacts: 'People', loc: 'Pins', biz: 'Businesses', search: 'Search & Bulk Edit', route: 'Plan Route', map: 'Farm Map', jobs: 'Jobs', settings: 'Settings', rec: 'Records' };
+const TAB_DEFAULTS = { cmain: 'Contacts', book: 'Scheduling', contacts: 'People', loc: 'Pins', biz: 'Businesses', pat: 'Patients', search: 'Search & Bulk Edit', route: 'Plan Route', map: 'Farm Map', jobs: 'Jobs', settings: 'Settings', rec: 'Records' };
 const lab = (k) => { const v = (((D && D.settings) || {}).labels || {})[k]; return (v && !(k === 'contacts' && v === 'Contacts')) ? v : TAB_DEFAULTS[k]; }; /* old "Contacts" name now shows as People */
 /* ---------- business-name helpers: matching names in text, splitting names that hold more than one business ---------- */
 const coreBiz = (n) => (n || '').replace(/\([^)]*\)?/g, ' ').replace(/\b(pty\.?\s*ltd\.?|pty|ltd|limited|atf\b.*|as trustee.*|trading as.*|t\/a\b.*|ta\b .*|& co\b)/gi, ' ').toLowerCase().replace(/[^a-z0-9]/g, '');
@@ -954,7 +955,7 @@ function jobsFor(kind, id) { return jobs().filter((j) => j.id === id && (j.kind 
 /* ---------------- rendering: shell ---------------- */
 const TABS = [['contacts', 'People'], ['biz', 'Businesses'], ['book', 'Scheduling'], ['loc', 'Pins'], ['search', 'Search & Bulk Edit'], ['route', 'Plan Route'], ['jobs', 'Jobs'], ['settings', 'Settings']];
 /* two levels: main tabs (Contacts, Scheduling, Settings — later modules add more), and the sub-tabs of the one you're in */
-const CONTACT_TABS = ['contacts', 'biz', 'loc', 'search', 'route', 'jobs'];
+const CONTACT_TABS = ['contacts', 'biz', 'pat', 'loc', 'search', 'route', 'jobs'];
 const BK_SUBS = [['cal', 'Calendar'], ['sheet', 'Day sheet'], ['pending', 'To schedule'], ['bulk', 'Bulk lists'], ['jobs', 'Jobs'], ['roster', 'On call'], ['log', 'Change log']]; // Follow-ups come back with the clinical records module
 const SET_SUBS = [['general', 'General'], ['adminjobs', 'Admin jobs'], ['users', 'Users'], ['contacts', 'Contacts'], ['sched', 'Scheduling'], ['records', 'Clinical records'], ['templates', 'Templates'], ['allset', 'All settings']];
 const setSubName = (k) => (k === 'sched' ? lab('book') : k === 'contacts' ? lab('cmain') : (SET_SUBS.find((x) => x[0] === k) || [, 'General'])[1]);
@@ -1142,7 +1143,7 @@ function renderAll() { try { applyBoxStyles(); } catch (e) { }
   const main = $('#main');
   if (S.tab === 'map') S.tab = 'route'; /* the farm map now lives at the bottom of Plan Route */
   if (S.tab === 'book' && !(typeof Bk !== 'undefined' && Bk.on())) S.tab = 'contacts'; if (S.tab === 'rec' && !(typeof crOn === 'function' && crOn())) S.tab = 'contacts';
-  main.classList.toggle('single', ['search', 'route', 'jobs', 'settings', 'book', 'rec'].includes(S.tab));
+  main.classList.toggle('single', ['search', 'route', 'jobs', 'settings', 'book', 'rec', 'pat'].includes(S.tab));
   if (S.tab === 'biz') { renderBizList(); renderDetail(); }
   else if (S.tab === 'contacts') { renderContactList(); renderDetail(); }
   else if (S.tab === 'loc') { renderLocList(); renderDetail(); }
@@ -1152,6 +1153,7 @@ function renderAll() { try { applyBoxStyles(); } catch (e) { }
   else if (S.tab === 'settings') { $('#list').innerHTML = renderSettings(); collapseSettings(); document.body.classList.remove('show-detail'); }
   else if (S.tab === 'book') { $('#list').innerHTML = bkRender(); document.body.classList.remove('show-detail'); }
   else if (S.tab === 'rec') { $('#list').innerHTML = crRender(); document.body.classList.remove('show-detail'); }
+  else if (S.tab === 'pat') { $('#list').innerHTML = renderPatients(); document.body.classList.remove('show-detail'); }
   { const ch = document.querySelector('#list .chips'), on = ch && ch.querySelector('.chip.on'); if (on) ch.scrollLeft = Math.max(0, on.offsetLeft - ch.offsetLeft - 24); } /* keep the chosen toggle in view on phones */
   renderSyncPill(); conflictLock();
 }
@@ -1997,7 +1999,7 @@ function bizDetail(b) {
   mark('pic');
   if (isClientBiz(b)) html += `<div class="card"><h3><span class="sp">Property Identification Code (PIC)</span>${secEdit('business', b.id, 'Property Identification')}</h3>${b.pics.map((p) => `<div class="kv"><div class="k">${h(p.label || 'PIC')}</div><div class="v">${h(p.value)}</div></div>`).join('') || '<div class="hint">None recorded.</div>'}</div>`;
   mark('pid');
-  if (isClientBiz(b)) html += `<div class="card"><h3><span class="sp">Patient IDs</span>${secEdit('business', b.id, 'Patient IDs')}</h3>${b.patientIds.map((p) => `<div class="kv"><div class="k">${pidEmo(p)}${h(p.label || 'ID')}</div><div class="v">${h(p.value)}</div></div>`).join('') || '<div class="hint">None recorded.</div>'}</div>`;
+  if (isClientBiz(b)) html += `<div class="card"><h3><span class="sp">Patient IDs</span>${secEdit('business', b.id, 'Patient IDs')}</h3>${b.patientIds.map((p) => `<div class="kv bk-tap" data-act="pt-open" data-k="${h(b.id + '|' + p.value)}" data-go="1" title="Open this herd / flock"><div class="k">${pidEmo(p)}${h(p.label || 'ID')}</div><div class="v">${h(p.value)}</div></div>`).join('') || '<div class="hint">None recorded.</div>'}</div>`;
   mark('appts'); if (typeof bkBizAppts === 'function') html += bkBizAppts(b);
   mark('recs'); if (typeof crBizCard === 'function') html += crBizCard(b);
   mark('sched'); if (typeof bkBizCard === 'function') html += bkBizCard(b);
@@ -3199,6 +3201,7 @@ const GUIDE_MANUAL = [
 <p><b>Tab order</b> (Settings → General, admin): move the main tabs (Contacts, Scheduling, Records, Settings) and each set of sub-tabs up or down — for everyone. <b>Back to the usual order</b> undoes it.</p>
 <p><b>Pop-up messages</b> stay until you tap them (or ✕). <b>Copy message</b> copies the text — handy for pasting an error into Claude.</p>
 <p><b>Google Calendar</b>: day sheets aren't texted — each person's day sheet goes on their own "Bovitech — name" calendar as one event for the day (from their first appointment to the end of their last), with the whole run sheet in it — not each appointment. Birthdays, yearly events and reminders, and the days the bulk lists open go on the shared on-call calendar.</p>
+<p><b>Patients</b> (Contacts → Patients): every cattle herd and sheep flock — the patient IDs on client businesses — with its business and all its clinical records. Search by herd ID, flock or business, filter cattle or sheep, and tap one to see its records or start a new one. On a business page, tap a patient ID to open it.</p>
 <p><b>Appointment status</b>: a new appointment is <b>Unconfirmed</b> or <b>Confirmed</b>. When its clinical record is finalised, the real start and finish times from the record go onto the calendar and it becomes <b>Completed — not invoiced</b>; when the invoice is sent it becomes <b>Completed and invoiced</b>. Reopening the record puts it back to confirmed. A past appointment that's still open shows in Scheduling → Jobs with <b>📋 Write (or Finish) the clinical record</b>, or <b>✓ Completed (no record)</b>. On the appointment itself, <b>Not finished after all</b> undoes a completed status.</p>
 <p><b>Blocks for everyone</b> (like the morning meeting) only show for people who are working that day — not on their days off, leave days or public holidays. Blocks for particular people always show.</p>
 <p><b>Day sheets</b>: choose what they show in Settings → Scheduling → Day sheets (procedures, contact and mobile, map links, warnings, notes, confirmed or not, drive times, lunch and blocks, time back at base). On Google Calendar they're set out with bold headings, a line for each detail, and tappable directions and phone numbers.</p>
@@ -4941,7 +4944,7 @@ document.addEventListener('click', async (e) => {
   if (el.tagName === 'SELECT' || (el.tagName === 'INPUT' && el.type !== 'checkbox')) return;
   if (el.tagName === 'A' && a !== 'clear') return;
   switch (a) {
-    case 'tab': if (FMAP) { FMAP.remove(); FMAP = null; FMAP_LAYER = null; } S.backTo = null; S.tab = d.v; if (d.bkpage && typeof BK !== 'undefined') BK.page = d.bkpage; if (d.crpage && typeof CR !== 'undefined') CR.page = d.crpage; if (d.setsub) { S.setSub = d.setsub; S.setQ = ''; S.setOpenSnap = null; S.setOpen = new Set(); } /* settings always start folded */ S.sel = null; if (d.v === 'contacts') S.q = ''; if (d.v === 'biz') S.bq = ''; if (d.v === 'loc') S.lq = ''; /* every menu starts afresh */ document.body.classList.remove('show-detail'); renderAll(); $('#list').scrollTop = 0; break;
+    case 'tab': if (FMAP) { FMAP.remove(); FMAP = null; FMAP_LAYER = null; } S.backTo = null; S.tab = d.v; if (d.bkpage && typeof BK !== 'undefined') BK.page = d.bkpage; if (d.crpage && typeof CR !== 'undefined') CR.page = d.crpage; if (d.setsub) { S.setSub = d.setsub; S.setQ = ''; S.setOpenSnap = null; S.setOpen = new Set(); } /* settings always start folded */ S.sel = null; if (d.v === 'contacts') S.q = ''; if (d.v === 'pat' && typeof PT !== 'undefined') PT.sel = null; if (d.v === 'biz') S.bq = ''; if (d.v === 'loc') S.lq = ''; /* every menu starts afresh */ document.body.classList.remove('show-detail'); renderAll(); $('#list').scrollTop = 0; break;
     case 'open': {
       if (el.closest('#sheet')) { if (sheetDirty() && !(await ask('Open this and close the edit window without saving your changes?', 'Yes — open it'))) break; closeSheet(); }
       if (el.closest('#askbox')) closeAsk(false); if (el.closest('.svfull')) { document.querySelectorAll('.svfull').forEach((x) => x.remove()); document.body.classList.remove('svfopen'); }
