@@ -53,12 +53,13 @@ const SETUP = [
     'Under <b>OAuth 2.0 Client IDs</b>, click the <b>Web client</b> the app uses.',
     `Under <b>Authorized redirect URIs</b>, click <b>+ Add URI</b> and paste <b style="word-break:break-all">${SETUP_REDIRECT}</b> <button class="btn small greenbtn" data-act="setup-copytext" data-v="${SETUP_REDIRECT}">📋 Copy</button>`,
     'Click <b>Save</b> at the bottom.',
-    'On the same page (right-hand side, under <b>Client secrets</b>), copy the <b>Client secret</b> — you need it in the next job. Don\'t paste it anywhere else, and never into Claude.',
+    'Google no longer shows an existing secret, so make a new one: on the same page under <b>Client secrets</b>, click <b>+ Add secret</b>. (The old one keeps working — don\'t disable or delete it.)',
+    'The new secret is shown in full <b>only once</b> — click its copy icon straight away, and go straight on to the next job (Supabase → Secrets) to paste it in. Never paste it anywhere else, and never into Claude. If you lose it before pasting, just click + Add secret again and use the newest one.',
     'Tick <b>✓ Done</b>.'] },
   { id: 'secret', t: 'Supabase: add GOOGLE_CLIENT_SECRET', after: 'redirect', steps: [
     `Open <a href="${SETUP_SUPA}/functions/secrets" target="_blank" rel="noopener">Supabase → Edge Functions → Secrets</a>.`,
     'Under <b>Add new secrets</b>: Name = <b>GOOGLE_CLIENT_SECRET</b> <button class="btn small greenbtn" data-act="setup-copytext" data-v="GOOGLE_CLIENT_SECRET">📋 Copy the name</button>',
-    'Value = the Client secret you copied from Google in the last job.',
+    'Value = the new client secret you just made and copied in Google (+ Add secret).',
     'Click <b>Save</b>.',
     'Tick <b>✓ Done</b>.'] },
   { id: 'publish', t: 'Google: set the app to "In production"', steps: [
@@ -117,4 +118,12 @@ document.addEventListener('click', async (e) => {
     await navigator.clipboard.writeText(txt); const was = el.textContent; el.textContent = '✓ Copied — now paste it'; setTimeout(() => (el.textContent = was), 4000);
   } catch (x) { toast(el.dataset.act === 'setup-copy' ? "Couldn't fetch it — check the internet connection and try again" : "Couldn't copy — select it and copy it by hand"); }
 });
-window.setupJobs = setupJobs; window.setupJobHtml = setupJobHtml;
+function setupCard() { // Settings → Users → Admin tasks (admin logins only): the same list as Jobs → Setup to do, plus what's been done
+  if (!(window.SBAuth && SBAuth.isAdmin && (SBAuth.isAdmin() || (typeof S !== 'undefined' && S.admin)))) return '';
+  const todo = setupJobs(); const dis = (D && D.dismissed) || {}; const done = SETUP.filter((x) => !todo.some((j) => j.id === x.id));
+  return `<div class="card"><h3>Admin tasks</h3><div class="hint" style="margin-bottom:6px">One-off setup jobs with step-by-step instructions (also in Jobs → 🛠 Setup to do). Only admin logins see these.</div>
+    ${todo.map(setupJobHtml).join('') || '<div class="hint">✓ All done.</div>'}
+    ${done.length ? `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Done (${done.length})</summary>${done.map((x) => `<div class="kv" style="align-items:center"><div class="v">✓ ${h(x.t)}</div>${dis['setup:' + x.id] ? `<button class="btn small" data-act="setup-undo" data-id="${x.id}">Not done</button>` : '<span class="hint">done automatically</span>'}</div>`).join('')}</details>` : ''}</div>`;
+}
+document.addEventListener('click', (e) => { const el = e.target.closest && e.target.closest('[data-act=setup-undo]'); if (!el) return; D.dismissed = D.dismissed || {}; D.dismissed['setup:' + el.dataset.id] = 0; D._dismissDirty = true; if (typeof JOBS_CACHE !== 'undefined') JOBS_CACHE = null; save(); Sync.soon(); renderAll(); });
+window.setupCard = setupCard; window.setupJobs = setupJobs; window.setupJobHtml = setupJobHtml;
