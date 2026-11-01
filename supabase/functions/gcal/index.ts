@@ -58,9 +58,11 @@ function gapi(tok: string) {
     return r.json();
   };
 }
-async function ensureCal(api: any, id: string | null, name: string, colour?: string) {
-  if (id) { try { await api("/calendars/" + encodeURIComponent(id)); return id; } catch (_) { /* gone — find or make it again */ } }
-  let pageToken = ""; do { const l = await api(`/users/me/calendarList?maxResults=250${pageToken ? "&pageToken=" + pageToken : ""}`); const f = (l.items || []).find((c: any) => c.summary === name); if (f) return f.id; pageToken = l.nextPageToken || ""; } while (pageToken);
+async function ensureCal(api: any, id: string | null, name: string, colour?: string) { // finds (or makes) our calendar, and removes any copies of it made by mistake
+  const all: any[] = []; let pageToken = ""; do { const l = await api(`/users/me/calendarList?maxResults=250${pageToken ? "&pageToken=" + pageToken : ""}`); all.push(...(l.items || [])); pageToken = l.nextPageToken || ""; } while (pageToken);
+  const same = all.filter((c: any) => c.summary === name); let keep = (id && same.find((c: any) => c.id === id)) || (id && all.find((c: any) => c.id === id)) || same[0] || null;
+  for (const c of same) { if (keep && c.id === keep.id) continue; try { const full = await api("/calendars/" + encodeURIComponent(c.id)); if (/Bovitech Super App/.test(full.description || "")) await api("/calendars/" + encodeURIComponent(c.id), { method: "DELETE" }); } catch (_) { /* not ours, or already gone */ } }
+  if (keep) return keep.id;
   const c = await api("/calendars", { method: "POST", body: JSON.stringify({ summary: name, timeZone: "Australia/Perth", description: "Kept up to date by the Bovitech Super App. Changes made here are overwritten." }) });
   if (colour) await api("/users/me/calendarList/" + encodeURIComponent(c.id) + "?colorRgbFormat=true", { method: "PATCH", body: JSON.stringify({ backgroundColor: colour, foregroundColor: "#ffffff" }) }).catch(() => {});
   return c.id;
@@ -68,7 +70,7 @@ async function ensureCal(api: any, id: string | null, name: string, colour?: str
 async function listOurs(api: any, cal: string, tag: string, from: string, to: string) {
   const have: Record<string, any> = {}; const dupes: string[] = []; let pageToken = "";
   do { const r = await api(`/calendars/${encodeURIComponent(cal)}/events?privateExtendedProperty=${encodeURIComponent("bvp=" + tag)}&timeMin=${from}T00:00:00Z&timeMax=${add(to, 2)}T00:00:00Z&singleEvents=true&maxResults=2500${pageToken ? "&pageToken=" + pageToken : ""}`);
-    (r.items || []).forEach((ev: any) => { const k = ((ev.extendedProperties || {}).private || {}).key; if (!k) return; if (have[k]) dupes.push(ev.id); else have[k] = ev; }); pageToken = r.nextPageToken || ""; } while (pageToken);
+    (r.items || []).forEach((ev: any) => { const k = ((ev.extendedProperties || {}).private || {}).key; if (!k) { dupes.push(ev.id); return; } /* made by the old phone/computer sync — the server's copy replaces it */ if (have[k]) dupes.push(ev.id); else have[k] = ev; }); pageToken = r.nextPageToken || ""; } while (pageToken);
   for (const id of dupes) await api(`/calendars/${encodeURIComponent(cal)}/events/${id}`, { method: "DELETE" });
   return have;
 }
@@ -111,7 +113,7 @@ async function wanted() {
       if (sh.gone || !sh.text || !sh.sid || sh.date < from || sh.date > to) continue;
       const mine = live.filter((b) => b.date === sh.date && (b.staff || []).includes(sh.sid));
       const s0 = mine.length ? Math.min(...mine.map((b) => mins(b.start))) : 8 * 60; const e0 = mine.length ? Math.max(...mine.map((b) => mins(b.start) + (b.mins || 60))) : 17 * 60;
-      const body = { summary: `📋 Day sheet — ${mine.length} appointment${mine.length === 1 ? "" : "s"}`, description: String(sh.text) + "\n\nFrom the Bovitech Super App — change appointments there, not here.",
+      const body = { summary: `📋 Day sheet — ${mine.length} appointment${mine.length === 1 ? "" : "s"}`, description: (sh.html ? String(sh.html) + "<br><br><i>From the Bovitech Super App — change appointments there, not here.</i>" : String(sh.text) + "\n\nFrom the Bovitech Super App — change appointments there, not here."),
         start: { dateTime: `${sh.date}T${hhmm(s0)}:00`, timeZone: "Australia/Perth" }, end: { dateTime: `${sh.date}T${hhmm(Math.min(e0, 1439))}:00`, timeZone: "Australia/Perth" } };
       (per[sh.sid] ??= {})["ds:" + sh.date] = { body, h: hash(stable(body)) };
     }
@@ -122,6 +124,10 @@ async function wanted() {
 
 async function sync(force: boolean) {
   const g = await rpc("gcal_get"); if (!g || !g.refresh_token) return { ok: false, msg: "Not connected" };
+  const lock = await rpc("gcal_lock").catch(() => null); if (lock === false) return { ok: true, busy: true }; // another sync is running (update 7) — it'll pick up any changes
+  try { return await syncNow(g, force); } finally { if (lock === true) await rpc("gcal_unlock").catch(() => null); }
+}
+async function syncNow(g: any, force: boolean) {
   if (!CSEC) { await rpc("gcal_set", { patch: { last: { at: new Date().toISOString(), msg: "GOOGLE_CLIENT_SECRET is missing (Edge Functions → Secrets)", error: true } } }); return { ok: false }; }
   try {
     const w = await wanted(); const h0 = hash(stable({ oc: w.oc, per: w.per }));

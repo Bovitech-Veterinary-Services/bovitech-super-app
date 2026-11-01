@@ -139,7 +139,7 @@ function bkJobsHtml() {
     case 'unconf': return `<button class="btn small primary" data-act="bkj-confirm" data-id="${b.id}">✓ Confirmed</button>`;
     case 'ring': return `${j.phone ? `<a class="btn small" href="tel:${h(j.phone.replace(/\s/g, ''))}">📞 Ring</a>` : ''}<button class="btn small primary" data-act="bkj-confirm" data-id="${b.id}">✓ Confirmed</button>`;
     case 'clash': return `<button class="btn small" data-act="bkj-suggest" data-id="${b.id}">🔎 Find a better time</button>`;
-    case 'past': return `<button class="btn small primary" data-act="bkj-done" data-id="${b.id}">✓ Completed</button>`;
+    case 'past': { const rec = typeof crOn === 'function' && crOn() && crList('crrec').find((x) => !x.gone && x.bkId === b.id); return `${typeof crOn === 'function' && crOn() ? `<button class="btn small primary" data-act="cr-frombk" data-id="${b.id}">📋 ${rec ? 'Finish the clinical record' : 'Write the clinical record'}</button>` : ''}<button class="btn small" data-act="bkj-done" data-id="${b.id}">✓ Completed (no record)</button>`; }
     case 'oncall': return `<select data-act="bk-oc" data-d="${j.d0}" ${Bk.can('roster') ? '' : 'disabled'} aria-label="On call ${j.d}"><option value="">Choose…</option>${vets.map((s) => `<option value="${s.id}">${h(s.preferred_name || s.full_name)}</option>`).join('')}</select>`;
     case 'pend': return `<button class="btn small primary" data-act="bkp-book" data-id="${j.p.id}">📅 Book it</button>`;
     case 'wait': return `<button class="btn small primary" data-act="bkj-waitoffer" data-id="${b.id}" data-date="${j.date}" data-start="${j.start}" data-staff="${j.staff}">↔ Suggest this time</button>`;
@@ -261,12 +261,15 @@ function bkSettingsHtml() {
   </div>`;
 }
 function bkSheetCard(ed) {
-  const sc = Bk.get('sheets') || {}; const on = !!sc.on; const ppl = Bk.people();
-  return `<div class="card"><h3>Day sheets</h3><div class="hint" style="margin-bottom:6px">Each person's run sheet for the day (appointments in order, drives, contacts, directions, warnings and checklists). It's always in the app (Scheduling → Day sheet). It can also be texted to them each morning, with an <b>UPDATED</b> one if their day changes later that day.</div>
+  const sc = Bk.get('sheets') || {}; const on = !!sc.on; const ppl = Bk.people(); const sh = bkSheetShow();
+  return `<div class="card"><h3>Day sheets</h3><div class="hint" style="margin-bottom:6px">Each person's run sheet for the day. It's always in the app (Scheduling → Day sheet), and goes on their own Google Calendar ("Bovitech — name") as one event a day once Google Calendar is connected — it changes there within about 5 minutes when their day changes.</div>
+    <div class="lbl">What day sheets show</div>${BK_SHEET_SHOW.map(([k, l]) => `<label class="bk-radio" style="display:flex;margin:3px 0"><input type="checkbox" data-act="bks-sheetshow" data-k="${k}" ${sh[k] ? 'checked' : ''} ${ed ? '' : 'disabled'}> ${l}</label>`).join('')}
+    <div class="hint" style="margin:4px 0 8px">The time, client and farm always show.</div>
+    <details style="margin-top:6px"><summary class="hint" style="cursor:pointer">Texting day sheets (not used — off)</summary>
     <label class="bk-radio" style="display:flex;margin:4px 0"><input type="checkbox" data-act="bks-sheeton" ${on ? 'checked' : ''} ${ed ? '' : 'disabled'}> Text day sheets each morning</label>
     <div class="bk-hrow"><span class="hint">Sent at</span><select data-act="bks-sheettime" ${ed && on ? '' : 'disabled'} aria-label="Time day sheets are sent">${['06:00', '06:30', '07:00', '07:30', '08:00', '08:30', '09:00'].map((t) => `<option value="${t}" ${(sc.time || '08:00') === t ? 'selected' : ''}>${bkTime(t)}</option>`).join('')}</select></div>
     <div class="lbl" style="margin-top:8px">Who gets them, and the mobile to send to</div><div class="hint" style="margin-bottom:4px">The number here is only for day sheets — the on-call export for vControl uses the mobile in People. Leave it empty to use that one.</div>${ppl.map((p) => { const c = Bk.scfg(p); return `<div class="bk-hrow"><label class="bk-radio" style="min-width:150px"><input type="checkbox" data-act="bks-sheetwho" data-staff="${p.id}" ${c.sheetSms === false ? '' : 'checked'} ${ed && on ? '' : 'disabled'}> ${h(p.preferred_name || p.full_name)}</label><input type="tel" inputmode="tel" data-act="bks-sheetmob" data-staff="${p.id}" value="${h(c.sheetMobile || '')}" ${ed ? '' : 'disabled'} aria-label="Mobile for ${h(p.preferred_name || p.full_name)}'s day sheet" style="max-width:170px"><span class="hint">${c.sheetMobile ? '' : c.mobile ? 'empty = ' + h(c.mobile) : 'no mobile yet'}</span></div>`; }).join('')}
-    <div class="hint" style="margin-top:6px">${sc.from === 'office' || !sc.from ? 'Texts come from the office phone (0499 489 919) for now.' : ''} Off until you turn it on.</div></div>`;
+    <div class="hint" style="margin-top:6px">${sc.from === 'office' || !sc.from ? 'Texts come from the office phone (0499 489 919) for now.' : ''} Off until you turn it on.</div></details></div>`;
 }
 function bkHolCard(ed) {
   const t = bkToday(); const list = bkHolidayList(t, bkAdd(t, 400));

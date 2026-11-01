@@ -393,6 +393,12 @@ function crCfgRec(id) { let c = crCfg(id); if (!c) { c = { id, cfg: id }; D.crcf
 const crSetPath = (o, path, v) => { const ks = path.split('.'); let x = o; ks.slice(0, -1).forEach((k) => { x[k] = x[k] && typeof x[k] === 'object' ? x[k] : {}; x = x[k]; }); x[ks[ks.length - 1]] = v; };
 
 /* ---------------- finishing, billing, stock ---------------- */
+function crBkFromRec(r, fin) { // the record's real start and finish times go onto the calendar, and the appointment is marked completed (or not, if the record is reopened)
+  const b = r.bkId && Bk.list('bookings').find((x) => x.id === r.bkId); if (!b) return;
+  if (fin) { const s = crMins(r.start), e = crMins(r.end); if (s != null && e != null && e > s) { b.start = r.start; b.mins = e - s; } if (r.date) b.date = r.date; const inv = crInvFor(r); b.status = inv && ['sent', 'paid'].includes(inv.status) ? 'invoiced' : 'done'; }
+  else if (Bk.done(b)) b.status = 'confirmed';
+  touch(b);
+}
 function crCanFinalise(r) { const me = crMe(); const techOnly = (r.procs || []).length && r.procs.every((p) => (crTpl(p.tpl) || {}).who === 'tech'); if (crIsVet(me)) return true; if (techOnly && me) return true; return false; }
 function crStock(r, dir) { (r.items || []).forEach((it) => { const p = crProd(it.prod); if (!p || p.stock == null) return; const u = it.as === 'pack' ? (+it.qty || 0) * (+p.pack || 0) : +it.qty || 0; p.stock = crR2(p.stock - dir * u); touch(p); }); }
 async function crInvStatus(inv, to) {
@@ -401,6 +407,7 @@ async function crInvStatus(inv, to) {
   if (to === 'approved') { const fz = crFees(); if (!inv.num) { if (!fz.invNext) { toast('Set the next invoice number (from Xero) in Settings → Clinical records first'); return; } const c = crCfgRec('fees'); inv.num = (fz.invPrefix || 'INV-') + String(fz.invNext).padStart(4, '0'); c.invNext = +fz.invNext + 1; touch(c); }
     const z = (inv.lines || []).filter((l) => !(+l.price)); if (z.length && !(await ask(`${z.length} line${z.length === 1 ? ' is' : 's are'} $0 (price to be set?). Approve anyway?`, 'Yes — approve'))) return; }
   if (to === 'sent' && !inv.sentAt) inv.sentAt = Date.now(); if (to === 'paid') inv.paidAt = Date.now(); if (to === 'sent' && from === 'paid') inv.paidAt = null;
+  { const rr = crGet('crrec', inv.rec); const b = rr && rr.bkId && Bk.list('bookings').find((x) => x.id === rr.bkId); if (b && Bk.done(b)) { const want = ['sent', 'paid'].includes(to) ? 'invoiced' : 'done'; if (b.status !== want) { b.status = want; touch(b); } } } // the appointment shows "Completed and invoiced" once the invoice is sent
   inv.status = to; crInvLog(inv, `${CR_INV_ST[from]} → ${CR_INV_ST[to]}`); crSave(inv); Sync.soon(); renderAll();
 }
 function crRemindText(inv) { const tt = crInvTotals(inv); return `Hi ${crInvName(inv.bid)},\n\nThis is a friendly reminder that invoice ${inv.num || ''} for ${crMoney(tt.total)} (inc GST), sent on ${new Date(inv.sentAt).toLocaleDateString('en-AU')}, is now overdue. If you've already paid, thank you and please ignore this.\n\nKind regards,\n${(crBrand().lines || [])[0] || 'Bovitech Veterinary Services'}`; }
@@ -459,8 +466,8 @@ document.addEventListener('click', async (e) => {
     case 'cr-fudone': { const f = Bk.list('followups').find((x) => x.id === d.id); if (!f) return; f.status = 'done'; f.doneAt = Date.now(); touch(f); save(); Sync.soon(); renderAll(); toast('Follow-up done'); break; }
     case 'cr-unlink': if (!r) return; r.links = (r.links || []).filter((x) => x !== d.id); done(r); break;
     case 'cr-final': { if (!r) return; if (!crCanFinalise(r)) { toast('Only a vet can finalise this record (techs can finalise tech-only records, like AI)'); return; } const w = crWarnings(r).filter((x) => !/price/.test(x)); if (w.length && !(await ask(`Finalise anyway?<br>${w.map((x) => '⚠ ' + h(x)).join('<br>')}`, 'Yes — finalise'))) return;
-      r.status = 'final'; r.finBy = crMe(); r.finAt = Date.now(); if (!r.stockDone) { crStock(r, 1); r.stockDone = true; } done(r); toast('Record finalised'); break; }
-    case 'cr-reopen': { if (!r) return; if (!crCanFinalise(r)) { toast('Only a vet can reopen this record'); return; } r.status = 'draft'; if (r.stockDone) { crStock(r, -1); r.stockDone = false; } r.log = [...(r.log || []), { at: Date.now(), by: crMe(), what: 'Reopened' }]; done(r); break; }
+      r.status = 'final'; r.finBy = crMe(); r.finAt = Date.now(); crBkFromRec(r, true); if (!r.stockDone) { crStock(r, 1); r.stockDone = true; } done(r); toast('Record finalised'); break; }
+    case 'cr-reopen': { if (!r) return; if (!crCanFinalise(r)) { toast('Only a vet can reopen this record'); return; } r.status = 'draft'; crBkFromRec(r, false); if (r.stockDone) { crStock(r, -1); r.stockDone = false; } r.log = [...(r.log || []), { at: Date.now(), by: crMe(), what: 'Reopened' }]; done(r); break; }
     case 'cr-del': { if (!r) return; const iv = crInvFor(r); if (iv && !['notready', 'pending'].includes(iv.status)) { toast("The invoice has been approved — it can't be deleted from here"); return; } if (!(await ask('Delete this record' + (iv ? ' and its invoice' : '') + '?', 'Delete', true))) return; if (r.stockDone) crStock(r, -1); r.gone = true; touch(r); if (iv) { iv.gone = true; touch(iv); } save(); Sync.soon(); CR.page = 'recs'; renderAll(); break; }
     case 'cr-topending': { if (!r) return; crInvSync(r); await crInvStatus(crInvFor(r), 'pending'); break; }
     case 'cr-tonotready': { if (!r) return; await crInvStatus(crInvFor(r), 'notready'); break; }

@@ -112,19 +112,30 @@ function bkSheetHtml() {
     ${back ? `<div class="drv">🏠 Back at ${h(back.to)} about ${bkTime(back.end)}</div>` : ''}</div>
     <div class="hint bk-noprint">Ticks on the checklists save straight away. The day sheet can also be sent each morning — ask in Settings if you'd like that set up.</div></div>`;
 }
-function bkSheetText(sid, date) {
-  const p = Bk.person(sid); if (!p) return ''; const { day, rows } = bkSheetData(sid, date); const L = [`${p.preferred_name || p.full_name} — ${bkDate(date, { weekday: 'long', day: 'numeric', month: 'long' })}`];
-  const strip = (x) => String(x || '').replace(/<[^>]+>/g, '').trim();
-  rows.forEach((r) => { if (r.leg) { const l = r.leg; L.push(`  drive ~${l.need} min ${l.home ? 'back to ' + l.to : 'to ' + l.to}`); return; } const it = r.it;
-    if (it.kind === 'lunch') { L.push(`${bkTime(it.s)} Lunch`); return; } if (it.kind === 'block') { L.push(`${it.ref.allDay ? 'All day' : bkTime(it.s) + '–' + bkTime(it.e)} ${Bk.btype(it.ref.type).name}${it.ref.note ? ' — ' + it.ref.note : ''}`); return; } if (it.kind === 'held') return;
-    const b = it.ref; const c = b.cid && D.contacts.find((x) => x.id === b.cid);
-    L.push(`${bkTime(it.s)}–${bkTime(it.e)} ${strip(bkPatientEmoji(b))}${Bk.who(b)}${Bk.farmName(b) ? ' @ ' + Bk.farmName(b) : ''}`);
-    L.push('  ' + ((b.svcs || []).filter((x) => x.svc).map((x) => Bk.svc(x.svc).name + (x.head ? ' ×' + x.head : '')).join(', ') || Bk.type(b.type).name) + (c ? ` · ${fullName(c)} ${bkMobile(c) || ''}` : ''));
-    Bk.stops(b).forEach((st) => { const ln = bkMapLink(Travel.stopPt(st)); if (ln) L.push('  ' + ln); });
-    bkWarnings(b).forEach((w) => L.push(`  ${BK_WLVL[w.lvl][0]} ${w.text}`)); if (b.notes) L.push('  ' + b.notes); });
-  const back = day.legs.filter((l) => l.home).pop(); if (back) L.push(`Back at ${back.to} about ${bkTime(back.end)}`);
-  return L.join('\n');
+const BK_SHEET_SHOW = [['procs', 'Procedures and head counts'], ['contact', 'Contact name and mobile'], ['maps', 'Map link for each farm'], ['warnings', 'Warnings (safety, biosecurity, booking rules…)'], ['notes', 'Appointment notes'], ['status', 'Confirmed or not'], ['drive', 'Drive times between stops'], ['breaks', 'Lunch and blocks'], ['back', 'Time back at base']];
+const bkSheetShow = () => { const o = (Bk.get('sheets') || {}).show || {}; const r = {}; BK_SHEET_SHOW.forEach(([k]) => (r[k] = o[k] !== false)); return r; }; // Settings → Scheduling → Day sheets
+function bkSheetBuild(sid, date) { // the day sheet as plain text (copy / share) and as formatted text (Google Calendar)
+  const p = Bk.person(sid); if (!p) return { text: '', html: '' }; const { day, rows } = bkSheetData(sid, date); const o = bkSheetShow();
+  const strip = (x) => String(x || '').replace(/<[^>]+>/g, '').trim(); const e = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const title = `${p.preferred_name || p.full_name} — ${bkDate(date, { weekday: 'long', day: 'numeric', month: 'long' })}`; const T = [title], H = [`<b>${e(title)}</b>`];
+  rows.forEach((r) => {
+    if (r.leg) { if (!o.drive) return; const l = r.leg; const t = `🚗 ${l.need} min ${l.home ? 'back to ' + l.to : 'to ' + l.to}`; T.push('  ' + t); H.push(`<i>${e(t)}</i>`); return; }
+    const it = r.it; if (it.kind === 'held') return;
+    if (it.kind === 'lunch') { if (!o.breaks) return; T.push(`${bkTime(it.s)} Lunch`); H.push(`<br><b>${bkTime(it.s)}</b> · Lunch`); return; }
+    if (it.kind === 'block') { if (!o.breaks) return; const t = `${it.ref.allDay ? 'All day' : bkTime(it.s) + '–' + bkTime(it.e)} ${Bk.btype(it.ref.type).name}${it.ref.note ? ' — ' + it.ref.note : ''}`; T.push(t); H.push(`<br>${e(t)}`); return; }
+    const b = it.ref; const c = b.cid && D.contacts.find((x) => x.id === b.cid); const mob = c ? bkMobile(c) || '' : '';
+    const head = `${bkTime(it.s)}–${bkTime(it.e)} ${strip(bkPatientEmoji(b))}${Bk.who(b)}`; T.push(head + (Bk.farmName(b) ? ' @ ' + Bk.farmName(b) : '')); H.push(`<br><b>${e(head)}</b>`);
+    if (o.status) { const st = Bk.unconf(b) ? '❓ Not confirmed yet' : '✅ Confirmed'; T.push('  ' + st); H.push(e(st)); }
+    if (o.procs) { const pr = (b.svcs || []).filter((x) => x.svc).map((x) => Bk.svc(x.svc).name + (x.head ? ' ×' + x.head : '')).join(', ') || Bk.type(b.type).name; T.push('  ' + pr); H.push('🐄 ' + e(pr)); }
+    Bk.stops(b).forEach((st) => { const nm = Bk.stopName(st); const ln = o.maps ? bkMapLink(Travel.stopPt(st)) : null; if (!nm && !ln) return; T.push('  📍 ' + nm + (ln ? ' ' + ln : '')); H.push(`📍 ${e(nm)}${ln ? ` — <a href="${e(ln)}">directions</a>` : ''}`); });
+    if (o.contact && c) { T.push(`  👤 ${fullName(c)} ${mob}`); H.push(`👤 ${e(fullName(c))}${mob ? ` — <a href="tel:${e(mob.replace(/\s/g, ''))}">${e(mob)}</a>` : ''}`); }
+    if (o.warnings) bkWarnings(b).forEach((w) => { const t = `${BK_WLVL[w.lvl][0]} ${w.text}`; T.push('  ' + t); H.push(e(t)); });
+    if (o.notes && b.notes) { T.push('  📝 ' + b.notes); H.push('📝 ' + e(b.notes)); }
+  });
+  const back = day.legs.filter((l) => l.home).pop(); if (back && o.back) { const t = `Back at ${back.to} about ${bkTime(back.end)}`; T.push(t); H.push(`<br><b>${e(t)}</b>`); }
+  return { text: T.join('\n'), html: H.join('<br>') };
 }
+function bkSheetText(sid, date) { return bkSheetBuild(sid, date).text; }
 
 /* ---------------- "Can this day / week be more efficient?" ---------------- */
 async function bkEffOpen() {
@@ -279,9 +290,9 @@ function bkSheetSoon() { if (BK_SHEET_T) clearTimeout(BK_SHEET_T); BK_SHEET_T = 
 function bkSheetSync() { // today and the next 2 weeks, for everyone; only writes when a sheet's text has changed
   if (!Bk.on() || !Bk.people().length) return 0; Bk.list('bksheet'); const t = bkToday(); let n = 0; const hs = (x) => { let v = 5381; for (let i = 0; i < x.length; i++) v = ((v << 5) + v + x.charCodeAt(i)) >>> 0; return v.toString(36); };
   for (let i = 0; i <= 14; i++) { const d = bkAdd(t, i);
-    for (const p of Bk.people()) { const on = Bk.hours(p, d) || Bk.bookingsFor(d, p.id).length; const text = on && Bk.bookingsFor(d, p.id).length ? bkSheetText(p.id, d) : ''; const h0 = hs(text); const id = p.id + ':' + d;
+    for (const p of Bk.people()) { const on = Bk.hours(p, d) || Bk.bookingsFor(d, p.id).length; const sh = on && Bk.bookingsFor(d, p.id).length ? bkSheetBuild(p.id, d) : { text: '', html: '' }; const text = sh.text, html = sh.html; const h0 = hs(text + '\u0001' + html); const id = p.id + ':' + d;
       let r = D.bksheet.find((x) => x.id === id); if (r && r.hash === h0 && !r.gone) continue; if (!r && !text) continue;
-      if (!r) { r = { id, sid: p.id, date: d }; D.bksheet.push(r); } Object.assign(r, { text, hash: h0 }); /* the same on every device, so two devices never clash */ delete r.gone; touch(r); n++; } }
+      if (!r) { r = { id, sid: p.id, date: d }; D.bksheet.push(r); } Object.assign(r, { text, html, hash: h0 }); /* the same on every device, so two devices never clash */ delete r.gone; touch(r); n++; } }
   D.bksheet.forEach((r) => { if (!r.gone && r.date < bkAdd(t, -7)) { r.gone = true; touch(r); n++; } }); // old ones go after a week
   return n;
 }

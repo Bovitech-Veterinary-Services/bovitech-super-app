@@ -196,7 +196,8 @@ const Bk = {
     return !Bk.list('blocks').some((x) => x.of === b.id && x.occ === date && !x.gone); // this day was changed on its own
   },
   blocksFor(date, staffId) {
-    const inStaff = (b) => b.staff === 'all' || (Array.isArray(b.staff) && b.staff.includes(staffId));
+    const p = staffId && Bk.person(staffId); const working = !p || !!Bk.hours(p, date); // blocks for everyone (like the morning meeting) only show on days that person is working
+    const inStaff = (b) => (b.staff === 'all' && working) || (Array.isArray(b.staff) && b.staff.includes(staffId));
     return Bk.list('blocks').filter((b) => !b.lunch && inStaff(b) && ((b.of && !b.gone && b.on !== false && (b.date === date || (b.toDate && date >= b.date && date <= b.toDate))) || Bk.blockOn(b, date)));
   },
   /* ---- lunch: everyone working gets one (moveable); it can be taken during a long appointment instead ---- */

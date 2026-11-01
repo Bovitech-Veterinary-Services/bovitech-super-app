@@ -237,6 +237,9 @@ button:active,.btn:active,.hbtn:active{transform:scale(.95)}
 /* dark mode (Settings → Display) */
 html[data-theme=dark]{--ink:#ececea;--ink2:#cfcbc4;--ink3:#9b968e;--line:#3a3936;--bg:#151514;--card:#211f1e;--red-bg:#3b1517;--red-ink:#ff8d92;--yellow-bg:#3a3215;--yellow-ink:#f2d37b;--green-bg:#16311c;color-scheme:dark}
 html[data-theme=dark] input,html[data-theme=dark] select,html[data-theme=dark] textarea,html[data-theme=dark] .rich{background:#1a1918;color:var(--ink);border-color:var(--line)}
+html[data-theme=dark] input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]),html[data-theme=dark] select,html[data-theme=dark] textarea{background:#1a1918!important;color:var(--ink)!important;border-color:var(--line)}
+html[data-theme=dark] div[style*="background:#fff;"]:not(.pcpin *):not(.pcpin),html[data-theme=dark] .body[style*="background:#fff"]{background:var(--card)!important;color:var(--ink)!important}
+html[data-theme=dark] .cr-rich{background:#1a1918;color:var(--ink)}html[data-theme=dark] .cr-rich td,html[data-theme=dark] .cr-rich th{border-color:#555}
 html[data-theme=dark] .card[style*="background:#"],html[data-theme=dark] .body[style*="background:#fff"],html[data-theme=dark] .callout-body{background:#2a2725!important;color:var(--ink)}
 html[data-theme=dark] .card.side,html[data-theme=dark] .card.side .body,html[data-theme=dark] .card.side h3{background:#33301a;color:#f2d37b}
 html[data-theme=dark] .card.warn{background:#3b1517}

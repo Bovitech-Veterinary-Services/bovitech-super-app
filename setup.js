@@ -2,7 +2,7 @@
    step-by-step instructions and a button to copy the code that's needed. Tick ✓ Done when finished
    (it's remembered on every device). Some tick themselves once the app can see they're done. */
 'use strict';
-const SETUP_FILES = { users: 'supabase/functions/users/index.ts', sql03: 'supabase/03-sms.sql', sql04: 'supabase/04-users.sql', sql05: 'supabase/05-calendar-sms.sql', sql06: 'supabase/06-admins.sql', gcal: 'supabase/functions/gcal/index.ts', jobs: 'supabase/functions/jobs/index.ts' };
+const SETUP_FILES = { sql07: 'supabase/07-gcal-lock.sql', users: 'supabase/functions/users/index.ts', sql03: 'supabase/03-sms.sql', sql04: 'supabase/04-users.sql', sql05: 'supabase/05-calendar-sms.sql', sql06: 'supabase/06-admins.sql', gcal: 'supabase/functions/gcal/index.ts', jobs: 'supabase/functions/jobs/index.ts' };
 const SETUP_REDIRECT = 'https://ymzweuhxdcxkzweacwdi.supabase.co/functions/v1/gcal';
 const SETUP_SUPA = 'https://supabase.com/dashboard/project/ymzweuhxdcxkzweacwdi';
 const setupCopy = (f, label) => `<button class="btn small greenbtn" data-act="setup-copy" data-f="${f}">📋 ${label}</button>`;
@@ -100,6 +100,20 @@ const SETUP = [
     'In Supabase, click in the code box, press <b>Ctrl + A</b> then <b>Ctrl + V</b> to replace all of it.',
     'Click <b>Deploy updates</b> and wait for it to finish. (Leave "Verify JWT" off.)',
     'Nothing else to do — Google Calendar is already connected. Next time you connect, Google sends you straight back to the app instead of showing a page of code.',
+    'Tick <b>✓ Done</b>.'] },
+  { id: 'sql07', t: 'Run database update 7 (stops Google Calendar making things twice)', steps: [
+    `Open <a href="${SETUP_SUPA}/sql/new" target="_blank" rel="noopener">Supabase → SQL Editor → New query</a>.`,
+    `Tap ${setupCopy('sql07', 'Copy update 7')}.`,
+    'Click in the query box in Supabase, press <b>Ctrl + A</b> then <b>Ctrl + V</b>, then click <b>Run</b>.',
+    'It should say <b>Step 7 finished</b>. It\'s safe to run again.',
+    'Tick <b>✓ Done</b>.'] },
+  { id: 'gcal3', t: 'Update the "gcal" server function again (fixes the double calendar and events, nicer day sheets)', after: 'sql07', steps: [
+    `Open <a href="${SETUP_SUPA}/functions/gcal/code" target="_blank" rel="noopener">Supabase → Edge Functions → gcal → Code</a>.`,
+    `Come back here and tap ${setupCopy('gcal', 'Copy the gcal code')}.`,
+    'In Supabase, click in the code box, press <b>Ctrl + A</b> then <b>Ctrl + V</b> to replace all of it.',
+    'Click <b>Deploy updates</b> and wait for it to finish. (Leave "Verify JWT" off.)',
+    'In this app: Settings → Scheduling → Google Calendar → <b>Sync now</b>. Within a minute or two the second "Bovitech — Milly" calendar and the second "On call" events go, and the day sheets update.',
+    'On your phone, pull down to refresh Google Calendar if they still show.',
     'Tick <b>✓ Done</b>.'] },
   { id: 'sharecal', t: 'Share each person\'s day sheet calendar with them', after: 'connect', steps: [
     'Day sheets go on Google Calendar only (not texted). Each person gets their own calendar called <b>Bovitech — their name</b>, owned by bovitechvetservices@gmail.com.',
