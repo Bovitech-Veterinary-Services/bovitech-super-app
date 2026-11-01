@@ -2,17 +2,30 @@
    step-by-step instructions and a button to copy the code that's needed. Tick ✓ Done when finished
    (it's remembered on every device). Some tick themselves once the app can see they're done. */
 'use strict';
-const SETUP_FILES = { sql05: 'supabase/05-calendar-sms.sql', sql06: 'supabase/06-admins.sql', gcal: 'supabase/functions/gcal/index.ts', jobs: 'supabase/functions/jobs/index.ts' };
+const SETUP_FILES = { sql03: 'supabase/03-sms.sql', sql04: 'supabase/04-users.sql', sql05: 'supabase/05-calendar-sms.sql', sql06: 'supabase/06-admins.sql', gcal: 'supabase/functions/gcal/index.ts', jobs: 'supabase/functions/jobs/index.ts' };
 const SETUP_REDIRECT = 'https://ymzweuhxdcxkzweacwdi.supabase.co/functions/v1/gcal';
 const SETUP_SUPA = 'https://supabase.com/dashboard/project/ymzweuhxdcxkzweacwdi';
 const setupCopy = (f, label) => `<button class="btn small greenbtn" data-act="setup-copy" data-f="${f}">📋 ${label}</button>`;
 const SETUP = [
-  { id: 'sql05', t: 'Run database update 5 (Google Calendar, day sheets, "Y" replies)', steps: [
+  { id: 'sql03', t: 'Run database update 3 (texts from the office phone)', steps: [
+    `On the office computer, open <a href="${SETUP_SUPA}/sql/new" target="_blank" rel="noopener">Supabase → SQL Editor → New query</a> and sign in if it asks.`,
+    `Come back here and tap ${setupCopy('sql03', 'Copy update 3')}.`,
+    'In Supabase, click in the big empty query box, press <b>Ctrl + A</b> then <b>Ctrl + V</b> to paste it in.',
+    'Click <b>Run</b> (bottom right). If it asks about "destructive operations", click <b>Run this query</b>.',
+    'It should finish with no red error. If it says something <b>already exists</b>, update 3 was done before — that\'s fine.',
+    'Tick <b>✓ Done</b> below.'] },
+  { id: 'sql04', t: 'Run database update 4 (making logins and passwords from the app)', after: 'sql03', steps: [
+    `Open <a href="${SETUP_SUPA}/sql/new" target="_blank" rel="noopener">Supabase → SQL Editor → New query</a>.`,
+    `Tap ${setupCopy('sql04', 'Copy update 4')}.`,
+    'Click in the query box in Supabase, press <b>Ctrl + A</b> then <b>Ctrl + V</b>, then click <b>Run</b>.',
+    'It should finish with no red error. It\'s safe to run again even if it was done before.',
+    'Tick <b>✓ Done</b>.'] },
+  { id: 'sql05', t: 'Run database update 5 (Google Calendar, day sheets, "Y" replies)', after: 'sql04', steps: [
     `On the office computer, open <a href="${SETUP_SUPA}/sql/new" target="_blank" rel="noopener">Supabase → SQL Editor → New query</a> and sign in if it asks.`,
     `Come back here and tap ${setupCopy('sql05', 'Copy update 5')} — it copies the whole update.`,
     'In Supabase, click in the big empty query box, press <b>Ctrl + A</b> then <b>Ctrl + V</b> to paste it in.',
     'Click <b>Run</b> (bottom right). If it asks about "destructive operations", click <b>Run this query</b>.',
-    'At the bottom it should say <b>Step 5 finished</b>. If it shows a red error instead, copy the error and send it to Claude.',
+    'At the bottom it should say <b>Step 5 finished</b>. If it says <b>relation "public.sms_log" does not exist</b>, do update 3 first. Any other red error: copy it and send it to Claude.',
     'Tick <b>✓ Done</b> below.'] },
   { id: 'sql06', t: 'Run database update 6 (admin access for chosen logins)', auto: () => !!(window.SBAuth && SBAuth.staff && 'admin_access' in SBAuth.staff), steps: [
     `Open <a href="${SETUP_SUPA}/sql/new" target="_blank" rel="noopener">Supabase → SQL Editor → New query</a>.`,
