@@ -9,7 +9,7 @@ const BK_START = 0, BK_END = 24 * 60, BK_PX = 1.1, BK_SCROLL_TO = 7 * 60; // the
 function bkColumns(date) { const hid = Bk.hidden(); return Bk.people().filter((s) => !hid.has(s.id) && (BK.showAll || Bk.hours(s, date) || Bk.bookingsFor(date, s.id).length)); }
 function bkLookStyle(item, typeRec) { const l = Bk.look(item, typeRec); return { cls: 'pat-' + l.pattern, c: l.colour }; }
 function bkRender() {
-  Bk.seed();
+  Bk.seed(); if (typeof bkYearSeed === 'function') bkYearSeed();
   if (BK.page === 'settings') BK.page = 'cal'; // the Scheduling settings live in Settings → Scheduling
   if (BK.page === 'followups') BK.page = 'cal'; // follow-ups come back with clinical records
   if (BK.page === 'jobs') return bkJobsHtml();
@@ -17,6 +17,7 @@ function bkRender() {
   if (BK.page === 'log') return bkLogHtml();
   if (BK.page === 'sheet') return bkSheetHtml();
   if (BK.page === 'pending') return bkPendingHtml();
+  if (BK.page === 'bulk') return `<div class="d-wrap"><h2 class="sec-h" style="font-size:24px">Bulk scheduling lists</h2>${bkBulkHtml()}</div>`;
   const hid = Bk.hidden();
   const head = `<div class="bk-top">
     <div class="bk-nav"><button class="btn small" data-act="bk-go" data-v="-1" aria-label="Back">‹</button><button class="btn small" data-act="bk-today">Today</button><button class="btn small" data-act="bk-go" data-v="1" aria-label="Forward">›</button>
@@ -30,7 +31,7 @@ function bkRender() {
   return `<div class="d-wrap bk-wrap">${head}${body}<label class="bk-opt"><input type="checkbox" data-act="bk-showall" ${BK.showAll ? 'checked' : ''}> Show everyone ticked above, even on days they don't work (to make them available)</label><div class="hint" style="margin-top:4px">Swipe left or right to change ${BK.view === 'month' ? 'month' : BK.view === 'week' ? 'week' : 'day'}.</div></div>`;
 }
 function bkTitle() {
-  if (BK.view === 'day') return bkDate(BK.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + (bkHoliday(BK.date) ? ` <span class="bk-hol">🎉 ${h(bkHoliday(BK.date))} — public holiday, on call only</span>` : '') + (bkBirthdays(BK.date).length ? ' ' + bkBdayChips(BK.date) : '');
+  if (BK.view === 'day') return bkDate(BK.date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + (bkHoliday(BK.date) ? ` <span class="bk-hol">🎉 ${h(bkHoliday(BK.date))} — public holiday, on call only</span>` : '') + (bkBirthdays(BK.date).length ? ' ' + bkBdayChips(BK.date) : '') + (bkYearlyOn(BK.date).length ? ' ' + bkYearChips(BK.date) : '');
   if (BK.view === 'week') { const a = bkWeekStart(BK.date), b = bkAdd(a, 6); return `${bkDate(a, { day: 'numeric', month: 'short' })} – ${bkDate(b, { day: 'numeric', month: 'short', year: 'numeric' })}`; }
   return new Date(BK.date + 'T12:00').toLocaleDateString('en-AU', { month: 'long', year: 'numeric' });
 }
@@ -77,7 +78,7 @@ function bkDayHtml() {
 function bkWeekHtml() {
   const a = bkWeekStart(BK.date), days = [...Array(7)].map((_, i) => bkAdd(a, i)); const hid = Bk.hidden();
   const ppl = Bk.people().filter((s) => !hid.has(s.id) && (BK.showAll || days.some((d) => Bk.hours(s, d) || Bk.bookingsFor(d, s.id).length)));
-  return `<div class="bk-dayscroll"><table class="bk-week"><thead><tr><th></th>${days.map((d) => `<th class="${d === bkToday() ? 'today' : ''} ${bkHoliday(d) ? 'hol' : ''}"><button class="lnk" data-act="bk-openday" data-v="${d}">${bkDate(d)}</button>${bkHoliday(d) ? `<div class="bk-hol" title="Public holiday">🎉 ${h(bkHoliday(d))}</div>` : ''}${bkBirthdays(d).length ? `<div>${bkBdayChips(d, true)}</div>` : ''}${(() => { const w = bkWx(Travel.home(), d); return w ? `<div class="hint" title="${h(bkWxText(w))} (homebase)">${BK_WX_EMO(w.code)} ${w.tmax}°${bkWxFlags(w).length ? ' ' + bkWxFlags(w).map((x) => x[1].split(' ')[0]).join('') : ''}</div>` : ''; })()}<div class="bk-ocwk" data-act="bk-ocswap" data-d="${d}" title="Tap to change who's on call" style="cursor:pointer">${bkOcChip(d, false) || '<span class="hint">📟 — set</span>'}</div></th>`).join('')}</tr></thead>
+  return `<div class="bk-dayscroll"><table class="bk-week"><thead><tr><th></th>${days.map((d) => `<th class="${d === bkToday() ? 'today' : ''} ${bkHoliday(d) ? 'hol' : ''}"><button class="lnk" data-act="bk-openday" data-v="${d}">${bkDate(d)}</button>${bkHoliday(d) ? `<div class="bk-hol" title="Public holiday">🎉 ${h(bkHoliday(d))}</div>` : ''}${bkBirthdays(d).length ? `<div>${bkBdayChips(d, true)}${bkYearChips(d, true)}</div>` : ''}${bkYearlyOn(d).length ? `<div>${bkYearChips(d, true)}</div>` : ''}${(() => { const w = bkWx(Travel.home(), d); return w ? `<div class="hint" title="${h(bkWxText(w))} (homebase)">${BK_WX_EMO(w.code)} ${w.tmax}°${bkWxFlags(w).length ? ' ' + bkWxFlags(w).map((x) => x[1].split(' ')[0]).join('') : ''}</div>` : ''; })()}<div class="bk-ocwk" data-act="bk-ocswap" data-d="${d}" title="Tap to change who's on call" style="cursor:pointer">${bkOcChip(d, false) || '<span class="hint">📟 — set</span>'}</div></th>`).join('')}</tr></thead>
   <tbody>${ppl.map((s) => `<tr><th style="--pc:${Bk.pcol(s.id)}"><span class="bk-pdot"></span>${h(s.preferred_name || s.full_name)}</th>${days.map((d) => { const hr = Bk.hours(s, d); const bl = Bk.blocksFor(d, s.id).filter((b) => b.type !== 'bt-meeting'); const bs = Bk.bookingsFor(d, s.id), ps = Bk.proposalsFor(d, s.id);
     return `<td class="${hr ? '' : 'off'}" data-act="bk-openday" data-v="${d}">${bl.map((b) => { const lk = bkLookStyle(b, Bk.btype(b.type)); return `<div class="bk-chip blk ${lk.cls}" style="--c:${lk.c}">${h(Bk.btype(b.type).name)}</div>`; }).join('')}${bs.map((b) => { const lk = bkLookStyle(b, Bk.type(b.type)); return `<div class="bk-chip ${lk.cls} ${Bk.unconf(b) ? 'unconf' : ''}" style="--c:${lk.c}" data-act="bk-open" data-id="${b.id}">${bkTime(b.start)} ${bkPatientEmoji(b)}${h(Bk.who(b))}</div>`; }).join('')}${ps.map((b) => `<div class="bk-chip held" data-act="bk-open" data-id="${b.id}">Held ${bkTime(b.proposal.start)} ${h(Bk.who(b))}</div>`).join('')}${!hr && !bs.length ? '<span class="hint">off</span>' : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
@@ -116,6 +117,7 @@ function bkJobs() {
     if (!Bk.done(b) && b.date >= t && b.date <= bkAdd(t, 1) && left('before').length) out.push({ k: 'check', b, t: 'Before-appointment checklist', d: `${bkDate(b.date)} ${bkTime(b.start)} — ${Bk.who(b)}: ${left('before').map((x) => x.text).join(', ')}` });
     if (Bk.done(b) && b.date >= bkAdd(t, -30) && left('after').length) out.push({ k: 'check', b, t: 'After-appointment checklist', d: `${bkDate(b.date)} — ${Bk.who(b)}: ${left('after').map((x) => x.text).join(', ')}` }); });
   bkWaitJobs().forEach((j) => out.push(j));
+  if (typeof bkYearJobs === 'function') bkYearJobs().forEach((j) => out.push(j));
   bkWxJobs().forEach((j) => out.push(j));
   { const ck = bkHolCfg().checked; if (!ck || Date.now() - ck.at > 365 * 864e5) out.push({ k: 'hols', t: 'Check the public holidays', d: ck ? `Last checked ${new Date(ck.at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })} — check once a year in case WA has changed or added any` : 'The WA public holidays haven\'t been checked yet — check once a year in case WA has changed or added any' }); }
   Bk.list('bkpending').filter((x) => !x.gone && !x.done && x.by && x.by < bkAdd(t, 7)).forEach((x) => out.push({ k: 'pend', p: x, t: 'To schedule', d: `${bkPendWho(x)} — ${bkPendWhat(x)}${x.by < t ? ' (was wanted by ' : ' (wanted by '}${bkDate(x.by)})` }));
@@ -126,7 +128,7 @@ function bkJobs() {
   });
   return out;
 }
-const BK_JOB_NAMES = { wx: 'Weather warnings — next 7 days', ring: 'Not confirmed — ring them (within 48 hours)', hols: 'Public holidays — yearly check', pend: 'To schedule — wanted soon', wait: 'Waitlist — earlier time free', check: 'Checklists not finished', reply: 'SMS replies', smsfail: 'SMS failed', sms: 'Booking SMS not sent', psms: 'New-time SMS not sent', prop: 'Reschedule pending approval', unconf: 'Unconfirmed this week', clash: 'Clashes, travel and rules', past: 'Past — mark completed', oncall: 'On call not set' };
+const BK_JOB_NAMES = { year: 'Yearly reminders', bulk: 'Bulk scheduling lists open', review: 'Biosecurity plan, J-BAS and NFAS reviews due', wx: 'Weather warnings — next 7 days', ring: 'Not confirmed — ring them (within 48 hours)', hols: 'Public holidays — yearly check', pend: 'To schedule — wanted soon', wait: 'Waitlist — earlier time free', check: 'Checklists not finished', reply: 'SMS replies', smsfail: 'SMS failed', sms: 'Booking SMS not sent', psms: 'New-time SMS not sent', prop: 'Reschedule pending approval', unconf: 'Unconfirmed this week', clash: 'Clashes, travel and rules', past: 'Past — mark completed', oncall: 'On call not set' };
 function bkJobsHtml() {
   const all = bkJobs(); const q = (BK.jobFilter || '').toLowerCase(); const list = all.filter((j) => !q || (j.t + ' ' + j.d).toLowerCase().includes(q));
   const vets = Bk.people().filter((s) => s.role === 'vet');
@@ -144,6 +146,9 @@ function bkJobsHtml() {
     case 'check': return '';
     case 'wx': return '';
     case 'hols': return '<button class="btn small primary" data-act="bkj-holcheck">🔎 Check now</button>';
+    case 'year': return `<button class="btn small primary" data-act="bky-done" data-id="${j.yr.id}" data-y="${j.yy}">✓ Done</button>`;
+    case 'bulk': return '<button class="btn small primary" data-act="bkb-open">📋 Open the list</button>';
+    case 'review': return `<button class="btn small" data-act="bkb-revadd" data-bid="${j.rv.bid}" data-k="${j.rv.k}">➕ To schedule</button><button class="btn small primary" data-act="bkb-revdone" data-bid="${j.rv.bid}" data-k="${j.rv.k}">✓ Done today</button>`;
     case 'smsfail': return `<button class="btn small primary" data-act="bkj-smsretry" data-id="${j.x.id}">Try again</button>`;
     case 'reply': { const x = j.x; const mine = Bk.list('bookings').filter((b) => Bk.live(b) && b.date >= bkToday() && ((x.contact_id && b.cid === x.contact_id) || (x.business_id && b.bid === x.business_id))).sort((a, c) => a.date.localeCompare(c.date));
       const un = mine.find(Bk.unconf), pr = mine.find((b) => b.proposal);
@@ -244,6 +249,8 @@ function bkSettingsHtml() {
   <div class="card"><h3><span class="sp">Who to book under</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="bookunder">➕ New</button>' : ''}</h3><div class="hint" style="margin-bottom:6px">The choices for each client's "Who to book under" (business page → 📅 Scheduling). Booking someone else asks permission first.</div>${Bk.cfg('bookunder').map((x) => row(x, `${x.staff && x.staff.length ? x.staff.map(Bk.pname).join(', ') + ' only' : 'anyone'}${x.emergencyAny ? ' — anyone for emergencies' : ''}`)).join('') || '<div class="hint">None yet.</div>'}</div>
   ${bkHolCard(ed)}
   ${bkSheetCard(ed)}
+  ${bkYearCard(ed)}
+  ${bkBulkCard(ed)}
   <div class="card"><h3>People — hours, phones, colours and where they start</h3><div class="hint" style="margin-bottom:6px">Working hours, the time kept at the end of the day for records and restocking, mobile (for the on-call list), where they usually start the day, and locums (only bookable on days marked available). To swap a day, use ⚙ / ➕ Make available at the top of their column on the calendar.${adm ? '' : ' Only the admin can change what each person can be booked for.'}</div>
     ${ppl.map((s) => { const c = Bk.scfg(s); return `<div class="kv" style="align-items:center"><span class="bk-dot" style="--c:${Bk.pcol(s.id)}"></span><div class="v"><b>${h(s.preferred_name || s.full_name)}</b><br><span class="hint">${c.mode === 'locum' ? 'Locum — available on chosen days' : [1, 2, 3, 4, 5, 6, 0].filter((d) => c.hours[d]).map((d) => DOW_NAMES[d]).join(', ') + ' ' + (Object.values(c.hours)[0] ? `${bkTime(Object.values(c.hours)[0][0])}–${bkTime(Object.values(c.hours)[0][1])}` : '')}${c.endBuffer ? ` · ${c.endBuffer} min end of day` : ''} · ${c.canDo ? 'only ' + c.canDo.map((x) => Bk.svc(x).name).join(', ') : 'all procedures'}${c.mobile ? ' · ' + h(c.mobile) : ''} · starts at ${c.startFrom === 'home' && c.home ? 'home' : 'homebase'}</span></div>${ed || adm ? `<button class="btn small" data-act="bks-staff" data-id="${s.id}" aria-label="Edit ${h(s.preferred_name || s.full_name)}">✏️</button>` : ''}</div>`; }).join('') || '<div class="hint">The staff list loads when you are online and signed in.</div>'}</div>
   <div class="card"><h3><span class="sp">Block types</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="blocktype">➕ New</button>' : ''}</h3>${Bk.cfg('blocktype').map((x) => row(x, `${x.where === 'anywhere' ? 'anywhere (no travel)' : 'at homebase'} · ${bkWhoText(x.who || {})}`)).join('')}
@@ -287,6 +294,7 @@ function bkBizCard(b) {
   return `<div class="card bk-bizcard"><h3><span class="sp">📅 Scheduling</span>${ed ? `<button class="btn small" data-act="bks-bsched" data-id="${b.id}" aria-label="Edit scheduling">✏️</button>` : ''}</h3>
     <div class="kv bk-tap" ${ed ? `data-act="bks-bsched" data-id="${b.id}" title="Tap to change"` : ''}><div class="k">Additional labour</div><div class="v">${bs.labour ? '<b>Needed at every non-emergency appointment</b> — you\'re reminded when booking' : 'Only when asked for'}${bs.note ? `<br><span class="hint">${h(bs.note)}</span>` : ''}</div></div>
     ${bkSmsTo(b.id).length ? `<div class="kv bk-tap" ${ed ? `data-act="bks-bsched" data-id="${b.id}" title="Tap to change"` : ''}><div class="k">Texts go to</div><div class="v">${bkSmsTo(b.id).map((cid) => D.contacts.find((c) => c.id === cid)).filter(Boolean).map((c) => h(fullName(c)) + ' · ' + h(bkMobile(c) || '')).join('<br>')}</div></div>` : ''}
+    ${typeof bkBizBulk === 'function' ? bkBizBulk(b) : ''}
     ${bkUnder(b.id) ? `<div class="kv bk-tap" ${ed ? `data-act="bks-bsched" data-id="${b.id}" title="Tap to change"` : ''}><div class="k">Book under</div><div class="v"><b>${h(bkUnder(b.id).name)}</b></div></div>` : ''}
     ${(bs.must || []).length ? `<div class="kv bk-tap" ${ed ? `data-act="bks-bsched" data-id="${b.id}" title="Tap to change"` : ''}><div class="k">Must</div><div class="v">${bs.must.map((r) => '⛔ ' + h(bkRuleWords(r))).join('<br>')}</div></div>` : ''}
     ${(bs.prefer || []).length ? `<div class="kv bk-tap" ${ed ? `data-act="bks-bsched" data-id="${b.id}" title="Tap to change"` : ''}><div class="k">Prefers</div><div class="v">${bs.prefer.map((r) => '👍 ' + h(bkRuleWords(r))).join('<br>')}</div></div>` : ''}
@@ -409,6 +417,9 @@ function bkAiText(pg, req) {
 .bk-tap[data-act]{cursor:pointer;border-radius:8px}.bk-tap[data-act]:hover{background:color-mix(in srgb,#2f7a55 6%,transparent)}
 .bk-hol{display:inline-block;font-size:12px;font-weight:600;color:#b42318;background:color-mix(in srgb,#d92d20 9%,var(--bg,#fff));border-radius:6px;padding:0 6px;margin-left:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}.bk-week th.hol,.bk-md:has(.bk-hol){background:color-mix(in srgb,#d92d20 6%,var(--bg,#fff))}
 .bk-bday{display:inline-block;font-size:12px;font-weight:600;color:#7a2e86;background:color-mix(in srgb,#b04ac2 10%,var(--bg,#fff));border-radius:6px;padding:0 6px;margin-left:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.bk-yev{display:inline-block;font-size:12px;font-weight:600;color:#14315f;background:color-mix(in srgb,#2f6fd1 10%,var(--bg,#fff));border-radius:6px;padding:0 6px;margin-left:4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:100%}
+.bk-bulkrow{border-top:1px solid var(--line,#e4e0d9);padding:6px 0}.bk-bulkrow.over{border-left:4px solid #d71f2b;padding-left:8px}.bk-bulkrow .actions{margin-top:4px}
+.bk-pill{display:inline-block;font-size:12px;font-weight:600;padding:1px 8px;border-radius:99px;background:#ececec;color:#444;margin-left:6px}.bk-pill.open{background:#ffe8d1;color:#7a3300}
 .bk-pdot{display:inline-block;width:10px;height:10px;border-radius:50%;background:var(--pc,#888);margin-right:4px;vertical-align:middle}
 .bk-colh{border-top:4px solid var(--pc,transparent)}
 .bk-occhip{display:inline-block;border-radius:10px;padding:0 7px;font-size:12px;font-weight:600;background:color-mix(in srgb,var(--c) 18%,var(--bg,#fff));border:1.5px solid var(--c);color:inherit;white-space:nowrap;max-width:100%;overflow:hidden;text-overflow:ellipsis}

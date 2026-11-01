@@ -445,6 +445,9 @@ details.notelog{display:inline-block;margin-left:6px;font-size:12px}details.note
 .cr-must{background:#fdeaea;border-radius:8px;padding:6px 8px}.cr-must:has(input:checked){background:#e3f5e6}
 .cr-lines{width:100%;border-collapse:collapse;font-size:14px}.cr-lines th,.cr-lines td{border-bottom:1px solid var(--line,#e4e0d9);padding:4px 6px;text-align:left;vertical-align:top}.cr-lines td:nth-child(n+2){white-space:nowrap}.cr-lines input{width:100%;min-width:60px}
 .cr-eline{border-bottom:1px solid var(--line,#e4e0d9);padding:6px 0}.cr-eline>input{width:100%;box-sizing:border-box}.cr-vline{display:flex;gap:10px;justify-content:space-between;border-bottom:1px solid var(--line,#e4e0d9);padding:5px 0}.cr-vline b{white-space:nowrap}
+.cr-rich{border:1px solid var(--line,#e4e0d9);border-radius:10px;padding:10px 12px;min-height:180px;max-height:60vh;overflow:auto;background:#fff;color:#141414;font:14px/1.5 system-ui,sans-serif}.cr-rich table{border-collapse:collapse;width:100%}.cr-rich td,.cr-rich th{border:1px solid #bbb;padding:3px 5px;vertical-align:top}
+.cr-edbar{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}.cr-edbar button,.cr-edbar select{padding:4px 8px;border:1px solid var(--line,#e4e0d9);border-radius:7px;background:var(--bg,#fff);font-size:13px;color:inherit}
+.cr-prev{position:fixed;inset:0;z-index:250;background:rgba(0,0,0,.55);display:flex;flex-direction:column;padding:10px}.cr-prev iframe{flex:1;border:0;border-radius:10px;background:#fff;margin-top:8px;width:100%}
 .cr-tot{text-align:right;margin:8px 0;line-height:1.7}
 .cr-steps{display:flex;flex-wrap:wrap;gap:4px;font-size:13px;color:#888;margin-bottom:6px}.cr-steps .on{color:var(--ink,#141414);font-weight:700;text-decoration:underline}
 .cr-pdres{background:color-mix(in srgb,#2f7a55 7%,transparent);border-radius:8px;padding:8px 10px;margin:6px 0}
@@ -483,8 +486,12 @@ window.addEventListener('error',function(e){show(e.message||e.error)});window.ad
 <script src="bk-form.js"></script>
 <script src="bk-oncall.js"></script>
 <script src="bk-plus.js"></script>
+<script src="bk-year.js"></script>
 <script src="cr.js"></script>
 <script src="cr-ui.js"></script>
+<script src="cr-tpls.js"></script>
+<script src="cr-docs.js"></script>
+<script src="vendor/jszip/jszip.min.js" defer></script>
 <script src="app.js"></script>
 </body>
 </html>

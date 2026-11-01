@@ -97,26 +97,23 @@ async function wanted() {
   for (const st of staff.filter((x: any) => x.active !== false)) { const bd = (get("staff:" + st.id) || {}).bday; if (!/^\d{2}-\d{2}$/.test(bd || "")) continue;
     for (let y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) { const d = `${y}-${bd}`; if (d < from || d > to || ymd(new Date(d + "T12:00:00Z")) !== d) continue;
       oc["bday:" + st.id + ":" + d] = (() => { const body = { summary: "🎂 " + pname(st.id) + "'s birthday", start: { date: d }, end: { date: add(d, 1) }, transparency: "transparent", description: "From the Bovitech Super App." }; return { body, h: hash(stable(body)) }; })(); } }
-  // each person's appointments
+  // yearly events and reminders, and the days the bulk scheduling lists open (dates worked out by the app, which knows the WA public holidays)
+  for (const x of cfg.filter((c: any) => !c.gone && (c.cfg === "yearly" || c.cfg === "bulk") && Array.isArray(c.dates))) {
+    for (const d of x.dates) { if (typeof d !== "string" || d < from || d > to) continue;
+      const body = { summary: x.cfg === "bulk" ? "📋 Bulk scheduling list opens: " + x.name : (x.kind === "reminder" ? "🔔 " : "📌 ") + x.name, start: { date: d }, end: { date: add(d, 1) }, transparency: "transparent", description: "From the Bovitech Super App." };
+      oc["yr:" + x.id + ":" + d] = { body, h: hash(stable(body)) }; } }
+  // each person's day sheet
   const opts = get("gcalopts") || {}; const per: Record<string, Record<string, any>> = {};
-  if (opts.appts !== false) {
-    const live = bookings.filter((b) => b.status !== "cancelled" && !b.gone && b.date >= from && b.date <= to && b.start && (b.staff || []).length);
-    const ids = (k: string, f: (b: any) => string[]) => [...new Set(live.flatMap(f).filter(Boolean))];
-    const pick = async (kind: string, list: string[]) => { if (!list.length) return []; const out: any[] = []; for (let i = 0; i < list.length; i += 150) { const q = list.slice(i, i + 150).map((x) => '"' + x.replace(/"/g, "") + '"').join(","); out.push(...(await (await sb(`/rest/v1/records?select=id,data&kind=eq.${kind}&id=in.(${q})`)).json()).map((r: any) => ({ ...r.data, id: r.id }))); } return out; };
-    const [biz, cons, farms] = await Promise.all([pick("businesses", ids("b", (b) => [b.bid])), pick("contacts", ids("c", (b) => [b.cid])), pick("farms", ids("f", (b) => (b.stops || []).map((s: any) => s.fid).concat(b.fid ? [b.fid] : [])))]);
-    const typeName = (id: string) => (get(id) || {}).name || "Appointment"; const svcName = (id: string) => (get(id) || {}).name || "";
-    for (const b of live) {
-      const bz = biz.find((x) => x.id === b.bid), c = cons.find((x) => x.id === b.cid); const client = bz ? bz.name : c ? [c.first, c.last].filter(Boolean).join(" ") : "Client";
-      const fs = (b.stops && b.stops.length ? b.stops.map((s: any) => s.fid) : b.fid ? [b.fid] : []).map((id: string) => farms.find((x) => x.id === id)).filter(Boolean);
-      const s0 = mins(b.start), e0 = s0 + (b.mins || 60); const endDate = e0 >= 1440 ? add(b.date, 1) : b.date;
-      const desc = [typeName(b.type) + (b.status === "confirmed" ? " · confirmed" : b.status === "done" || b.status === "invoiced" ? " · completed" : " · not confirmed yet"),
-        (b.svcs || []).filter((x: any) => x.svc).map((x: any) => svcName(x.svc) + (x.head ? " ×" + x.head : "")).join(", "),
-        (b.staff || []).length > 1 ? "With " + b.staff.map(pname).join(", ") : "", c ? "Contact: " + [c.first, c.last].filter(Boolean).join(" ") + (((c.mobiles || [])[0] || {}).value ? " " + c.mobiles[0].value : "") : "",
-        b.notes ? "Notes: " + b.notes : "", "From the Bovitech Super App — change it there, not here."].filter(Boolean).join("\n");
-      const f0 = fs[0]; const loc = f0 ? (f0.turn && f0.turn.lat != null ? `${f0.turn.lat},${f0.turn.lng}` : f0.lat != null ? `${f0.lat},${f0.lng}` : f0.address || f0.name || "") : "";
-      const body = { summary: `${b.urgent ? "⚡ " : ""}${client}${fs.length ? " — " + fs.map((f: any) => f.name || "farm").join(" → ") : ""}`, description: desc, ...(loc ? { location: loc } : {}),
-        start: { dateTime: `${b.date}T${hhmm(s0)}:00`, timeZone: "Australia/Perth" }, end: { dateTime: `${endDate}T${hhmm(e0 % 1440)}:00`, timeZone: "Australia/Perth" } };
-      for (const sid of b.staff) { (per[sid] ??= {})["bk:" + b.id] = { body, h: hash(stable(body)) }; }
+  if (opts.appts !== false) { // each person's day sheet, as one event on their own calendar (not each appointment)
+    const sheets = await recs("bksheet");
+    const live = bookings.filter((b) => b.status !== "cancelled" && !b.gone && b.date >= from && b.date <= to && b.start);
+    for (const sh of sheets) {
+      if (sh.gone || !sh.text || !sh.sid || sh.date < from || sh.date > to) continue;
+      const mine = live.filter((b) => b.date === sh.date && (b.staff || []).includes(sh.sid));
+      const s0 = mine.length ? Math.min(...mine.map((b) => mins(b.start))) : 8 * 60; const e0 = mine.length ? Math.max(...mine.map((b) => mins(b.start) + (b.mins || 60))) : 17 * 60;
+      const body = { summary: `📋 Day sheet — ${mine.length} appointment${mine.length === 1 ? "" : "s"}`, description: String(sh.text) + "\n\nFrom the Bovitech Super App — change appointments there, not here.",
+        start: { dateTime: `${sh.date}T${hhmm(s0)}:00`, timeZone: "Australia/Perth" }, end: { dateTime: `${sh.date}T${hhmm(Math.min(e0, 1439))}:00`, timeZone: "Australia/Perth" } };
+      (per[sh.sid] ??= {})["ds:" + sh.date] = { body, h: hash(stable(body)) };
     }
   }
   const people = staff.filter((s: any) => s.active !== false && s.role !== "admin");

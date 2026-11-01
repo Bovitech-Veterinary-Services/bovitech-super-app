@@ -55,6 +55,7 @@ function crSeed() { // the starting price list (prices to fill in from the ezyVe
   if (!D || !D.sync || !D.sync.last) return; let n = 0;
   if (!crList('crprod').length) CR_PROD_DEFAULTS.forEach((d) => { const r = { ...bkClone(d), placeholder: d.price === 0 }; touch(r); D.crprod.push(r); n++; });
   CR_CFG_DEFAULTS.forEach((d) => { if (!crList('crcfg').some((x) => x.id === d.id)) { const r = bkClone(d); touch(r); D.crcfg.push(r); n++; } });
+  { const bb = crCfg('tpl:bbse'); if (bb && bb.draft) { delete bb.draft; bb.sections = [{ title: 'Examination', inputs: [{ k: 'notes', l: 'General findings', text: true }] }]; touch(bb); n++; } } // the bulls are recorded one by one now
   const fu = Bk.cfg('futype').map((x) => x.name.toLowerCase()); // the follow-up types Jess asked for
   [['fu-phone', 'Phone call', 2], ['fu-review', 'Treatment review', 7], ['fu-revisit', 'Revisit', 28]].forEach(([id, name, days], i) => { if (!fu.includes(name.toLowerCase()) && !Bk.get(id)) { const r = { id, cfg: 'futype', order: 10 + i, name, days }; touch(r); Bk.list('bkcfg').push(r); n++; } });
   if (n) save();
@@ -74,7 +75,7 @@ const crFees = () => ({ ...CR_CFG_DEFAULTS[0], ...(crCfg('fees') || {}) });
 const crPfields = () => crCfg('pfields') || CR_CFG_DEFAULTS[1];
 const crFuTypes = () => (crCfg('futypes') || CR_CFG_DEFAULTS[2]).list;
 const crVocab = () => (crCfg('vocab') || CR_CFG_DEFAULTS[3]).list || [];
-const crBrand = () => ({ ...CR_CFG_DEFAULTS[4], ...(crCfg('brand') || {}) });
+const crBrand = () => { const b = { ...CR_CFG_DEFAULTS[4], ...(crCfg('brand') || {}) }; if (b.logo == null) b.logo = 'img/logo.png'; return b; }; // the Bovitech logo unless another is chosen ('' = none)
 const crLabs = () => (crCfg('labs') || CR_CFG_DEFAULTS[5]).list;
 
 /* ---------------- procedure templates (the pregnancy testing one first) ---------------- */
