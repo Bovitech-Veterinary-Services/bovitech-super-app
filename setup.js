@@ -2,7 +2,7 @@
    step-by-step instructions and a button to copy the code that's needed. Tick ✓ Done when finished
    (it's remembered on every device). Some tick themselves once the app can see they're done. */
 'use strict';
-const SETUP_FILES = { sql03: 'supabase/03-sms.sql', sql04: 'supabase/04-users.sql', sql05: 'supabase/05-calendar-sms.sql', sql06: 'supabase/06-admins.sql', gcal: 'supabase/functions/gcal/index.ts', jobs: 'supabase/functions/jobs/index.ts' };
+const SETUP_FILES = { users: 'supabase/functions/users/index.ts', sql03: 'supabase/03-sms.sql', sql04: 'supabase/04-users.sql', sql05: 'supabase/05-calendar-sms.sql', sql06: 'supabase/06-admins.sql', gcal: 'supabase/functions/gcal/index.ts', jobs: 'supabase/functions/jobs/index.ts' };
 const SETUP_REDIRECT = 'https://ymzweuhxdcxkzweacwdi.supabase.co/functions/v1/gcal';
 const SETUP_SUPA = 'https://supabase.com/dashboard/project/ymzweuhxdcxkzweacwdi';
 const setupCopy = (f, label) => `<button class="btn small greenbtn" data-act="setup-copy" data-f="${f}">📋 ${label}</button>`;
@@ -12,7 +12,7 @@ const SETUP = [
     `Come back here and tap ${setupCopy('sql03', 'Copy update 3')}.`,
     'In Supabase, click in the big empty query box, press <b>Ctrl + A</b> then <b>Ctrl + V</b> to paste it in.',
     'Click <b>Run</b> (bottom right). If it asks about "destructive operations", click <b>Run this query</b>.',
-    'It should finish with no red error. If it says something <b>already exists</b>, update 3 was done before — that\'s fine.',
+    'It should finish with no red error. If it says <b>Update 3 was already run on this database. Nothing was changed.</b>, it was done before — that\'s fine, carry on.',
     'Tick <b>✓ Done</b> below.'] },
   { id: 'sql04', t: 'Run database update 4 (making logins and passwords from the app)', after: 'sql03', steps: [
     `Open <a href="${SETUP_SUPA}/sql/new" target="_blank" rel="noopener">Supabase → SQL Editor → New query</a>.`,
@@ -25,7 +25,7 @@ const SETUP = [
     `Come back here and tap ${setupCopy('sql05', 'Copy update 5')} — it copies the whole update.`,
     'In Supabase, click in the big empty query box, press <b>Ctrl + A</b> then <b>Ctrl + V</b> to paste it in.',
     'Click <b>Run</b> (bottom right). If it asks about "destructive operations", click <b>Run this query</b>.',
-    'At the bottom it should say <b>Step 5 finished</b>. If it says <b>relation "public.sms_log" does not exist</b>, do update 3 first. Any other red error: copy it and send it to Claude.',
+    'At the bottom it should say <b>Step 5 finished</b> (it\'s safe to run again if you\'re not sure). If it says <b>relation "public.sms_log" does not exist</b>, do update 3 first. Any other red error: copy it and send it to Claude.',
     'Tick <b>✓ Done</b> below.'] },
   { id: 'sql06', t: 'Run database update 6 (admin access for chosen logins)', auto: () => !!(window.SBAuth && SBAuth.staff && 'admin_access' in SBAuth.staff), steps: [
     `Open <a href="${SETUP_SUPA}/sql/new" target="_blank" rel="noopener">Supabase → SQL Editor → New query</a>.`,
@@ -85,15 +85,32 @@ const SETUP = [
     'Tick <b>Admin</b> next to each person who should see and change the admin-only settings (the office login always has it).',
     'People with admin access no longer need the admin PIN. Everyone else doesn\'t see the admin-only settings at all.',
     'Tick <b>✓ Done</b>.'] },
-  { id: 'daysheet', t: 'Decide how day sheets are sent', steps: [
-    'Day sheets are always in the app (Scheduling → Day sheet) and, once Google Calendar is connected, on each person\'s own Google Calendar.',
-    'For texting them at 8am, choose one and tell Claude: <b>a second Android phone</b> (recommended — cheapest, texts come from that number), <b>an SMS service with a sender name</b>, or <b>email</b>.',
-    'Then turn them on in Settings → Scheduling → Day sheets.',
-    'Tick <b>✓ Done</b> once you\'ve told Claude.'] },
-  { id: 'send', t: 'Things to send Claude', steps: [
-    'The rest of your yearly reminder list.',
-    'A sample Bull Reporter import file, or a screenshot of its columns.',
-    'When biosecurity plan, J-BAS and NFAS reviews should come up — from the date of the last one (how it works now), or on a set date each year.',
+  { id: 'users', t: 'Add the "users" server function (making logins and resetting passwords)', steps: [
+    `Open <a href="${SETUP_SUPA}/functions" target="_blank" rel="noopener">Supabase → Edge Functions</a>.`,
+    'Click <b>Deploy a new function</b>, then <b>Via Editor</b>.',
+    `Come back here and tap ${setupCopy('users', 'Copy the users code')}.`,
+    'In Supabase, click in the code box, press <b>Ctrl + A</b> then <b>Ctrl + V</b> to replace the example code.',
+    'Change the function name (bottom left) to exactly <b>users</b> — all lower case.',
+    'Click <b>Deploy function</b> and wait for it to say it’s deployed. Leave "Verify JWT" on (as it is).',
+    'Test it: Settings → Users → Staff & permissions → 🔑 Set a new password for someone. It should say the password was changed.',
+    'Tick <b>✓ Done</b>.'] },
+  { id: 'gcal2', t: 'Update the "gcal" server function (goes straight back to the app after connecting)', after: 'gcal', steps: [
+    `Open <a href="${SETUP_SUPA}/functions/gcal/code" target="_blank" rel="noopener">Supabase → Edge Functions → gcal → Code</a>.`,
+    `Come back here and tap ${setupCopy('gcal', 'Copy the gcal code')}.`,
+    'In Supabase, click in the code box, press <b>Ctrl + A</b> then <b>Ctrl + V</b> to replace all of it.',
+    'Click <b>Deploy updates</b> and wait for it to finish. (Leave "Verify JWT" off.)',
+    'Nothing else to do — Google Calendar is already connected. Next time you connect, Google sends you straight back to the app instead of showing a page of code.',
+    'Tick <b>✓ Done</b>.'] },
+  { id: 'sharecal', t: 'Share each person\'s day sheet calendar with them', after: 'connect', steps: [
+    'Day sheets go on Google Calendar only (not texted). Each person gets their own calendar called <b>Bovitech — their name</b>, owned by bovitechvetservices@gmail.com.',
+    'A person\'s calendar is made the first time they have a day sheet — that is, once their appointments are booked in this app (Scheduling). While real bookings are still in ezyVet, there won\'t be any yet; come back to this job then.',
+    'On a computer, open <a href="https://calendar.google.com/calendar/u/0/r/settings" target="_blank" rel="noopener">Google Calendar → Settings</a> signed in as <b>bovitechvetservices@gmail.com</b>.',
+    'On the left under <b>Settings for my calendars</b>, click <b>Bovitech — Jess</b> (and so on for each person).',
+    'Scroll to <b>Share with specific people or groups</b> → <b>+ Add people and groups</b> → type that person\'s Google email → permission <b>See all event details</b> → <b>Send</b>.',
+    'They accept the email from Google, and the calendar appears in their Google Calendar app (tick it on in the calendar list if it\'s hidden).',
+    'Do the same for <b>Bovitech On Call</b> if anyone can\'t see it yet (vets need "Make changes to events" to see each person\'s on-call colour).',
+    'Tick <b>✓ Done</b> once everyone can see theirs.'] },
+  { id: 'send2', t: 'Things to send Claude', steps: [
     'The full ezyVet export (records, price list, inventory).',
     'The vControl CSV format (for the on-call export).',
     'Tick <b>✓ Done</b> when they\'re all sent.'] },
@@ -107,7 +124,7 @@ function setupJobHtml(j) {
   const x = SETUP.find((y) => y.id === j.id); if (!x) return '';
   return `<div class="job setupjob"><div class="t"><div class="who"><b>🛠 ${h(x.t)}</b></div>${j.note ? `<div class="note">⏳ ${h(j.note)}</div>` : ''}
     <details ${S.setupOpen === x.id ? 'open' : ''} data-setup="${x.id}"><summary class="hint" style="cursor:pointer">Step-by-step instructions (${x.steps.length} steps)</summary><ol class="setupsteps">${x.steps.map((s) => `<li>${s}</li>`).join('')}</ol></details>
-    <div class="acts"><button class="btn small greenbtn" data-act="job-dismiss" data-key="${h(j.key)}">✓ Done</button><button class="btn small" data-act="job-ai" data-key="${h(j.key)}">🤖 Ask Claude</button></div></div></div>`;
+    <div class="acts"><button class="btn small greenbtn" data-act="job-dismiss" data-key="${h(j.key)}">✓ Done</button></div></div></div>`;
 }
 document.addEventListener('toggle', (e) => { const d = e.target; if (d && d.dataset && d.dataset.setup) S.setupOpen = d.open ? d.dataset.setup : null; }, true);
 document.addEventListener('click', async (e) => {
@@ -118,10 +135,10 @@ document.addEventListener('click', async (e) => {
     await navigator.clipboard.writeText(txt); const was = el.textContent; el.textContent = '✓ Copied — now paste it'; setTimeout(() => (el.textContent = was), 4000);
   } catch (x) { toast(el.dataset.act === 'setup-copy' ? "Couldn't fetch it — check the internet connection and try again" : "Couldn't copy — select it and copy it by hand"); }
 });
-function setupCard() { // Settings → Users → Admin tasks (admin logins only): the same list as Jobs → Setup to do, plus what's been done
+function setupCard() { // Settings → Admin jobs (admin logins only): the same list as Jobs → Setup to do, plus what's been done
   if (!(window.SBAuth && SBAuth.isAdmin && (SBAuth.isAdmin() || (typeof S !== 'undefined' && S.admin)))) return '';
   const todo = setupJobs(); const dis = (D && D.dismissed) || {}; const done = SETUP.filter((x) => !todo.some((j) => j.id === x.id));
-  return `<div class="card"><h3>Admin tasks</h3><div class="hint" style="margin-bottom:6px">One-off setup jobs with step-by-step instructions (also in Jobs → 🛠 Setup to do). Only admin logins see these.</div>
+  return `<div class="card"><h3>Admin jobs</h3><div class="hint" style="margin-bottom:6px">One-off setup jobs, each with step-by-step instructions and 📋 buttons that copy the code to paste. Only admin logins see these.</div>
     ${todo.map(setupJobHtml).join('') || '<div class="hint">✓ All done.</div>'}
     ${done.length ? `<details style="margin-top:8px"><summary class="hint" style="cursor:pointer">Done (${done.length})</summary>${done.map((x) => `<div class="kv" style="align-items:center"><div class="v">✓ ${h(x.t)}</div>${dis['setup:' + x.id] ? `<button class="btn small" data-act="setup-undo" data-id="${x.id}">Not done</button>` : '<span class="hint">done automatically</span>'}</div>`).join('')}</details>` : ''}</div>`;
 }

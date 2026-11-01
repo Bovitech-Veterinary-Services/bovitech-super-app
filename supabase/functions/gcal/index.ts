@@ -29,7 +29,7 @@ async function recs(kind: string) {
   for (;;) { const rows = await (await sb(`/rest/v1/records?select=id,data,deleted&kind=eq.${kind}&order=seq.asc&offset=${from}&limit=1000`)).json(); out.push(...rows.filter((r: any) => !r.deleted && r.data).map((r: any) => ({ ...r.data, id: r.id }))); if (rows.length < 1000) break; from += 1000; }
   return out;
 }
-const page = (title: string, msg: string, ok: boolean) => new Response(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title><body style="font-family:system-ui;padding:24px;max-width:560px;margin:auto"><h2>${ok ? "✓" : "⚠"} ${title}</h2><p>${msg}</p><p><a href="${APP}?gcal=${ok ? "ok" : "err"}">Back to the app</a></p><script>setTimeout(()=>location.href=${JSON.stringify(APP + "?gcal=" + (ok ? "ok" : "err"))},${ok ? 2500 : 60000})</script></body>`, { headers: { "Content-Type": "text/html; charset=utf-8" } });
+const page = (title: string, msg: string, ok: boolean) => Response.redirect(APP + (APP.includes("?") ? "&" : "?") + "gcal=" + (ok ? "ok" : "err") + "&gmsg=" + encodeURIComponent(title + " — " + msg), 302); // straight back to the app, which shows the message (Supabase won't show web pages)
 
 /* ---------- dates (Perth) ---------- */
 const perthToday = () => new Date(new Date().toLocaleString("en-US", { timeZone: "Australia/Perth" }));

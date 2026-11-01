@@ -5,6 +5,13 @@
 -- =====================================================================
 
 -- ---------- Staff (one row per person who can sign in) ----------
+-- Safe to run twice: if this update was already run, it stops here and changes nothing.
+do $$ begin
+  if to_regclass('public.staff') is not null then
+    raise exception 'Update 1 was already run on this database. Nothing was changed. You can carry on with the next one.';
+  end if;
+end $$;
+
 create table public.staff (
   id               uuid primary key default gen_random_uuid(),
   user_id          uuid unique references auth.users(id) on delete set null,  -- their login, linked automatically by email

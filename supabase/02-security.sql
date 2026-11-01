@@ -5,6 +5,13 @@
 --  Then paste ALL of this into SQL Editor → New query → Run. Run it once.
 -- =====================================================================
 
+-- Safe to run twice: if this update was already run, it stops here and changes nothing.
+do $$ begin
+  if to_regclass('public.trusted_devices') is not null then
+    raise exception 'Update 2 was already run on this database. Nothing was changed. You can carry on with the next one.';
+  end if;
+end $$;
+
 create extension if not exists pgcrypto with schema extensions;
 create extension if not exists pg_net;
 create extension if not exists pg_cron;

@@ -4,6 +4,13 @@
 -- =====================================================================
 
 -- every text sent or received, with how it went
+-- Safe to run twice: if this update was already run, it stops here and changes nothing.
+do $$ begin
+  if to_regclass('public.sms_log') is not null then
+    raise exception 'Update 3 was already run on this database. Nothing was changed. You can carry on with the next one.';
+  end if;
+end $$;
+
 create table public.sms_log (
   id          bigserial primary key,
   at          timestamptz not null default now(),
