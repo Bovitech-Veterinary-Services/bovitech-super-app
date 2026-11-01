@@ -65,8 +65,10 @@ const SBAuth = {
     const ok = totp.find((f) => f.status === 'verified');
     if (ok) return { need: 'code', factorId: ok.id };
     for (const f of totp) { try { await this.auth('factors/' + f.id, null, await this.token(), 'DELETE'); } catch (e) { } } // half-finished set-ups
-    const en = await this.auth('factors', { factor_type: 'totp', friendly_name: 'Bovitech Practice ' + randHex(3), issuer: 'Bovitech Practice' }, await this.token());
-    return { need: 'enrol', factorId: en.id, qr: en.totp && en.totp.qr_code, secret: en.totp && en.totp.secret };
+    const en = await this.auth('factors', { factor_type: 'totp', friendly_name: 'Bovitech ' + randHex(3), issuer: 'Bovitech' }, await this.token());
+    const secret = en.totp && en.totp.secret; const email = (this.s && this.s.user && this.s.user.email) || 'staff';
+    const uri = secret ? `otpauth://totp/Bovitech:${encodeURIComponent(email)}?secret=${secret}&issuer=Bovitech&algorithm=SHA1&digits=6&period=30` : (en.totp && en.totp.uri) || ''; // our own code (no spaces), drawn by qr.js
+    return { need: 'enrol', factorId: en.id, qr: en.totp && en.totp.qr_code, secret, uri, email };
   },
   /* step 2: the 6-digit code from the authenticator app — then this device is remembered */
   async verifyCode(factorId, code) {
@@ -171,14 +173,17 @@ function drawLogin(msg) {
       <button class="btn primary" type="submit" id="lg-go" style="width:100%;font-size:17px;padding:12px">Sign in</button>
       <div id="lg-msg" style="margin-top:10px;color:var(--red,#b42318);font-size:15px"></div>
       <div class="hint" style="margin-top:12px">Forgotten your password, or don't have a login yet? Ask the office.</div>`;
-  else if (LG.mode === 'enrol') body = `<div style="font-weight:700;font-size:17px;margin:6px 0">Set up two-step sign-in (one time)</div>
-      <ol style="margin:4px 0 10px 18px;padding:0;line-height:1.5"><li>Install an authenticator app on your phone — <b>Microsoft Authenticator</b> or <b>Google Authenticator</b>.</li><li>In the app tap <b>+</b> / <b>Add account</b> and scan this code${/Android|iPhone/i.test(navigator.userAgent) ? ' (or, on this phone, copy the key below and choose "Enter a setup key")' : ''}.</li><li>Type the 6-digit code it shows.</li></ol>
-      ${LG.qr ? `<div style="text-align:center;background:#fff;border-radius:10px;padding:8px"><img src="${LG.qr.startsWith('data:') ? LG.qr : 'data:image/svg+xml;utf-8,' + encodeURIComponent(LG.qr)}" alt="QR code" style="width:200px;height:200px"></div>` : ''}
-      ${LG.secret ? `<div class="hint" style="margin:8px 0;word-break:break-all">Key: <b style="font-family:monospace">${h(LG.secret)}</b> <button type="button" class="btn small" id="lg-copy">Copy</button></div>` : ''}
-      <div class="f"><label for="lg-code">6-digit code</label><input id="lg-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" style="${inp};letter-spacing:4px;font-size:22px"></div>
+  else if (LG.mode === 'enrol') { const phone = /Android|iPhone|iPad/i.test(navigator.userAgent); const key = (LG.secret || '').replace(/(.{4})/g, '$1 ').trim(); let qr = '';
+    try { qr = LG.uri && window.bvpQRSvg ? bvpQRSvg(LG.uri, 240) : ''; } catch (e) { qr = ''; }
+    body = `<div style="font-weight:700;font-size:17px;margin:6px 0">Set up two-step sign-in (one time)</div>
+      <ol style="margin:4px 0 10px 18px;padding:0;line-height:1.5"><li>On your phone, open <b>Google Authenticator</b> (or Microsoft Authenticator).</li><li>Tap <b>+</b>, then <b>Scan a QR code</b>, and point the camera at the code below. Hold the phone still, about 20 cm away, until <b>Bovitech</b> appears in the list.</li><li>Type the 6-digit code it shows for Bovitech into the box below.</li></ol>
+      ${phone && LG.uri ? `<a class="btn" href="${h(LG.uri)}" style="display:block;text-align:center;margin-bottom:8px">📲 Add to the authenticator app on this phone</a>` : ''}
+      ${qr ? `<div style="text-align:center;background:#fff;border-radius:10px;padding:10px">${qr}</div>` : LG.qr ? `<div style="text-align:center;background:#fff;border-radius:10px;padding:8px"><img src="${LG.qr.startsWith('data:') ? LG.qr : 'data:image/svg+xml;utf-8,' + encodeURIComponent(LG.qr)}" alt="QR code" style="width:220px;height:220px"></div>` : ''}
+      ${LG.secret ? `<details style="margin:8px 0"><summary class="hint" style="cursor:pointer">The code won't scan? Type the key in instead</summary><ol class="hint" style="margin:6px 0 0 18px;padding:0;line-height:1.5"><li>In the authenticator app tap <b>+</b>, then <b>Enter a setup key</b>.</li><li>Account name: <b>Bovitech</b></li><li>Key: <b style="font-family:monospace;font-size:15px;color:var(--ink,#141414)">${h(key)}</b> <button type="button" class="btn small" id="lg-copy">Copy</button></li><li>Type of key: <b>Time based</b>, then tap <b>Add</b>.</li></ol></details>` : ''}
+`; body += `      <div class="f"><label for="lg-code">6-digit code</label><input id="lg-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" style="${inp};letter-spacing:4px;font-size:22px"></div>
       <button class="btn primary" type="submit" id="lg-go" style="width:100%;font-size:17px;padding:12px">Confirm</button>
       <div id="lg-msg" style="margin-top:10px;color:var(--red,#b42318);font-size:15px"></div>
-      <div class="hint" style="margin-top:10px">You'll only be asked for a code the first time you sign in on each phone or computer. <button type="button" class="btn small" id="lg-back">Back</button></div>`;
+      <div class="hint" style="margin-top:10px">You'll only be asked for a code the first time you sign in on each phone or computer. <button type="button" class="btn small" id="lg-back">Back</button></div>`; }
   else body = `<div style="font-weight:700;font-size:17px;margin:6px 0">New device — enter your code</div>
       <div class="hint" style="margin-bottom:10px">Open your authenticator app and type the 6-digit code for <b>Bovitech Practice</b>. This is only needed the first time on this ${/Android|iPhone|Mobile/i.test(navigator.userAgent) ? 'phone' : 'computer'}.</div>
       <div class="f"><label for="lg-code">6-digit code</label><input id="lg-code" inputmode="numeric" autocomplete="one-time-code" maxlength="8" style="${inp};letter-spacing:4px;font-size:22px"></div>
@@ -202,7 +207,7 @@ async function onLoginSubmit(e) {
       const em = bg.querySelector('#lg-email').value.trim(), pw = bg.querySelector('#lg-pw').value;
       if (!em || !pw) { out.textContent = 'Enter your email and password.'; return; }
       const r = await SBAuth.signIn(em, pw);
-      if (!r.done) { Object.assign(LG, { mode: r.need, factorId: r.factorId, qr: r.qr || null, secret: r.secret || null }); drawLogin(''); return; }
+      if (!r.done) { Object.assign(LG, { mode: r.need, factorId: r.factorId, qr: r.qr || null, secret: r.secret || null, uri: r.uri || null }); drawLogin(''); return; }
     } else {
       const code = bg.querySelector('#lg-code').value.replace(/\D/g, '');
       if (code.length !== 6) { out.textContent = 'Type the 6-digit code from your authenticator app.'; return; }

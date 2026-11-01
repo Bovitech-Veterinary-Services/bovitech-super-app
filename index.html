@@ -448,6 +448,7 @@ details.notelog{display:inline-block;margin-left:6px;font-size:12px}details.note
 .cr-rich{border:1px solid var(--line,#e4e0d9);border-radius:10px;padding:10px 12px;min-height:180px;max-height:60vh;overflow:auto;background:#fff;color:#141414;font:14px/1.5 system-ui,sans-serif}.cr-rich table{border-collapse:collapse;width:100%}.cr-rich td,.cr-rich th{border:1px solid #bbb;padding:3px 5px;vertical-align:top}
 .cr-edbar{display:flex;flex-wrap:wrap;gap:4px;margin-bottom:4px}.cr-edbar button,.cr-edbar select{padding:4px 8px;border:1px solid var(--line,#e4e0d9);border-radius:7px;background:var(--bg,#fff);font-size:13px;color:inherit}
 .cr-prev{position:fixed;inset:0;z-index:250;background:rgba(0,0,0,.55);display:flex;flex-direction:column;padding:10px}.cr-prev iframe{flex:1;border:0;border-radius:10px;background:#fff;margin-top:8px;width:100%}
+.setupjob .who{font-size:16px}.setupsteps{margin:6px 0 4px 20px;padding:0;line-height:1.55}.setupsteps li{margin:4px 0}.setupsteps a{text-decoration:underline}
 .cr-tot{text-align:right;margin:8px 0;line-height:1.7}
 .cr-steps{display:flex;flex-wrap:wrap;gap:4px;font-size:13px;color:#888;margin-bottom:6px}.cr-steps .on{color:var(--ink,#141414);font-weight:700;text-decoration:underline}
 .cr-pdres{background:color-mix(in srgb,#2f7a55 7%,transparent);border-radius:8px;padding:8px 10px;margin:6px 0}
@@ -480,6 +481,7 @@ window.addEventListener('error',function(e){show(e.message||e.error)});window.ad
   </main>
 </div>
 <script src="config.js"></script>
+<script src="qr.js"></script>
 <script src="supa.js"></script>
 <script src="bookings.js"></script>
 <script src="bk-ui.js"></script>
@@ -492,6 +494,7 @@ window.addEventListener('error',function(e){show(e.message||e.error)});window.ad
 <script src="cr-tpls.js"></script>
 <script src="cr-docs.js"></script>
 <script src="vendor/jszip/jszip.min.js" defer></script>
+<script src="setup.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
