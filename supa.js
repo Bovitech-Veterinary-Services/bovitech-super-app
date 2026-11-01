@@ -107,7 +107,8 @@ const SBAuth = {
     if (!quiet) showLogin();
   },
   can(k) { return !!(this.staff && this.staff[k]); },
-  isAdmin() { return !!(this.staff && this.staff.role === 'admin'); },
+  isAdmin() { return !!(this.staff && (this.staff.role === 'admin' || this.staff.admin_access)); }, // the main admin (office login) or anyone given admin access
+  isMainAdmin() { return !!(this.staff && this.staff.role === 'admin'); },
 };
 async function sbFetch(path, opt = {}, retried) {
   const t = await SBAuth.token();
@@ -487,7 +488,7 @@ async function loginFn(action, email, password) { // the "users" Edge Function: 
   if (!r.ok || !js.ok) throw new Error(js.error || js.message || 'Supabase: ' + r.status); return true;
 }
 document.addEventListener('change', (e) => { if (e.target.dataset && e.target.dataset.act === 'sf-show') ['sf-pw1', 'sf-pw2', 'lp-1', 'lp-2'].forEach((id) => bvpShowSecret(document.getElementById(id), e.target.checked)); });
-const PERMS = [['can_reports', 'Reports'], ['can_invoices', 'Invoices'], ['can_manage_staff', 'Manage staff'], ['active', 'Can sign in']];
+const PERMS = [['admin_access', 'Admin'], ['can_reports', 'Reports'], ['can_invoices', 'Invoices'], ['can_manage_staff', 'Manage staff'], ['active', 'Can sign in']];
 function supaSyncCard() {
   const me = SBAuth.staff;
   return `<div class="card"><h3>Sync &amp; sign-in</h3>
@@ -502,7 +503,7 @@ function supaSyncCard() {
 function callerPhotosHtml() { // one device (the office computer) keeps the practice Google Contacts up to date, so the phones show the right photo when a client rings
   const gp = GContacts.st;
   return `<div class="lbl" style="margin-top:14px">Caller photos (Google Contacts)</div>
-  <label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" data-act="gpush-toggle" ${gp.on ? 'checked' : ''} ${S.admin ? '' : 'disabled title="Only the admin can change this"'}> <span>This device keeps Google Contacts up to date ${S.admin ? '<span class="setlock fixed" style="font-size:11px;padding:1px 7px">🔒 Admin only</span>' : '<button type="button" class="setlock" style="font-size:11px;padding:1px 7px" data-act="admin-unlock" title="Unlock admin">🔒 Admin only — unlock</button>'}<br><span class="hint">Turn this on for <b>one device only</b> — the office computer is best — and sign in to the practice Google account (${h(practiceAccount())}) when asked. It copies names, numbers, emails, business and the tag photo (with CHECK WARNING) so the phones show the right photo when a client rings. Turn it off in the old Bovitech Contacts app first.</span></span></label>
+  <label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" data-act="gpush-toggle" ${gp.on ? 'checked' : ''} ${S.admin ? '' : 'disabled title="Only the admin can change this"'}> <span>This device keeps Google Contacts up to date ${S.admin ? '<span class="setlock fixed" style="font-size:11px;padding:1px 7px">🔒 Admin only</span>' : (SBAuth.s && SBAuth.staff ? '<span class="setlock fixed" style="font-size:11px;padding:1px 7px">🔒 Admin only</span>' : '<button type="button" class="setlock" style="font-size:11px;padding:1px 7px" data-act="admin-unlock" title="Unlock admin">🔒 Admin only — unlock</button>')}<br><span class="hint">Turn this on for <b>one device only</b> — the office computer is best — and sign in to the practice Google account (${h(practiceAccount())}) when asked. It copies names, numbers, emails, business and the tag photo (with CHECK WARNING) so the phones show the right photo when a client rings. Turn it off in the old Bovitech Contacts app first.</span></span></label>
   ${gp.on ? `<div class="kv"><div class="k">Status</div><div class="v">${h(gp.msg || 'Waiting')}${GAuth.valid() ? '' : ' — <b>sign in to Google to carry on</b>'}</div></div><div class="actions"><button class="btn small" data-act="gpush-now">${GAuth.valid() ? 'Update Google Contacts now' : 'Sign in to Google and update'}</button></div>` : ''}`;
 }
 function staffCard() {
@@ -515,7 +516,7 @@ function staffBoxHtml() {
   ${list.map((s) => `<div class="card" style="padding:10px;margin:6px 0${s.active ? '' : ';opacity:.6'}">
     <div style="display:flex;gap:8px;align-items:flex-start;flex-wrap:wrap"><div style="flex:1;min-width:180px"><b>${h(s.preferred_name || s.full_name)}</b>${s.preferred_name && s.preferred_name !== s.full_name ? ` <span class="hint">(${h(s.full_name)})</span>` : ''} · ${h(s.initials)}${initialsSeen[s.initials] > 1 && s.active ? ' <span style="color:var(--red);font-size:13px">same initials as someone else</span>' : ''}<br><span class="hint">${h(ROLE_NAMES[s.role] || s.role)} · ${h(s.email)}${s.user_id ? '' : ' · <b>no login yet</b>'}</span></div>
     ${mgr ? `<button class="btn small" data-act="staff-edit" data-id="${s.id}">✏️ Edit</button>` : ''}${SBAuth.isAdmin() ? `<button class="btn small" data-act="login-set" data-email="${h(s.email)}" data-has="${s.user_id ? '1' : ''}">🔑 ${s.user_id ? 'Set a new password' : 'Create their login'}</button>` : ''}</div>
-    <div class="checks" style="margin-top:6px">${PERMS.map(([k, l]) => `<label><input type="checkbox" data-staffperm="${k}" data-id="${s.id}" ${s[k] ? 'checked' : ''} ${mgr ? '' : 'disabled'}>${l}</label>`).join('')}</div>${SBAuth.isAdmin() ? Admin.personHtml(s) : ''}</div>`).join('')}
+    <div class="checks" style="margin-top:6px">${PERMS.map(([k, l]) => { const main = s.role === 'admin'; const on = k === 'admin_access' ? main || s.admin_access : s[k]; const dis = !mgr || (k === 'admin_access' && (main || !SBAuth.isAdmin())) || (main && k === 'active'); return `<label title="${k === 'admin_access' ? (main ? 'The main admin' : 'Sees and changes the admin-only settings, devices and the security log, with no admin PIN') : ''}"><input type="checkbox" data-staffperm="${k}" data-id="${s.id}" ${on ? 'checked' : ''} ${dis ? 'disabled' : ''}>${k === 'admin_access' && main ? 'Main admin' : l}</label>`; }).join('')}</div>${SBAuth.isAdmin() ? Admin.personHtml(s) : ''}</div>`).join('')}
   ${mgr ? `<div class="actions" style="margin-top:8px"><button class="btn small primary" data-act="staff-add">➕ Add a user</button></div>
   <div class="hint" style="margin-top:6px">${SBAuth.isAdmin() ? '<b>➕ Add a user</b> puts them on the staff list and creates their login (their email and a starting password) in one go — tell them the password; they can change it in Settings → Sync &amp; sign-in. <b>🔑 Set a new password</b> is for a forgotten password. ' : 'Only the admin can create logins and set passwords. '}Untick <b>Can sign in</b> to stop someone syncing straight away.</div>` : ''}`;
 }
@@ -551,7 +552,7 @@ document.addEventListener('change', async (e) => {
   const t = e.target; if (!t.dataset || !t.dataset.staffperm) return;
   const k = t.dataset.staffperm, id = t.dataset.id, on = t.checked;
   const s = (SBAuth.list || []).find((x) => x.id === id);
-  if (s && SBAuth.staff && s.id === SBAuth.staff.id && !on && (k === 'can_manage_staff' || k === 'active') && !(await ask(k === 'active' ? "Stop yourself signing in? You'll be signed out on every device." : "Remove your own permission to manage staff? Someone else will have to give it back.", 'Yes — remove'))) { t.checked = true; return; }
+  if (s && SBAuth.staff && s.id === SBAuth.staff.id && !on && (k === 'can_manage_staff' || k === 'active' || k === 'admin_access') && !(await ask(k === 'active' ? "Stop yourself signing in? You'll be signed out on every device." :  k === 'admin_access' ? "Remove your own admin access? An admin will have to give it back." : "Remove your own permission to manage staff? Someone else will have to give it back.", 'Yes — remove'))) { t.checked = true; return; }
   try {
     await rpc('staff_update', { k: Dev.k(), staff_id: id, patch: { [k]: on } });
     toast(`✓ ${s ? s.preferred_name || s.full_name : 'Staff'}: ${PERMS.find((p) => p[0] === k)[1]} ${on ? 'on' : 'off'}`);
@@ -634,7 +635,7 @@ const Admin = {
     const box = document.getElementById('seclog-box'); if (!box || box.dataset.filled) return; box.dataset.filled = '1';
     if (!navigator.onLine) { box.innerHTML = '<div class="hint">Connect to the internet to see the log.</div>'; return; }
     try { this.log = await rpc('security_log', { k: Dev.k(), lim: 200 }); } catch (e) { box.innerHTML = `<div class="hint" style="color:var(--red)">${h(e.message)}</div>`; return; }
-    const det = (e) => { const d = e.detail || {}; if (e.kind === 'staff_changed') return Object.entries(d).map(([k, v]) => `${({ can_reports: 'Reports', can_invoices: 'Invoices', can_manage_staff: 'Manage staff', active: 'Can sign in', full_name: 'Name', preferred_name: 'Preferred name', initials: 'Initials', role: 'Role' })[k] || k}: ${v === true ? 'on' : v === false ? 'off' : v}`).join(', ');
+    const det = (e) => { const d = e.detail || {}; if (e.kind === 'staff_changed') return Object.entries(d).map(([k, v]) => `${({ admin_access: 'Admin', can_reports: 'Reports', can_invoices: 'Invoices', can_manage_staff: 'Manage staff', active: 'Can sign in', full_name: 'Name', preferred_name: 'Preferred name', initials: 'Initials', role: 'Role' })[k] || k}: ${v === true ? 'on' : v === false ? 'off' : v}`).join(', ');
       if (d.device) return d.device; if (d.devices != null) return d.devices + ' device' + (d.devices === 1 ? '' : 's'); if (d.file) return d.file + (d.size ? ` (${Math.round(d.size / 1024)} KB)` : ''); if (d.error) return d.error; return ''; };
     box.innerHTML = this.log.length ? this.log.map((e) => `<div class="kv"><div class="k" style="min-width:140px">${this.when(e.at)}</div><div class="v"><b>${h(this.kindText[e.kind] || e.kind)}</b>${e.about ? ' — ' + h(e.about_pref || e.about) : ''}${e.by && e.by !== e.about ? ` <span class="hint">by ${h(e.by_pref || e.by)}</span>` : ''}${det(e) ? `<br><span class="hint">${h(det(e))}</span>` : ''}</div></div>`).join('') : '<div class="hint">Nothing yet.</div>';
   },

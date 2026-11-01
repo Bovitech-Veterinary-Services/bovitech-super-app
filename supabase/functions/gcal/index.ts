@@ -93,6 +93,10 @@ async function wanted() {
   const who = (d: string) => { const r = recFor(d); if (r) return r.who; if (!pat || !pat.start) return null; const w = (((Math.floor(days(pat.start, weekStart(d)) / 7) % pat.weeks) + pat.weeks) % pat.weeks); return (pat.grid || {})[w + "-" + dow(d)] || null; };
   const oc: Record<string, any> = {};
   for (let d = from; d <= to; d = add(d, 1)) { const w = who(d); if (!w) continue; const body = { summary: "On call: " + pname(w), start: { date: d }, end: { date: add(d, 1) }, transparency: "transparent", description: "From the Bovitech Super App on-call roster (midnight to midnight).", ...(gcol(w) ? { colorId: gcol(w) } : {}) }; oc[d] = { body, h: hash(stable(body)) }; }
+  // staff birthdays (Settings → Scheduling → People) — all-day, on the shared on-call calendar so everyone sees them
+  for (const st of staff.filter((x: any) => x.active !== false)) { const bd = (get("staff:" + st.id) || {}).bday; if (!/^\d{2}-\d{2}$/.test(bd || "")) continue;
+    for (let y = +from.slice(0, 4); y <= +to.slice(0, 4); y++) { const d = `${y}-${bd}`; if (d < from || d > to || ymd(new Date(d + "T12:00:00Z")) !== d) continue;
+      oc["bday:" + st.id + ":" + d] = (() => { const body = { summary: "🎂 " + pname(st.id) + "'s birthday", start: { date: d }, end: { date: add(d, 1) }, transparency: "transparent", description: "From the Bovitech Super App." }; return { body, h: hash(stable(body)) }; })(); } }
   // each person's appointments
   const opts = get("gcalopts") || {}; const per: Record<string, Record<string, any>> = {};
   if (opts.appts !== false) {

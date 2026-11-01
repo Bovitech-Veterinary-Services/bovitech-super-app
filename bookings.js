@@ -296,6 +296,11 @@ function bkRate(fid, yid, svc) { // head per hour at these yards: their own rate
 function bkYard(fid, svc) { const y = fid ? Bk.get('yard:' + fid + ':' + svc) : null; return y && !y.gone ? y : null; }
 
 /* ---------------- travel (rounded up to 5 minutes) ---------------- */
+function bkBirthdays(date) { // staff birthdays that day (Settings → Scheduling → People): ["Milly", ...]
+  const md = String(date || '').slice(5); const all = ((window.SBAuth && SBAuth.list) || []).filter((s) => s.active);
+  return (all.length ? all : Bk.people()).filter((s) => (Bk.get('staff:' + s.id) || {}).bday === md).map((s) => Bk.pname(s.id));
+}
+const bkBdayChips = (date, short) => bkBirthdays(date).map((n) => `<span class="bk-bday" title="${h(n)}'s birthday">🎂${short ? '' : ' '}${short ? h(n) : h(n) + "'s birthday"}</span>`).join('');
 const Travel = {
   home() { const h0 = (D.settings && D.settings.home) || {}; return h0.lat != null ? { lat: +h0.lat, lng: +h0.lng, home: true, label: 'homebase' } : null; },
   pt(f) { if (!f) return null; if (f.turn && f.turn.lat != null) return { lat: +f.turn.lat, lng: +f.turn.lng, f, label: f.name || 'the farm' }; if (f.lat != null) return { lat: +f.lat, lng: +f.lng, f, label: f.name || 'the farm' }; return null; },
