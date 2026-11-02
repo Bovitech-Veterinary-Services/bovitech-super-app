@@ -137,7 +137,7 @@ const SETUP = [
   { id: 'ezyimport', t: 'Import the ezyVet export', after: 'sql09', auto: () => !!(D && D.settings && D.settings.ezyImport), steps: [
     'Use the office computer, signed in as an admin, with the ezyVet backup zip (bovitechvet_backup.zip — the small one, not the 13 GB attachments) downloaded.',
     '<button class="btn primary" data-act="ezy-start">📥 Choose the ezyVet backup zip…</button>',
-    'Check the summary (clients matched, new, maybe the same; herds; price list and bundles; appointments; history), then tap <b>📥 Import now</b>. Leave the app open until it says finished — the history takes a few minutes. If it stops, run it again: nothing is doubled.',
+    'A summary opens (clients matched, new, maybe the same; herds; price list and bundles; appointments; history). Check it, then tap <b>📥 Import now</b> at the top of that summary. Leave the app open until it says finished — the history takes a few minutes. If it stops, run it again: nothing is doubled.',
     'Then work through <b>Jobs</b>: "ezyVet import: the same client?", "ezyVet notes: a warning, or just info?" and "No category" (new active clients).'] },
   { id: 'vcontrol2', t: 'vControl: try uploading the on-call schedule files from the app', steps: [
     'In the app: <b>Scheduling → On call → ⬇ Export (CSV)</b>. Choose the dates, then tap <b>⬇ 111097-Jess.csv</b> and <b>⬇ 111097-Milly.csv</b> (one file per vet, in the same layout as vControl\'s own download: Time and Label).',
