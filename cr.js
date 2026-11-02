@@ -152,7 +152,7 @@ function crTravel(r) { // → [{ fid, name, km, pct, why }]
 
 /* ---------------- the invoice, built from the record ---------------- */
 function crBuildLines(r) { // → [{ prod, desc, qty, price, auto: true }]
-  const L = []; const add = (p, qty, desc, price, extra) => { if (!p || !(+qty)) return; L.push({ id: uid('il'), prod: p.id, desc: desc || p.name, qty: crR2(qty), price: price != null ? price : +p.price || 0, auto: true, ...(extra || {}) }); };
+  const L = []; const add = (p, qty, desc, price, extra) => { if (!p || !(+qty)) return; L.push({ id: uid('il'), prod: p.id, desc: desc || p.name, qty: crR2(qty), price: price != null ? price : +p.price || 0, gst: p.gst !== false, auto: true, ...(extra || {}) }); };
   const fz = crFees(); const hrs = crWorkedMins(r) / 60; const tr = crTravel(r); const sharedFarm = tr.some((x) => /same farm/.test(x.why));
   // appointment fee
   const ap = crList('crprod').find((p) => !p.gone && p.role === 'appt' && (p.types || []).includes(r.type)) || crRole('appt');
@@ -178,7 +178,9 @@ function crBuildLines(r) { // → [{ prod, desc, qty, price, auto: true }]
 }
 const CR_INV_ST = { notready: 'Not ready for billing', pending: 'Pending approval', approved: 'Approved — not sent', sent: 'Sent', paid: 'Paid' };
 function crInvFor(r) { return crList('crinv').find((x) => !x.gone && x.rec === r.id) || null; }
-function crInvTotals(inv) { const fz = crFees(); const sub = crR2((inv.lines || []).reduce((s, l) => s + (+l.qty || 0) * (+l.price || 0), 0)); const gst = crR2(sub * (fz.gst / 100)); return { sub, gst, total: crR2(sub + gst) }; }
+const CR_GST = 10; // GST is always 10% — each item in the price list says whether it has GST (only changed there)
+const crLineGst = (l) => (l.gst != null ? !!l.gst : (crProd(l.prod) || {}).gst !== false);
+function crInvTotals(inv) { const L = inv.lines || []; const sub = crR2(L.reduce((s, l) => s + (+l.qty || 0) * (+l.price || 0), 0)); const gst = crR2(L.reduce((s, l) => s + (crLineGst(l) ? (+l.qty || 0) * (+l.price || 0) * CR_GST / 100 : 0), 0)); return { sub, gst, total: crR2(sub + gst) }; }
 function crInvSync(r) { // make or refresh the invoice from the record (lines you've added, changed or removed by hand are kept that way)
   let inv = crInvFor(r); if (inv && !['notready', 'pending'].includes(inv.status)) return inv; // approved: the record no longer changes it
   const sig = (l) => l.prod + '|' + l.desc; const auto = crBuildLines(r);

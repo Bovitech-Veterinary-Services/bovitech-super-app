@@ -130,10 +130,12 @@ const SETUP = [
     'They accept the email from Google, and the calendar appears in their Google Calendar app (tick it on in the calendar list if it\'s hidden).',
     'Do the same for <b>Bovitech On Call</b> if anyone can\'t see it yet (vets need "Make changes to events" to see each person\'s on-call colour).',
     'Tick <b>✓ Done</b> once everyone can see theirs.'] },
-  { id: 'send2', t: 'Things to send Claude', steps: [
-    'The full ezyVet export (records, price list, inventory).',
-    'The vControl CSV format (for the on-call export).',
-    'Tick <b>✓ Done</b> when they\'re all sent.'] },
+  { id: 'vcontrol', t: 'Tue 3 Nov: get the vControl CSV import template and send it to Claude', steps: [
+    'Log in to vControl on the office computer.',
+    'Find the <b>CSV import</b> (it is usually under Import, Settings or Data).',
+    'Download the <b>template</b> (the blank CSV file showing the columns vControl expects). If there is a help page that explains each column, save or screenshot that too.',
+    'Send the template (and the help page, if there is one) to Claude in the Super App chat.',
+    'Tick <b>✓ Done</b>.'] },
 ];
 function setupJobs() { // admin logins only
   if (!(window.SBAuth && SBAuth.isAdmin && (SBAuth.isAdmin() || (typeof S !== 'undefined' && S.admin)))) return [];

@@ -461,6 +461,79 @@ details.notelog{display:inline-block;margin-left:6px;font-size:12px}details.note
 .cr-chb button.n{background:#fdeaea;border-color:#d71f2b;color:#a1111b;grid-column:span 2}.cr-chb button.r{background:#fff3c4;border-color:#d9a400;color:#6b4f00;grid-column:span 2}.cr-chb button.big{grid-column:span 2;padding:26px 4px}.cr-chb button:active{transform:scale(.96)}
 .cr-last{font-size:15px;line-height:1.6;margin:6px 0;color:#555}
 .cr-cnt{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:8px;margin:8px 0}.cr-cntr{border:1px solid var(--line,#e4e0d9);border-radius:12px;padding:8px;text-align:center}.cr-cntr .cr-row{justify-content:center}
+
+/* night mode: every light box gets a dark version (made automatically from the light colours) */
+html[data-theme=dark] .item:hover{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .richedit{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .f textarea.sidenote{background:#524914;color:var(--ink)}
+html[data-theme=dark] #detail.dna{background:#4a1c1f;color:var(--ink)}
+html[data-theme=dark] .dnareason{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .checks label.rt{background:#2b3b2b;color:var(--ink)}
+html[data-theme=dark] .farm{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .flagline{background:#524314;color:var(--ink)}
+html[data-theme=dark] .f input[type=text],html[data-theme=dark] .f input[type=number],html[data-theme=dark] .f input:not([type]),html[data-theme=dark] .f select,html[data-theme=dark] .f textarea,html[data-theme=dark] .rep input,html[data-theme=dark] .rep select{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .f textarea.warn{background:#521414;color:var(--ink)}
+html[data-theme=dark] .checks label{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .results{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .results div:hover{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .stop{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .job{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] details.jobgroup>summary{background:#3b352b;color:var(--ink)}
+html[data-theme=dark] .job.jobsel{background:#524614;color:var(--ink)}
+html[data-theme=dark] .bulkbar{background:#524514;color:var(--ink)}
+html[data-theme=dark] .bkop{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .bkop.on{background:#524214;color:var(--ink)}
+html[data-theme=dark] .setsec>summary .setlock{background:#524414;color:var(--ink)}
+html[data-theme=dark] .nphoto button{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .card.keepcard{background:#26402c;color:var(--ink)}
+html[data-theme=dark] .fpin.tbc{background:#521414;color:var(--ink)}
+html[data-theme=dark] .pebar{background:#524414;color:var(--ink)}
+html[data-theme=dark] .apslide{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .chkbtn.on{background:#4c1a1a;color:var(--ink)}
+html[data-theme=dark] .nodet{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] 34%,html[data-theme=dark] 68%{background:#524914;color:var(--ink)}
+html[data-theme=dark] textarea.nomention{background:#524a14;color:var(--ink)}
+html[data-theme=dark] .card.nomention.empty{background:#524a14;color:var(--ink)}
+html[data-theme=dark] .card.cs-yellow,html[data-theme=dark] textarea.cs-yellow{background:#524514;color:var(--ink)}
+html[data-theme=dark] .card.cs-red,html[data-theme=dark] textarea.cs-red{background:#4c1a1a;color:var(--ink)}
+html[data-theme=dark] .card.cs-orange,html[data-theme=dark] textarea.cs-orange{background:#523314;color:var(--ink)}
+html[data-theme=dark] .card.cs-green,html[data-theme=dark] textarea.cs-green{background:#254129;color:var(--ink)}
+html[data-theme=dark] .card.cs-blue,html[data-theme=dark] textarea.cs-blue{background:#1c2f4a;color:var(--ink)}
+html[data-theme=dark] .card.cs-purple,html[data-theme=dark] textarea.cs-purple{background:#362244;color:var(--ink)}
+html[data-theme=dark] .card.cs-grey,html[data-theme=dark] textarea.cs-grey{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .card.caution{background:#524814;color:var(--ink)}
+html[data-theme=dark] .nk-warn,html[data-theme=dark] .nk-repair,html[data-theme=dark] .nk-assess{background:#4c1a1a;color:var(--ink)}
+html[data-theme=dark] .nk-caution,html[data-theme=dark] .nk-minor{background:#524814;color:var(--ink)}
+html[data-theme=dark] .nk-side{background:#524814;color:var(--ink)}
+html[data-theme=dark] .edhead{background:#524814;color:var(--ink)}
+html[data-theme=dark] .adminbar{background:#524814;color:var(--ink)}
+html[data-theme=dark] .cr-pill{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .cr-pill.draft{background:#524514;color:var(--ink)}
+html[data-theme=dark] .cr-pill.final{background:#254129;color:var(--ink)}
+html[data-theme=dark] .cr-pill.notready{background:#2a2826;color:var(--ink)}
+html[data-theme=dark] .cr-pill.pending{background:#523314;color:var(--ink)}
+html[data-theme=dark] .cr-pill.approved{background:#1c2f4a;color:var(--ink)}
+html[data-theme=dark] .cr-pill.sent{background:#362244;color:var(--ink)}
+html[data-theme=dark] .cr-pill.paid{background:#254129;color:var(--ink)}
+html[data-theme=dark] .cr-pill.over{background:#4c1a1a;color:var(--ink)}
+html[data-theme=dark] .cr-warn{background:#524514;color:var(--ink)}
+html[data-theme=dark] .cr-gst{background:#1c2f4a;color:var(--ink)}
+html[data-theme=dark] .cr-must{background:#4c1a1a;color:var(--ink)}
+html[data-theme=dark] .cr-must:has(input:checked){background:#254129;color:var(--ink)}
+html[data-theme=dark] .cr-chb button{background:#254129;color:var(--ink)}
+html[data-theme=dark] .cr-chb button.n{background:#4c1a1a;color:var(--ink)}
+html[data-theme=dark] .cr-chb button.r{background:#524514;color:var(--ink)}
+html[data-theme=dark] [style*="background:#f"]:not(.pcpin):not(.pcpin *):not(.mpin),html[data-theme=dark] [style*="background: #f"]:not(.pcpin *),html[data-theme=dark] [style*="background:#e"]:not(.pcpin *):not(.mpin),html[data-theme=dark] [style*="background:var(--card,#fff)"]{background-color:#2a2826!important;color:var(--ink)!important}
+html[data-theme=dark] [style*="background:#f"] .hint,html[data-theme=dark] [style*="background:#e"] .hint{color:var(--ink3)!important}
+html[data-theme=dark] a:not(.btn):not(.cbtn){color:#8fb8ff}html[data-theme=dark] .cbtn{color:#8fb8ff}
+html[data-theme=dark] [style*="color:#7a5a00"]{color:#f2d37b!important}html[data-theme=dark] [style*="color:#8a3b00"]{color:#f7c79b!important}html[data-theme=dark] [style*="color:#0d5c20"]{color:#8fe0a0!important}html[data-theme=dark] [style*="color:#a1111b"],html[data-theme=dark] [style*="color:#b42318"]{color:#ff9aa0!important}
+html[data-theme=dark] .setsec>summary .setlock{color:#cfe8d4}
+html[data-theme=dark] .cr-rich{background:#1a1918;color:var(--ink)}
+html[data-theme=dark] .cn{color:var(--ink)!important;background:rgba(255,255,255,.16)!important}
+html[data-theme=dark] .rb{text-shadow:0 0 2px rgba(0,0,0,.9),0 0 1px #000}
+html[data-theme=dark] .card h3 .sp,html[data-theme=dark] summary .sp{color:var(--ink)!important}
+html[data-theme=dark] .leaflet-container a{color:#0b63c4}html[data-theme=dark] .leaflet-container .leaflet-marker-icon,html[data-theme=dark] .leaflet-container .leaflet-marker-icon *{color:#222}
+html[data-theme=dark] .bk-buffer span{color:#e8c48a!important}
 </style>
 </head>
 <body>
