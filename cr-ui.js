@@ -1,7 +1,7 @@
 /* Bovitech Super App — Clinical records and invoicing (part 2: the pages — records, the record itself,
    quick entry in the crush, invoices, overdue, follow-ups, the price list, settings and PDFs). */
 'use strict';
-const CR_SUBS = [['recs', 'Records'], ['invs', 'Invoices'], ['overdue', 'Overdue'], ['fus', 'Follow-ups'], ['prods', 'Price list']];
+const CR_SUBS = [['recs', 'Records'], ['search', 'Search'], ['invs', 'Invoices'], ['overdue', 'Overdue'], ['fus', 'Follow-ups'], ['prods', 'Price list']];
 const crPill = (t, cls) => `<span class="cr-pill ${cls || ''}">${h(t)}</span>`;
 const CR_RST = { draft: ['Draft', 'draft'], final: ['Finalised', 'final'] };
 const CR_IST = { notready: 'notready', pending: 'pending', approved: 'approved', sent: 'sent', paid: 'paid' };
@@ -18,7 +18,8 @@ window.crBadge = crBadge;
 /* ---------------- the Records tab ---------------- */
 function crRender() {
   crSeed(); const pg = CR.page || 'recs';
-  if (pg === 'edit') { const r = crGet('crrec', CR.id); if (r) return crEditHtml(r); CR.page = 'recs'; }
+  if (pg === 'edit') { const r = crGet('crrec', CR.id); if (r) return (typeof ezyFindBar === 'function' ? `<div class="ezy-top" style="top:0">${ezyFindBar('')}</div>` : '') + crEditHtml(r); CR.page = 'recs'; }
+  if (pg === 'search' && typeof ezySearchHtml === 'function') return ezySearchHtml();
   if (pg === 'inv') { const inv = crGet('crinv', CR.id); if (inv) return crInvHtml(inv); CR.page = 'invs'; }
   if (CR.page === 'invs') return crInvsHtml(); if (CR.page === 'overdue') return crOverdueHtml(); if (CR.page === 'fus') return crFusHtml(); if (CR.page === 'prods') return crProdsHtml();
   return crRecsHtml();
@@ -100,7 +101,7 @@ function crEditHtml(r) {
   </div>
   <div class="card"><h3>Patients</h3><div class="hint" style="margin-bottom:6px">The whole herd or flock, a mob, or individual animals. Each procedure says which one it was for.</div>
     ${(r.patients || []).map((p) => crPatHtml(r, p)).join('')}
-    ${(() => { const b = IDX.biz.get(r.bid); const have = new Set((r.patients || []).map((p) => p.pid).filter(Boolean)); const more = b ? (b.patientIds || []).filter((p) => p.value && !have.has(p.value)) : []; return more.length ? `<div class="actions">${more.map((p) => `<button class="btn small" data-act="cr-ptherd" data-v="${h(p.value)}">➕ ${/sheep|flock|ovine/i.test(p.label || '') ? '🐑' : '🐄'} ${h(p.value)}</button>`).join('')}</div>` : ''; })()}
+    ${(() => { const b = IDX.biz.get(r.bid); const have = new Set((r.patients || []).map((p) => p.pid).filter(Boolean)); const more = b ? (b.patientIds || []).filter((p) => p.value && !have.has(p.value) && !p.inactive && p.species !== 'other') : []; return more.length ? `<div class="actions">${more.map((p) => `<button class="btn small" data-act="cr-ptherd" data-v="${h(p.value)}">➕ ${/sheep|flock|ovine/i.test(p.label || '') ? '🐑' : '🐄'} ${h(p.value)}</button>`).join('')}</div>` : ''; })()}
     <div class="actions"><button class="btn small" data-act="cr-ptadd" data-v="herd">➕ Herd / flock</button><button class="btn small" data-act="cr-ptadd" data-v="mob">➕ Mob</button><button class="btn small" data-act="cr-ptadd" data-v="animal">➕ Individual animal</button></div>
   </div>
   <div class="card"><h3>Procedures</h3>${(r.procs || []).map((p) => crProcHtml(r, p)).join('') || '<div class="hint">No procedures yet.</div>'}
@@ -145,7 +146,7 @@ function crProcHtml(r, pr) {
   const pd = t.quick === 'pd'; const c = pd ? crPdSummary(pr) : null; const split = pd && /split/.test(a.diagnosis || '');
   return `<div class="cr-item cr-proc"><div class="cr-row"><b>${h(t.name)}</b><span style="flex:1"></span>${pd ? `<button class="btn small" data-act="cr-voicefill" data-id="${pr.id}" type="button">🎤 Say the answers</button>` : ''}<button class="btn small" data-act="cr-prdel" data-id="${pr.id}" aria-label="Remove procedure">✕</button></div>
     <div class="f"><label>Which patient?</label><div class="cr-row"><select data-crpr="${pr.id}" data-k="pat" style="flex:1">${pats.map((p) => `<option value="${p.id}" ${p.id === pr.pat ? 'selected' : ''}>${h(crPatName(r, p.id))}</option>`).join('')}</select>${pats.length > 1 && (r.procs || []).length > 1 ? `<button class="btn small" type="button" data-act="cr-patall" data-id="${pr.id}">Use for all procedures</button>` : ''}</div></div>
-    <div class="f"><label>Done by</label><div class="cr-chks">${crStaffChoices(r).map((s) => `<label class="bk-radio"><input type="checkbox" data-crprstaff="${pr.id}" data-sid="${s.id}" ${(pr.staff || r.staff || []).includes(s.id) ? 'checked' : ''}> ${h(s.preferred_name || s.full_name)}</label>`).join('')}</div></div>
+    <div class="f"><label>Done by</label><div class="cr-chks">${crStaffChoices(r).map((s) => `<label class="bk-radio"><input type="checkbox" data-crprstaff="${pr.id}" data-sid="${s.id}" ${(pr.staff || r.staff || []).includes(s.id) ? 'checked' : ''}> ${h(s.preferred_name || s.full_name)}</label>`).join('')}</div>${crProcVets(r, pr) > 1 ? `<div class="cr-chks" style="margin-top:4px"><span class="hint">Bill their time:</span> <label class="bk-radio"><input type="radio" name="crbill-${pr.id}" data-crprbill="${pr.id}" value="each" ${pr.bill === 'each' ? 'checked' : ''}> separately (each vet's time)</label><label class="bk-radio"><input type="radio" name="crbill-${pr.id}" data-crprbill="${pr.id}" value="together" ${pr.bill === 'together' ? 'checked' : ''}> together (once)</label></div>` : ''}</div>
     ${inputs}
     ${split ? `<div class="f"><label>Early / late cut-off (days — this many or more counts as early)</label><input type="number" min="0" data-crpr="${pr.id}" data-k="answers.cut" value="${h(a.cut || '')}"></div>` : ''}
     ${pd ? `<div class="cr-pdres"><b>Results:</b> ${c.n ? `${c.n} examined — ${c.P + c.H} pregnant${c.H ? ` (${c.H} heavy)` : ''}${c.early || c.late ? ` · early ${c.early}, late ${c.late}` : ''} · ${c.NDP} NDP${c.R ? ` · ${c.R} recheck` : ''}` : 'none yet'}
@@ -233,7 +234,7 @@ function crInvsHtml() {
   <div class="chips">${[['all', 'All'], ...Object.entries(CR_INV_ST)].map(([k, l]) => `<button class="chip ${tab === k ? 'on' : ''}" data-act="cr-itab" data-v="${k}">${h(l)}${k !== 'all' && cnt(k) ? ` (${cnt(k)})` : ''}</button>`).join('')}</div>
   <div class="card">${L.length ? L.map(crInvRow).join('') : '<div class="hint">None.</div>'}</div></div>`;
 }
-function crInvRow(inv) { const tt = crInvTotals(inv); return `<div class="kv bk-tap" data-act="cr-invopen" data-id="${inv.id}" style="align-items:center"><div class="v"><b>${h(crBizName(inv.bid))}</b> ${crInvPill(inv)}<br><span class="hint">${inv.num ? h(inv.num) + ' · ' : ''}${inv.date ? bkDate(inv.date) : ''} · ${crMoney(tt.total)} inc GST</span></div></div>`; }
+function crInvRow(inv) { const tt = crInvTotals(inv); return `<div class="kv bk-tap" data-act="cr-invopen" data-id="${inv.id}" style="align-items:center"><div class="v"><b>${h(crBizName(inv.bid))}</b> ${crInvPill(inv)}<br><span class="hint">${inv.num ? h(inv.num) + ' · ' : ''}${inv.date ? bkDate(inv.date) : ''} · ${crMoney(tt.total)} inc GST</span>${(inv.notes || []).length ? (() => { const n = inv.notes[inv.notes.length - 1]; return `<br><span class="hint">📝 ${h(n.ini || '')}: ${h(n.t.length > 80 ? n.t.slice(0, 80) + '…' : n.t)}</span>`; })() : ''}</div></div>`; }
 function crInvHtml(inv) {
   const r = crGet('crrec', inv.rec); const tt = crInvTotals(inv); const st = inv.status; const ed = st === 'notready' || st === 'pending' || st === 'approved' || st === 'sent';
   const b = IDX.biz.get(inv.bid); const em = b ? (b.emails || []).filter((e) => emailUse(e).includes('invoice')).map((e) => e.value) : [];
@@ -254,6 +255,8 @@ function crInvHtml(inv) {
       ${st === 'sent' ? `<button class="btn primary" data-act="cr-istat" data-v="paid">✓ Mark paid</button>${crPerm('send') ? '<button class="btn" data-act="cr-isend">📧 Send again</button>' : ''}` : ''}
       ${st === 'paid' ? '<button class="btn" data-act="cr-istat" data-v="sent">Not paid after all</button>' : ''}</div>
     <div class="hint">Paid will come across from Xero automatically once Xero is connected (coming next). For now, mark it here.</div></div>
+  <div class="card cr-invnotes"><h3><span class="sp">📝 Notes (in-house only)</span><button class="btn small" data-act="cr-invnote" data-id="${inv.id}">➕ Add a note</button></h3><div class="hint" style="margin-bottom:4px">For the team only — never on the invoice the client gets.</div>
+    ${(inv.notes || []).slice().reverse().map((n) => `<div class="kv"><div class="k"><b>${h(n.ini || Bk.pname(n.by) || '?')}</b><br><span class="hint">${new Date(n.at).toLocaleString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' })}</span></div><div class="v">${h(n.t).replace(/\n/g, '<br>')}</div>${n.by === crMe() || crAdmin() ? `<button class="btn small" data-act="cr-invnotedel" data-id="${inv.id}" data-n="${n.id}" aria-label="Delete this note">✕</button>` : ''}</div>`).join('') || '<div class="hint">No notes yet.</div>'}</div>
   <div class="card"><h3>Change log</h3>${(inv.log || []).slice().reverse().map((x) => `<div class="kv"><div class="k">${new Date(x.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}</div><div class="v">${h(x.what)}${x.by ? ` <span class="hint">— ${h(Bk.pname(x.by))}</span>` : ''}</div></div>`).join('') || '<div class="hint">No changes yet.</div>'}</div></div>`;
 }
 function crOverdueHtml() {
@@ -300,7 +303,10 @@ function crProdOpen(p) {
       <div class="f"><label for="cp-esi">ESI (export slaughter interval)</label><input id="cp-esi" value="${h(x.esi || '')}"></div></div>
     <div class="f"><label for="cp-bar">Barcode</label><input id="cp-bar" value="${h(x.barcode || '')}"></div>
     <div class="f"><label for="cp-gst">GST</label><select id="cp-gst"><option value="1" ${x.gst !== false ? 'selected' : ''}>GST (10% added on invoices)</option><option value="0" ${x.gst === false ? 'selected' : ''}>GST-free</option></select></div>
+    ${(x.items || []).length ? `<div class="f"><label>In this bundle (adding it adds all of these)</label>${x.items.map((it, i) => { const c = crProd(it.prod); return `<div class="cr-row" style="align-items:center;gap:6px;margin:3px 0"><span style="flex:1">${h(c ? c.name : 'Missing item')}</span><select class="cp-bper" data-i="${i}">${[['fixed', 'always'], ['each', 'for each one'], ['ask', 'ask each time']].map(([v, l]) => `<option value="${v}" ${it.per === v ? 'selected' : ''}>${l}</option>`).join('')}</select><input class="cp-bq" data-i="${i}" type="number" min="0" step="any" value="${it.qty ?? ''}" style="width:80px" aria-label="Amount"><label class="bk-radio"><input type="checkbox" class="cp-bdel" data-i="${i}"> remove</label></div>`; }).join('')}<div class="hint">"always" adds that amount; "for each one" multiplies by how many of the bundle; "ask each time" asks for the amount.</div></div>` : ''}
+    ${x.fee && crProd(x.fee) ? `<div class="hint">Adds the ${h(crProd(x.fee).name)} (× ${x.feeQty || 1}) when it's given or dispensed.</div>` : ''}
     <label class="bk-radio" style="display:flex"><input type="checkbox" id="cp-active" ${x.active === false ? '' : 'checked'}> In use</label>`, () => {
+    if ((x.items || []).length) { const del = new Set([...document.querySelectorAll('.cp-bdel:checked')].map((c) => +c.dataset.i)); x.items = x.items.map((it, i) => { const per = (document.querySelector(`.cp-bper[data-i="${i}"]`) || {}).value || it.per; const q = (document.querySelector(`.cp-bq[data-i="${i}"]`) || {}).value; return { ...it, per, qty: per === 'ask' ? null : +q || 0 }; }).filter((_, i) => !del.has(i)); }
     const g = (id) => { const el = document.getElementById(id); return el ? el.value.trim() : ''; };
     x.cat = g('cp-cat'); x.name = g('cp-name'); if (!x.name) { toast('Give it a name'); return false; } x.unit = g('cp-unit') || 'each'; x.price = +g('cp-price') || 0; if (x.price) x.placeholder = false;
     if (document.getElementById('cp-cap')) x.cap = +g('cp-cap') || 200; if (x.role === 'appt') x.types = [...document.querySelectorAll('.cp-type:checked')].map((c) => c.value);
@@ -444,7 +450,7 @@ document.addEventListener('click', async (e) => {
     case 'cr-ptadd': if (!r) return; r.patients.push({ id: uid('pt'), level: d.v, species: 'cattle' }); done(r); break;
     case 'cr-ptdel': { if (!r) return; if (r.patients.length < 2) { toast('A record needs at least one patient'); return; } if ((r.procs || []).some((p) => p.pat === d.id) && !(await ask('A procedure is for this patient — remove it anyway? The procedure moves to the first patient.', 'Remove'))) return; r.patients = r.patients.filter((p) => p.id !== d.id); r.procs.forEach((p) => { if (p.pat === d.id) p.pat = r.patients[0].id; }); done(r); break; }
     case 'cr-patall': { if (!r) return; const pr = r.procs.find((p) => p.id === d.id); if (!pr) return; r.procs.forEach((p) => (p.pat = pr.pat)); done(r); toast('Every procedure is now for ' + crPatName(r, pr.pat).replace(/^\S+\s/, '')); break; }
-    case 'cr-ptherd': { if (!r) return; const v = d.v; const b = IDX.biz.get(r.bid); const p0 = b && (b.patientIds || []).find((x) => x.value === v); if (!p0) return; r.patients.push({ id: uid('pt'), level: 'herd', pid: p0.value, plabel: p0.label || '', species: /sheep|flock|ovine/i.test(p0.label || '') ? 'sheep' : 'cattle' }); done(r); break; }
+    case 'cr-ptherd': { if (!r) return; const v = d.v; const b = IDX.biz.get(r.bid); const p0 = b && (b.patientIds || []).find((x) => x.value === v); if (!p0) return; r.patients.push({ id: uid('pt'), level: 'herd', pid: p0.value, plabel: p0.label || '', species: p0.species === 'sheep' || (!p0.species && /sheep|flock|ovine/i.test(p0.label || '')) ? 'sheep' : 'cattle' }); done(r); break; }
     case 'cr-prdel': { if (!r) return; const pr = r.procs.find((p) => p.id === d.id); if (pr && (pr.animals || []).length && !(await ask(`Remove this procedure and its ${pr.animals.length} results?`, 'Remove', true))) return; r.procs = r.procs.filter((p) => p.id !== d.id); done(r); break; }
     case 'cr-chute': { if (!r) return; const pr = r.procs.find((p) => p.id === d.id); if (pr) crChute(r, pr); break; }
     case 'crc-close': crChuteClose(); break;
@@ -460,7 +466,9 @@ document.addEventListener('click', async (e) => {
     case 'cr-dict': { if (!r) return; el.textContent = '🎙 Listening — tap to stop'; if (CR.dict) { CR.dict.stop(); CR.dict = null; break; }
       CR.dict = crListen((t) => { r.notes = ((r.notes || '') + (r.notes ? ' ' : '') + t).trim(); crSave(r); const ta = document.querySelector('[data-crf=notes]'); if (ta) ta.value = r.notes; }, { continuous: true, onEnd: () => { CR.dict = null; el.textContent = '🎤 Speak'; } }); break; }
     case 'cr-teach': crTeach(d.heard || ''); break;
-    case 'cr-itadd': { if (!r) return; const id = await crPickProd(['med', 'consumable', 'merch']); if (!id) return; const p = crProd(id); r.items.push({ id: uid('it'), prod: id, qty: 1, as: 'dose', mode: p.cat === 'merch' ? 'merch' : p.cat === 'consumable' ? 'cons' : 'admin' }); done(r); break; }
+    case 'cr-itadd': { if (!r) return; const id = await crPickProd(['med', 'consumable', 'merch', 'bundle']); if (!id) return; const p = crProd(id);
+      if (p.items && p.items.length) { const L = await crBundleExpand(p, 1); if (!L) return; L.forEach((x) => { const c = crProd(x.prod); r.items.push({ id: uid('it'), prod: x.prod, qty: x.qty, as: 'dose', mode: c.cat === 'merch' ? 'merch' : c.cat === 'consumable' ? 'cons' : 'admin', from: p.id }); }); done(r); break; }
+      r.items.push({ id: uid('it'), prod: id, qty: 1, as: 'dose', mode: p.cat === 'merch' ? 'merch' : p.cat === 'consumable' ? 'cons' : 'admin' }); done(r); break; }
     case 'cr-itdel': if (!r) return; r.items = r.items.filter((x) => x.id !== d.id); done(r); break;
     case 'cr-whp': { if (!r) return; const L = r.items.map((it) => crProd(it.prod)).filter((p) => p && (p.whpMeat || p.whpMilk || p.esi)); const txt = `Withholding periods for the treatment on ${bkDate(r.date, { day: 'numeric', month: 'long' })}:\n` + L.map((p) => `• ${p.name}: ${[p.whpMeat ? 'meat ' + p.whpMeat : '', p.whpMilk ? 'milk ' + p.whpMilk : '', p.esi ? 'ESI ' + p.esi : ''].filter(Boolean).join(', ')}`).join('\n') + `\n— ${(crBrand().lines || [])[0] || 'Bovitech Veterinary Services'}`;
       if (navigator.share) { try { await navigator.share({ text: txt }); break; } catch (x) { if (x && x.name === 'AbortError') break; } } try { await navigator.clipboard.writeText(txt); toast('Copied — paste it into a text or email'); } catch (x) { toast("Couldn't copy"); } break; }
@@ -480,7 +488,13 @@ document.addEventListener('click', async (e) => {
     // the invoice
     case 'cr-istat': if (inv) await crInvStatus(inv, d.v); break;
     case 'cr-rebuild': { if (!inv) return; const rr = crGet('crrec', inv.rec); if (!rr) return; if (!(await ask('Rebuild the lines from the record? Lines you added or changed by hand are lost.', 'Rebuild'))) return; inv.lines = []; crInvSync(rr); crInvLog(inv, 'Rebuilt from the record'); done(inv); break; }
-    case 'cr-lineadd': { if (!inv) return; const id = await crPickProd(CR_PCATS.map((c) => c[0])); if (!id) return; const p = crProd(id); inv.lines.push({ id: uid('il'), prod: id, gst: p.gst !== false, desc: p.name, qty: 1, price: +p.price || 0, auto: false }); if (['approved', 'sent'].includes(inv.status)) crInvLog(inv, `Added "${p.name}"`); done(inv); break; }
+    case 'cr-invnote': case 'cr-invnotedel': { const iv = crGet('crinv', d.id); if (!iv) return;
+      if (a === 'cr-invnotedel') { if (!(await ask('Delete this note?', 'Yes — delete it', true))) return; iv.notes = (iv.notes || []).filter((n) => n.id !== d.n); crSave(iv); Sync.soon(); renderAll(); return; }
+      const ok = await askBox('📝 Note on this invoice', '<div class="f"><label>Note (in-house only — the client never sees it)</label><textarea data-ask="t" rows="4" style="width:100%;font-size:16px;padding:9px;border:1px solid var(--line);border-radius:9px"></textarea></div>', 'Add the note'); const t = ((ASK_FORM && ASK_FORM.t) || '').trim(); if (!ok || !t) return;
+      const me = SBAuth.staff || {}; iv.notes = [...(iv.notes || []), { id: uid('in'), at: Date.now(), by: crMe(), ini: me.initials || (localStorage.getItem('bvp-initials') || ''), t }]; crSave(iv); Sync.soon(); renderAll(); toast('Note added'); return; }
+    case 'cr-lineadd': { if (!inv) return; const id = await crPickProd(CR_PCATS.map((c) => c[0])); if (!id) return; const p = crProd(id);
+      if (p.items && p.items.length) { const L = await crBundleExpand(p, 1); if (!L) return; L.forEach((x) => { const c = crProd(x.prod); inv.lines.push({ id: uid('il'), prod: c.id, gst: c.gst !== false, desc: c.name, qty: x.qty, price: +c.price || 0, auto: false }); }); if (['approved', 'sent'].includes(inv.status)) crInvLog(inv, `Added "${p.name}" (${L.length} items)`); done(inv); break; }
+      inv.lines.push({ id: uid('il'), prod: id, gst: p.gst !== false, desc: p.name, qty: 1, price: +p.price || 0, auto: false }); if (['approved', 'sent'].includes(inv.status)) crInvLog(inv, `Added "${p.name}"`); done(inv); break; }
     case 'cr-linedel': { if (!inv) return; const l = inv.lines.find((x) => x.id === d.id); inv.lines = inv.lines.filter((x) => x.id !== d.id); if (l && l.auto) inv.removed = [...(inv.removed || []), l.prod + '|' + l.desc]; if (l && ['approved', 'sent'].includes(inv.status)) crInvLog(inv, `Removed "${l.desc}"`); done(inv); break; }
     case 'cr-isend': { if (!inv) return; const em = crInvEmails(inv.bid); if (!em.length) { toast('Add an invoicing email to the business first'); return; } crPrint(crInvoiceDoc(inv));
       const ok = await askBox('Send the invoice', `<p>The invoice is open to print — choose <b>Save as PDF</b>, then attach it to the email that opens next, to <b>${em.map(h).join(', ')}</b>.</p><p class="hint">Emailing it straight from the app (no attaching) comes with the Xero connection.</p>`, 'Open the email', false, 'Cancel');
@@ -513,7 +527,10 @@ document.addEventListener('change', async (e) => {
   if (CR.page !== 'edit' || S.tab !== 'rec') return; const r = crGet('crrec', CR.id); if (!r || !t.closest('.cr-edit')) return;
   const fin = () => { crSave(r); crInvSync(r); Sync.soon(); renderAll(); };
   if (ds.crf) { let v = val(); if (ds.crf === 'ah' && v === '') v = null; crSetPath(r, ds.crf, v); if (ds.crf === 'date' || ds.crf === 'type') r.routeOk = ds.crf === 'date' ? r.routeOk : r.routeOk; return fin(); }
-  if (ds.crprstaff) { const pr = r.procs.find((x) => x.id === ds.crprstaff); if (!pr) return; const cur = new Set(pr.staff || r.staff || []); if (t.checked) cur.add(ds.sid); else cur.delete(ds.sid); pr.staff = [...cur]; if (t.checked && !(r.staff || []).includes(ds.sid)) r.staff = [...(r.staff || []), ds.sid]; return fin(); }
+  if (ds.crprstaff) { const pr = r.procs.find((x) => x.id === ds.crprstaff); if (!pr) return; const cur = new Set(pr.staff || r.staff || []); if (t.checked) cur.add(ds.sid); else cur.delete(ds.sid); pr.staff = [...cur]; if (t.checked && !(r.staff || []).includes(ds.sid)) r.staff = [...(r.staff || []), ds.sid];
+    if (crProcVets(r, pr) > 1 && t.checked && !pr.bill) { fin(); askBox('Two vets on this procedure', '<p>Are you billing their time <b>separately</b> (each vet\'s time is charged — 2 vets for 1 hour is 2 hours) or <b>together</b> (the time is charged once)?</p>', 'Separately', false, 'Together').then((v) => { pr.bill = v === true ? 'each' : 'together'; fin(); }); return; }
+    if (crProcVets(r, pr) < 2) delete pr.bill; return fin(); }
+  if (ds.crprbill) { const pr = r.procs.find((x) => x.id === ds.crprbill); if (!pr) return; pr.bill = t.value; return fin(); }
   if (ds.crstaff) { r.staff = (r.staff || []).filter((x) => x !== ds.crstaff); if (t.checked) r.staff.push(ds.crstaff); return fin(); }
   if (ds.crbr != null) { r.breaks[+ds.crbr].mins = +t.value || 0; return fin(); }
   if (ds.crpt) { const p = r.patients.find((x) => x.id === ds.crpt); if (p) p[ds.k] = t.value; return fin(); }

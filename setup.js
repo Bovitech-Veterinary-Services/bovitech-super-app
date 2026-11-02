@@ -2,7 +2,7 @@
    step-by-step instructions and a button to copy the code that's needed. Tick ✓ Done when finished
    (it's remembered on every device). Some tick themselves once the app can see they're done. */
 'use strict';
-const SETUP_FILES = { sql08: 'supabase/08-qr-reset.sql', sql07: 'supabase/07-gcal-lock.sql', users: 'supabase/functions/users/index.ts', sql03: 'supabase/03-sms.sql', sql04: 'supabase/04-users.sql', sql05: 'supabase/05-calendar-sms.sql', sql06: 'supabase/06-admins.sql', gcal: 'supabase/functions/gcal/index.ts', jobs: 'supabase/functions/jobs/index.ts' };
+const SETUP_FILES = { sql09: 'supabase/09-ezyvet-archive.sql', sql08: 'supabase/08-qr-reset.sql', sql07: 'supabase/07-gcal-lock.sql', users: 'supabase/functions/users/index.ts', sql03: 'supabase/03-sms.sql', sql04: 'supabase/04-users.sql', sql05: 'supabase/05-calendar-sms.sql', sql06: 'supabase/06-admins.sql', gcal: 'supabase/functions/gcal/index.ts', jobs: 'supabase/functions/jobs/index.ts' };
 const SETUP_REDIRECT = 'https://ymzweuhxdcxkzweacwdi.supabase.co/functions/v1/gcal';
 const SETUP_SUPA = 'https://supabase.com/dashboard/project/ymzweuhxdcxkzweacwdi';
 const setupCopy = (f, label) => `<button class="btn small greenbtn" data-act="setup-copy" data-f="${f}">📋 ${label}</button>`;
@@ -130,12 +130,20 @@ const SETUP = [
     'They accept the email from Google, and the calendar appears in their Google Calendar app (tick it on in the calendar list if it\'s hidden).',
     'Do the same for <b>Bovitech On Call</b> if anyone can\'t see it yet (vets need "Make changes to events" to see each person\'s on-call colour).',
     'Tick <b>✓ Done</b> once everyone can see theirs.'] },
-  { id: 'vcontrol', t: 'Tue 3 Nov: get the vControl CSV import template and send it to Claude', steps: [
-    'Log in to vControl on the office computer.',
-    'Find the <b>CSV import</b> (it is usually under Import, Settings or Data).',
-    'Download the <b>template</b> (the blank CSV file showing the columns vControl expects). If there is a help page that explains each column, save or screenshot that too.',
-    'Send the template (and the help page, if there is one) to Claude in the Super App chat.',
-    'Tick <b>✓ Done</b>.'] },
+  { id: 'sql09', t: 'Run database update 9 (the ezyVet history and record search)', auto: () => !!(window.EZ && EZ.sql09), steps: [
+    `Tap ${setupCopy('sql09', 'Copy update 9')}.`,
+    'Open Supabase → <b>SQL Editor</b> → <b>New query</b>, paste it all, and tap <b>Run</b>. It says "Success. No rows returned".',
+    'Tick <b>✓ Done</b>. (It is safe to run again.)'] },
+  { id: 'ezyimport', t: 'Import the ezyVet export', after: 'sql09', auto: () => !!(D && D.settings && D.settings.ezyImport), steps: [
+    'Use the office computer, signed in as an admin, with the ezyVet backup zip (bovitechvet_backup.zip — the small one, not the 13 GB attachments) downloaded.',
+    '<button class="btn primary" data-act="ezy-start">📥 Choose the ezyVet backup zip…</button>',
+    'Check the summary (clients matched, new, maybe the same; herds; price list and bundles; appointments; history), then tap <b>📥 Import now</b>. Leave the app open until it says finished — the history takes a few minutes. If it stops, run it again: nothing is doubled.',
+    'Then work through <b>Jobs</b>: "ezyVet import: the same client?", "ezyVet notes: a warning, or just info?" and "No category" (new active clients).'] },
+  { id: 'vcontrol2', t: 'vControl: try uploading the on-call schedule files from the app', steps: [
+    'In the app: <b>Scheduling → On call → ⬇ Export (CSV)</b>. Choose the dates, then tap <b>⬇ 111097-Jess.csv</b> and <b>⬇ 111097-Milly.csv</b> (one file per vet, in the same layout as vControl\'s own download: Time and Label).',
+    'In vControl, open the <b>111097-Jess</b> schedule and use its CSV import to upload 111097-Jess.csv. Check the times came in right. Do the same for Milly.',
+    'If vControl rejects it or the times are wrong, send Claude the error message (or what it shows) — the layout is easy to change.',
+    'Tick <b>✓ Done</b> when it works.'] },
 ];
 function setupJobs() { // admin logins only
   if (!(window.SBAuth && SBAuth.isAdmin && (SBAuth.isAdmin() || (typeof S !== 'undefined' && S.admin)))) return [];

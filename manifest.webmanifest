@@ -1,3 +1,35 @@
-{ "name": "Bovitech Super App", "short_name": "Bovitech", "start_url": "./", "display": "standalone",
-  "background_color": "#ffffff", "theme_color": "#141414",
-  "icons": [ { "src": "img/icon-192.png", "sizes": "192x192", "type": "image/png" }, { "src": "img/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" } ] }
+{
+ "name": "Bovitech Super App",
+ "short_name": "Bovitech",
+ "start_url": "./",
+ "display": "standalone",
+ "background_color": "#ffffff",
+ "theme_color": "#141414",
+ "icons": [
+  {
+   "src": "img/icon-192.png",
+   "sizes": "192x192",
+   "type": "image/png"
+  },
+  {
+   "src": "img/icon-512.png",
+   "sizes": "512x512",
+   "type": "image/png",
+   "purpose": "any"
+  }
+ ],
+ "shortcuts": [
+  {
+   "name": "Voice command",
+   "short_name": "🎤 Voice",
+   "description": "Open the app listening for a voice command",
+   "url": "./?voice=1",
+   "icons": [
+    {
+     "src": "img/icon-192.png",
+     "sizes": "192x192"
+    }
+   ]
+  }
+ ]
+}

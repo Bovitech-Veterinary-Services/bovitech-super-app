@@ -17,11 +17,12 @@ const crR2 = (n) => Math.round((+n || 0) * 100) / 100; const crR4 = (n) => Math.
 const crTime = (t) => (t ? bkTime(t) : '');
 const crMins = (t) => (t ? bkMin(t) : null);
 const crIsVet = (sid) => { const p = Bk.person(sid) || (SBAuth.list || []).find((x) => x.id === sid); return !!p && p.role === 'vet'; };
+const crProcVets = (r, pr) => (pr.staff || r.staff || []).filter(crIsVet).length; // how many vets did this procedure
 const crMe = () => (SBAuth.staff && SBAuth.staff.id) || null;
 const crAdmin = () => !!(window.SBAuth && SBAuth.isAdmin());
 
 /* ---------------- the price list: services, medications, consumables, merchandise, certificates, lab tests ---------------- */
-const CR_PCATS = [['service', 'Services and fees'], ['med', 'Medications (S4 and OTC)'], ['consumable', 'Consumables'], ['merch', 'Merchandise'], ['cert', 'Certificates'], ['lab', 'Lab tests']];
+const CR_PCATS = [['service', 'Services and fees'], ['med', 'Medications (S4 and OTC)'], ['consumable', 'Consumables'], ['merch', 'Merchandise'], ['cert', 'Certificates'], ['lab', 'Lab tests'], ['bundle', 'Bundles (several items added together)']];
 const CR_ROLES = { appt: 'Appointment fee', proc: 'Procedure', ahEarly: 'After hours — early (6–7pm, 7–8am; weekends and public holidays 7am–7pm)', ahLate: 'After hours — late (7pm–7am)', labour: 'Additional labour (per person, per hour)', travel: 'Travel (per km)', fuel: 'Fuel surcharge (per km)', subsidy: 'Subsidised travel — TSE / SDI (per km)' };
 const CR_PROD_DEFAULTS = [
   { id: 'p-appt-farm', cat: 'service', role: 'appt', name: 'On-farm appointment', unit: 'each', price: 0, types: ['type-farm'] },
@@ -46,6 +47,13 @@ const CR_PROD_DEFAULTS = [
 const crProds = (cat) => crList('crprod').filter((p) => !p.gone && p.active !== false && (!cat || p.cat === cat)).sort((a, b) => (a.name || '').localeCompare(b.name || ''));
 const crRole = (role) => crList('crprod').find((p) => !p.gone && p.role === role && p.active !== false);
 const crProd = (id) => crGet('crprod', id);
+async function crBundleExpand(p, qty) { // a bundle → its items [{ prod, qty }] (bundles inside bundles too); amounts that change each time are asked for
+  const out = []; const ask = []; const walk = (b, n, depth) => { (b.items || []).forEach((it) => { const c = crProd(it.prod); if (!c || c.active === false) return; const q = it.per === 'fixed' ? it.qty : it.per === 'each' ? crR4(it.qty * n) : null;
+    if (c.items && c.items.length && depth < 4) { if (q == null) ask.push({ c, depth, nest: true }); else walk(c, q, depth + 1); } else if (q == null) ask.push({ c }); else out.push({ prod: c.id, qty: q }); }); };
+  walk(p, +qty || 1, 0);
+  if (ask.length) { const ok = await askBox(p.name, `<p class="hint">How many of each? (Leave 0 to leave it off.)</p>${ask.map((a, i) => `<div class="f"><label>${h(a.c.name)}${a.c.unit && a.c.unit !== 'each' ? ' (' + h(a.c.unit) + ')' : ''}</label><input type="number" min="0" step="any" data-ask="bq${i}" value="0" style="width:120px;padding:8px;font-size:16px"></div>`).join('')}`, 'Add them');
+    if (!ok) return null; ask.forEach((a, i) => { const n = +ASK_FORM['bq' + i] || 0; if (!n) return; if (a.nest) walk(a.c, n, 1); else out.push({ prod: a.c.id, qty: n }); }); }
+  return out; }
 function crProdLabel(p, qty, as) { // "5 mL (single dose)" or "1 bottle (500 mL)" — never confused
   if (!p) return ''; const u = p.unit || 'each';
   if (p.cat === 'med' || p.cat === 'consumable') return as === 'pack' ? `${qty} ${p.packName || 'bottle'}${qty == 1 ? '' : 's'} (${p.pack || '?'} ${u})` : `${qty} ${u} (single dose)`;
@@ -103,8 +111,8 @@ function crNewRec(o) { // o: { bk (appointment), bid, cid, date }
   const b = o.bk || null; const r = { id: uid('cr'), bkId: b ? b.id : null, bid: b ? b.bid : o.bid || null, cid: b ? b.cid : o.cid || null, date: b ? b.date : o.date || bkToday(), type: b ? b.type : (Bk.cfg('type')[0] || {}).id,
     staff: b ? [...(b.staff || [])] : [crMe()].filter(Boolean), start: b ? b.start : '', end: b && b.start ? bkHHMM(bkMin(b.start) + (b.mins || 60)) : '', breaks: b && b.lunch ? [{ mins: Bk.lunchCfg().mins, lunch: true }] : [],
     stops: b ? bkClone(Bk.stops(b)) : [], routeOk: false, labour: { people: 0, hours: 0 }, ah: null, patients: [], procs: [], items: [], labs: [], certs: [], notes: '', links: [], status: 'draft', at: Date.now(), by: crMe() };
-  const pids = (r.bid && IDX.biz.get(r.bid) && IDX.biz.get(r.bid).patientIds) || []; // the herd / flock to start with
-  (b && b.pids && b.pids.length ? b.pids : pids.slice(0, 1)).forEach((p) => r.patients.push({ id: uid('pt'), level: 'herd', pid: p.value, plabel: p.label || '', species: /sheep|flock/i.test(p.label || '') ? 'sheep' : 'cattle' }));
+  const pids = (r.bid && IDX.biz.get(r.bid) && (IDX.biz.get(r.bid).patientIds || []).filter((p) => !p.inactive && p.species !== 'other')) || []; // the herd / flock to start with (active cattle and sheep only)
+  (b && b.pids && b.pids.length ? b.pids : pids.slice(0, 1)).forEach((p) => r.patients.push({ id: uid('pt'), level: 'herd', pid: p.value, plabel: p.label || '', species: p.species === 'sheep' || (!p.species && /sheep|flock|ovine/i.test(p.label || '')) ? 'sheep' : 'cattle' }));
   if (!r.patients.length) r.patients.push({ id: uid('pt'), level: 'herd', species: 'cattle' });
   if (b) (b.svcs || []).forEach((x) => { const t = crTplForSvc(x.svc); if (t && !r.procs.some((p) => p.tpl === t.id)) r.procs.push({ id: uid('pr'), tpl: t.id, pat: r.patients[0].id, answers: {}, head: x.head || 0, animals: [] }); });
   return r;
@@ -153,15 +161,15 @@ function crTravel(r) { // → [{ fid, name, km, pct, why }]
 /* ---------------- the invoice, built from the record ---------------- */
 function crBuildLines(r) { // → [{ prod, desc, qty, price, auto: true }]
   const L = []; const add = (p, qty, desc, price, extra) => { if (!p || !(+qty)) return; L.push({ id: uid('il'), prod: p.id, desc: desc || p.name, qty: crR2(qty), price: price != null ? price : +p.price || 0, gst: p.gst !== false, auto: true, ...(extra || {}) }); };
-  const fz = crFees(); const hrs = crWorkedMins(r) / 60; const tr = crTravel(r); const sharedFarm = tr.some((x) => /same farm/.test(x.why));
+  const fz = crFees(); const hrs0 = crWorkedMins(r) / 60; const hrs = hrs0; const tr = crTravel(r); const sharedFarm = tr.some((x) => /same farm/.test(x.why));
   // appointment fee
   const ap = crList('crprod').find((p) => !p.gone && p.role === 'appt' && (p.types || []).includes(r.type)) || crRole('appt');
   if (ap) add(ap, 1, ap.name + (sharedFarm ? ` (${fz.sharedPct}% shared)` : ''), crR2((+ap.price || 0) * (sharedFarm ? 1 - fz.sharedPct / 100 : 1)));
-  // procedures
-  (r.procs || []).forEach((pr) => { const t = crTpl(pr.tpl); if (!t || !t.charge) return; const c = t.charge;
-    if (c.rule === 'pd') { const n = crPdSummary(pr).n || +pr.head || 0; const hph = hrs ? n / hrs : Infinity; if (n && hph >= fz.pdMinHph && c.head) add(crProd(c.head), n, `${t.name} — ${n} head`); else if (c.hour) add(crProd(c.hour), crR2(hrs), `${t.name} — ${crR2(hrs)} hours${n ? ` (${n} head, under ${fz.pdMinHph} an hour)` : ''}`); }
+  // procedures (an hourly procedure done by more than one vet, billed separately, charges each vet's time)
+  (r.procs || []).forEach((pr) => { const t = crTpl(pr.tpl); if (!t || !t.charge) return; const c = t.charge; const nv = pr.bill === 'each' ? Math.max(1, crProcVets(r, pr)) : 1; const hrs = hrs0 * nv; const xv = nv > 1 ? ` (${nv} vets, billed separately)` : '';
+    if (c.rule === 'pd') { const n = crPdSummary(pr).n || +pr.head || 0; const hph = hrs0 ? n / hrs0 : Infinity; if (n && hph >= fz.pdMinHph && c.head) add(crProd(c.head), n, `${t.name} — ${n} head`); else if (c.hour) add(crProd(c.hour), crR2(hrs), `${t.name} — ${crR2(hrs)} hours${n ? ` (${n} head, under ${fz.pdMinHph} an hour)` : ''}${xv}`); }
     else if (c.head) add(crProd(c.head), +pr.head || (pr.animals || []).length || 1, `${t.name}`);
-    else if (c.hour) add(crProd(c.hour), crR2(hrs), `${t.name} — ${crR2(hrs)} hours`); });
+    else if (c.hour) add(crProd(c.hour), crR2(hrs), `${t.name} — ${crR2(hrs)} hours${xv}`); });
   // after hours, additional labour
   const ah = crAhEff(r); if (ah === 'early') add(crRole('ahEarly'), 1); if (ah === 'late') add(crRole('ahLate'), 1);
   if (r.labour && +r.labour.people && +r.labour.hours) add(crRole('labour'), (+r.labour.people) * (+r.labour.hours), `Additional labour — ${r.labour.people} × ${r.labour.hours} hours`);
@@ -172,7 +180,8 @@ function crBuildLines(r) { // → [{ prod, desc, qty, price, auto: true }]
     const fu = crRole('fuel'); if (fu) add(fu, x.km, `Fuel surcharge — ${x.name}, ${x.km} km${x.pct ? ` (${x.pct}% off)` : ''}`, crR4((+fu.price || 0) * mult)); });
   // certificates, items, lab tests
   (r.certs || []).forEach((c) => add(crProd(c.prod), c.qty || 1));
-  (r.items || []).forEach((it) => { const p = crProd(it.prod); if (!p) return; const pack = it.as === 'pack'; add(p, it.qty, `${p.name} — ${crProdLabel(p, it.qty, it.as)}${it.mode === 'disp' ? ' dispensed' : it.mode === 'admin' ? ' given' : ''}`, pack ? +p.pricePack || 0 : +p.price || 0, { as: it.as || 'dose' }); });
+  (r.items || []).forEach((it) => { const p = crProd(it.prod); if (!p) return; const pack = it.as === 'pack'; add(p, it.qty, `${p.name} — ${crProdLabel(p, it.qty, it.as)}${it.mode === 'disp' ? ' dispensed' : it.mode === 'admin' ? ' given' : ''}`, pack ? +p.pricePack || 0 : +p.price || 0, { as: it.as || 'dose' });
+    const fee = p.fee && crProd(p.fee); if (fee && +it.qty) add(fee, p.feeQty || 1, `${fee.name} — ${p.name}`); }); // a medication's dispensing fee
   (r.labs || []).forEach((l) => { const p = l.prod && crProd(l.prod); if (p) add(p, 1, `${p.name}${l.lab ? ' — ' + l.lab : ''}`); });
   return L;
 }

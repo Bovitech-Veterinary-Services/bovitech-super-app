@@ -534,6 +534,17 @@ html[data-theme=dark] .rb{text-shadow:0 0 2px rgba(0,0,0,.9),0 0 1px #000}
 html[data-theme=dark] .card h3 .sp,html[data-theme=dark] summary .sp{color:var(--ink)!important}
 html[data-theme=dark] .leaflet-container a{color:#0b63c4}html[data-theme=dark] .leaflet-container .leaflet-marker-icon,html[data-theme=dark] .leaflet-container .leaflet-marker-icon *{color:#222}
 html[data-theme=dark] .bk-buffer span{color:#e8c48a!important}
+#ezybox{position:fixed;inset:0;z-index:60;background:rgba(0,0,0,.45);overflow:auto;padding:16px}#ezybox[hidden]{display:none}
+#ezybox .ezy-in{max-width:860px;margin:0 auto;background:var(--card,#fff);color:var(--ink);border-radius:14px;padding:16px 18px;box-shadow:0 10px 40px rgba(0,0,0,.3)}
+#ezybox h4{margin:14px 0 4px}.ezy-txt{white-space:normal;line-height:1.45}.ezy-list{max-height:260px;overflow:auto;font-size:14px;padding:4px 0}.ezy-list>div{padding:3px 0;border-bottom:1px solid var(--line)}
+.ezy-t{width:100%;border-collapse:collapse;font-size:14px}.ezy-t td,.ezy-t th{border-bottom:1px solid var(--line);padding:4px 6px;text-align:left;vertical-align:top}.ezy-t tr.sub td:first-child{padding-left:18px;color:var(--ink3)}
+.ezy-top{display:flex;gap:8px;align-items:center;flex-wrap:wrap;position:sticky;top:-16px;background:var(--card,#fff);padding:6px 0;z-index:2}
+.ezy-find{display:flex;gap:6px;align-items:center;flex:1;min-width:220px}.ezy-find input{flex:1;min-width:120px;padding:8px;border:1px solid var(--line);border-radius:9px;font-size:16px}
+mark.ezy-m{background:#ffe680;color:#222;border-radius:2px}mark.ezy-m.on{background:#ff9f1a;outline:2px solid #ff9f1a}.ezy-hit mark{background:#ffe680;color:#222}
+html[data-theme=dark] mark.ezy-m,html[data-theme=dark] .ezy-hit mark{background:#8a6d00;color:#fff}html[data-theme=dark] mark.ezy-m.on{background:#c26a00}
+#vcbox{position:fixed;left:50%;transform:translateX(-50%);bottom:18px;z-index:70;width:min(440px,calc(100% - 24px))}#vcbox[hidden]{display:none}
+#vcbox .vc-in{background:var(--card,#fff);color:var(--ink);border:2px solid var(--green,#2f7a55);border-radius:16px;padding:12px 14px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-height:70vh;overflow:auto}
+.vc-mic{font-size:34px;animation:vcp 1.2s infinite;float:left;margin-right:10px}@keyframes vcp{50%{transform:scale(1.15)}}.vc-heard{margin-top:4px;font-size:15px}
 </style>
 </head>
 <body>
@@ -573,5 +584,7 @@ window.addEventListener('error',function(e){show(e.message||e.error)});window.ad
 <script src="patients.js"></script>
 <script src="setup.js"></script>
 <script src="app.js"></script>
+<script src="ezy.js"></script>
+<script src="voice.js"></script>
 </body>
 </html>
