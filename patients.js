@@ -1,7 +1,8 @@
 /* Bovitech Super App — Patients: every cattle herd and sheep flock (the patient IDs on client businesses),
    each with its business and all its clinical records. */
 'use strict';
-const PT = { q: '', sp: 'all', sel: null };
+const PT = { q: '', sp: 'all', sel: null, showIn: false };
+const ptInactive = (p) => typeof bizCat === 'function' && typeof INACT !== 'undefined' && INACT.includes(bizCat(p.b));
 const ptSpecies = (p) => (/sheep|flock|ovine/i.test(p.label || '') ? 'sheep' : 'cattle');
 function ptAll() { // [{ key, bid, b, value, label, sp }]
   const out = []; (D.businesses || []).forEach((b) => { if (b.gone) return; (b.patientIds || []).forEach((p) => { if (!p || !p.value) return; out.push({ key: b.id + '|' + p.value, bid: b.id, b, value: p.value, label: p.label || '', sp: ptSpecies(p) }); }); });
@@ -15,12 +16,13 @@ function ptRecords(pt) { // records for this herd / flock: named on the record, 
 function ptLast(pt) { const r = ptRecords(pt)[0]; if (r) return r.date; return typeof bizLastVisit === 'function' ? bizLastVisit(pt.b) : null; }
 function renderPatients() {
   const all = ptAll(); if (PT.sel) { const p = all.find((x) => x.key === PT.sel); if (p) return ptDetail(p); PT.sel = null; }
-  const q = PT.q.toLowerCase().trim(); const L = all.filter((p) => (PT.sp === 'all' || p.sp === PT.sp) && (!q || (p.value + ' ' + p.label + ' ' + p.b.name).toLowerCase().includes(q)));
-  const n = (sp) => all.filter((p) => sp === 'all' || p.sp === sp).length;
+  const q = PT.q.toLowerCase().trim(); const nIn = all.filter(ptInactive).length; const L = all.filter((p) => (PT.showIn || !ptInactive(p)) && (PT.sp === 'all' || p.sp === PT.sp) && (!q || (p.value + ' ' + p.label + ' ' + p.b.name).toLowerCase().includes(q)));
+  const n = (sp) => all.filter((p) => (PT.showIn || !ptInactive(p)) && (sp === 'all' || p.sp === sp)).length;
   return `<div class="d-wrap"><h2 class="sec-h" style="font-size:26px">${h(lab('pat'))}</h2><div class="hint" style="margin-bottom:8px">Every cattle herd and sheep flock — the patient IDs on client businesses. Add or change them on the business (🆔 Patient IDs). Tap one to see its clinical records.</div>
   <div class="search" style="margin-bottom:8px"><input id="pt-q" type="search" placeholder="Search herd ID, flock or business" value="${h(PT.q)}" autocomplete="off" aria-label="Search patients"></div>
   <div class="chips">${[['all', 'All'], ['cattle', '🐄 Cattle herds'], ['sheep', '🐑 Sheep flocks']].map(([k, l]) => `<button class="chip ${PT.sp === k ? 'on' : ''}" data-act="pt-sp" data-v="${k}">${l} <span class="cn">${n(k)}</span></button>`).join('')}</div>
-  <div class="card">${L.length ? L.map((p) => { const nr = ptRecords(p).length, last = ptLast(p); return `<div class="kv bk-tap" data-act="pt-open" data-k="${h(p.key)}" style="align-items:center"><span style="font-size:22px;width:32px">${p.sp === 'sheep' ? '🐑' : '🐄'}</span><div class="v"><b>${h(p.value)}</b> <span class="hint">${h(p.label)}</span><br>${h(p.b.name)}<span class="hint">${nr ? ` · ${nr} record${nr === 1 ? '' : 's'}` : ''}${last ? ' · last seen ' + bkDate(last, { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span></div></div>`; }).join('') : '<div class="hint">No herds or flocks match.</div>'}</div></div>`;
+  <label class="bk-radio" style="display:flex;margin:6px 0"><input type="checkbox" data-act="pt-showin" ${PT.showIn ? 'checked' : ''}> Show inactive and do-not-answer clients${nIn ? ` (${nIn})` : ''}</label>
+  <div class="card">${L.length ? L.map((p) => { const nr = ptRecords(p).length, last = ptLast(p); return `<div class="kv bk-tap" data-act="pt-open" data-k="${h(p.key)}" style="align-items:center"><span style="font-size:22px;width:32px">${p.sp === 'sheep' ? '🐑' : '🐄'}</span><div class="v"><b>${h(p.value)}</b> <span class="hint">${h(p.label)}</span>${ptInactive(p) ? ' <span class="pill" style="font-size:11px">inactive</span>' : ''}<br>${h(p.b.name)}<span class="hint">${nr ? ` · ${nr} record${nr === 1 ? '' : 's'}` : ''}${last ? ' · last seen ' + bkDate(last, { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</span></div></div>`; }).join('') : '<div class="hint">No herds or flocks match.</div>'}</div></div>`;
 }
 function ptDetail(p) {
   const recs = ptRecords(p); const on = typeof crOn === 'function' && crOn();
@@ -33,6 +35,7 @@ window.renderPatients = renderPatients;
 document.addEventListener('click', (e) => {
   const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return; const a = el.dataset.act; if (!/^pt-/.test(a)) return; const d = el.dataset;
   if (a === 'pt-sp') { PT.sp = d.v; renderAll(); }
+  if (a === 'pt-showin') { PT.showIn = el.checked; renderAll(); }
   if (a === 'pt-open') { PT.sel = d.k; if (d.go) { S.tab = 'pat'; S.sel = null; document.body.classList.remove('show-detail'); } renderAll(); const l = document.getElementById('list'); if (l) l.scrollTop = 0; }
   if (a === 'pt-back') { PT.sel = null; renderAll(); }
   if (a === 'pt-newrec') { const p = ptAll().find((x) => x.key === d.k); if (!p) return; const r = crNewRec({ bid: p.bid }); r.patients = [{ id: uid('pt'), level: 'herd', pid: p.value, plabel: p.label, species: p.sp }]; touch(r); D.crrec.push(r); crInvSync(r); save(); crOpen(r.id); }
