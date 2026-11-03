@@ -260,7 +260,7 @@ async function ezGo() { if (EZ.busy) return; EZ.busy = true; const P = EZ.plan; 
 async function ezList(key, contacts, animals) { if (EZ.hist[key] && EZ.hist[key].at > Date.now() - 300000) return EZ.hist[key].rows;
   const rows = await rpc('ezy_list', { k: Dev.k(), contacts: contacts && contacts.length ? contacts : null, animals: animals && animals.length ? animals : null, kinds: null, lim: 3000 }); EZ.hist[key] = { at: Date.now(), rows: rows || [] }; return EZ.hist[key].rows; }
 function ezyBizCard(b) { if (!(b.ezyIds || []).length) return ''; return ezHistCard('b:' + b.id, b.ezyIds, null); }
-function ezyPatCard(p) { const pp = (p.b.patientIds || []).find((x) => String(x.value) === String(p.value)); if (!pp || !pp.ezyId) return ''; return ezHistCard('a:' + pp.ezyId, null, [pp.ezyId]); }
+function ezyPatCard(p) { const pp = (p.b.patientIds || []).find((x) => String(x.value) === String(p.value)); if (!pp) return ''; const ids = [...new Set([pp.ezyId, ...(pp.ezyIds || [])].filter(Boolean))]; if (!ids.length) return ''; return ezHistCard('a:' + ids.join(','), null, ids); }
 function ezHistCard(key, contacts, animals) { const st = EZ.hist[key]; const tab = (EZ.histQ[key] || {}).tab || 'consult'; const q = (EZ.histQ[key] || {}).q || '';
   if (!st) { setTimeout(() => ezList(key, contacts, animals).then(() => renderAll()).catch((e) => { EZ.hist[key] = { at: Date.now(), rows: [], err: e.message || String(e) }; renderAll(); }), 0); }
   const rows = st ? st.rows : null; const n = (k) => (rows || []).filter((r) => r.kind === k).length; const ql = q.toLowerCase();
@@ -331,7 +331,10 @@ async function ezSearch(o) { const q = (o.q || '').trim(); if (!q) { EZ.res = nu
   EZ.res = { q, local, old, err, more: old.length >= 100 }; renderAll(); }
 
 /* ---------- events ---------- */
-document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return; const a = el.dataset.act; if (!/^ezy-/.test(a)) return; const d = el.dataset;
+document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return; const a = el.dataset.act; if (!/^ezy-|^ezynote-del$/.test(a)) return; const d = el.dataset;
+  if (a === 'ezynote-del') { const j = jobs().find((x) => x.key === d.k); if (!j) return; const b = IDX.biz.get(j.id); if (!b) return; if (!(await ask('Delete this ezyVet note?\n\n' + j.warnTxt, 'Yes — delete it', true))) return;
+    b.info = (b.info || '').replace('*From ezyVet:* ' + j.warnTxt, '').replace(j.warnTxt, '').replace(/\n{3,}/g, '\n\n').trim(); delete b.infoHtml; touch(b);
+    const r = crCfg('ezyq'); if (r) { r.notes = (r.notes || []).filter((n) => !(n.bid === b.id && n.txt === j.warnTxt)); touch(r); } JOBS_CACHE = null; save(); if (window.Sync) Sync.soon(); renderAll(); toast('Note deleted'); return; }
   if (a === 'ezy-start') ezStart(); if (a === 'ezy-close') ezClose(); if (a === 'ezy-go') ezGo(); if (a === 'ezy-jobs') { ezClose(); S.tab = 'jobs'; renderAll(); }
   if (a === 'ezy-open') { if (d.q) EZ.findQ = d.q.replace(/"/g, '').split(/\s+/)[0]; else EZ.findQ = ''; ezOpen(d.kind, d.id); }
   if (a === 'ezy-lopen') { crOpen(d.id); setTimeout(() => { const i = document.querySelector('#list .ezy-fq'); if (i && EZ.res) { i.value = EZ.res.q.replace(/"/g, '').split(/\s+/)[0]; ezFind(i, 0); } }, 50); }
