@@ -110,9 +110,16 @@ async function wanted() {
     const sheets = await recs("bksheet");
     const live = bookings.filter((b) => b.status !== "cancelled" && !b.gone && b.date >= from && b.date <= to && b.start);
     for (const sh of sheets) {
-      if (sh.gone || !sh.text || !sh.sid || sh.date < from || sh.date > to) continue;
+      if (sh.gone || (!sh.text && !sh.prep) || !sh.sid || sh.date < from || sh.date > to) continue;
       const mine = live.filter((b) => b.date === sh.date && (b.staff || []).includes(sh.sid));
       const s0 = mine.length ? Math.min(...mine.map((b) => mins(b.start))) : 8 * 60; const e0 = mine.length ? Math.max(...mine.map((b) => mins(b.start) + (b.mins || 60))) : 17 * 60;
+      if (sh.prep) { // the day prep list: its own event, the half hour before the first appointment (or 7:30am)
+        const p0 = Math.max(0, (mine.length ? s0 : 8 * 60) - 30);
+        const pb = { summary: "📦 Day prep", description: (sh.prepHtml ? String(sh.prepHtml) + "<br><br><i>From the Bovitech Super App — tick it off in Scheduling → Day prep.</i>" : String(sh.prep)),
+          start: { dateTime: `${sh.date}T${hhmm(p0)}:00`, timeZone: "Australia/Perth" }, end: { dateTime: `${sh.date}T${hhmm(p0 + 30)}:00`, timeZone: "Australia/Perth" } };
+        (per[sh.sid] ??= {})["pp:" + sh.date] = { body: pb, h: hash(stable(pb)) };
+      }
+      if (!sh.text) continue;
       const body = { summary: `📋 Day sheet — ${mine.length} appointment${mine.length === 1 ? "" : "s"}`, description: (sh.html ? String(sh.html) + "<br><br><i>From the Bovitech Super App — change appointments there, not here.</i>" : String(sh.text) + "\n\nFrom the Bovitech Super App — change appointments there, not here."),
         start: { dateTime: `${sh.date}T${hhmm(s0)}:00`, timeZone: "Australia/Perth" }, end: { dateTime: `${sh.date}T${hhmm(Math.min(e0, 1439))}:00`, timeZone: "Australia/Perth" } };
       (per[sh.sid] ??= {})["ds:" + sh.date] = { body, h: hash(stable(body)) };

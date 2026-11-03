@@ -113,12 +113,12 @@ const SETUP = [
     'Click in the query box in Supabase, press <b>Ctrl + A</b> then <b>Ctrl + V</b>, then click <b>Run</b>.',
     'It should say <b>Step 7 finished</b>. It\'s safe to run again.',
     'Tick <b>✓ Done</b>.'] },
-  { id: 'gcal3', t: 'Update the "gcal" server function again (fixes the double calendar and events, nicer day sheets)', after: 'sql07', steps: [
+  { id: 'gcal4', t: 'Update the "gcal" server function (📦 Day prep on everyone\'s calendar; fixes the double calendar and events)', after: 'sql07', steps: [
     `Open <a href="${SETUP_SUPA}/functions/gcal/code" target="_blank" rel="noopener">Supabase → Edge Functions → gcal → Code</a>.`,
     `Come back here and tap ${setupCopy('gcal', 'Copy the gcal code')}.`,
     'In Supabase, click in the code box, press <b>Ctrl + A</b> then <b>Ctrl + V</b> to replace all of it.',
     'Click <b>Deploy updates</b> and wait for it to finish. (Leave "Verify JWT" off.)',
-    'In this app: Settings → Scheduling → Google Calendar → <b>Sync now</b>. Within a minute or two the second "Bovitech — Milly" calendar and the second "On call" events go, and the day sheets update.',
+    'In this app: Settings → Scheduling → Google Calendar → <b>Sync now</b>. Within a minute or two each person\'s calendar gets a <b>📦 Day prep</b> event the half hour before their first appointment, every working day for the next 2 weeks (the day sheets are there too). Any second "Bovitech — Milly" calendar and second "On call" events go.',
     'On your phone, pull down to refresh Google Calendar if they still show.',
     'Tick <b>✓ Done</b>.'] },
   { id: 'sharecal', t: 'Share each person\'s day sheet calendar with them', after: 'connect', steps: [

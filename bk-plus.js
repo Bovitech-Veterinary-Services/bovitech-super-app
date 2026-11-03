@@ -290,9 +290,11 @@ function bkSheetSoon() { if (BK_SHEET_T) clearTimeout(BK_SHEET_T); BK_SHEET_T = 
 function bkSheetSync() { // today and the next 2 weeks, for everyone; only writes when a sheet's text has changed
   if (!Bk.on() || !Bk.people().length) return 0; Bk.list('bksheet'); const t = bkToday(); let n = 0; const hs = (x) => { let v = 5381; for (let i = 0; i < x.length; i++) v = ((v << 5) + v + x.charCodeAt(i)) >>> 0; return v.toString(36); };
   for (let i = 0; i <= 14; i++) { const d = bkAdd(t, i);
-    for (const p of Bk.people()) { const on = Bk.hours(p, d) || Bk.bookingsFor(d, p.id).length; const sh = on && Bk.bookingsFor(d, p.id).length ? bkSheetBuild(p.id, d) : { text: '', html: '' }; const text = sh.text, html = sh.html; const h0 = hs(text + '\u0001' + html); const id = p.id + ':' + d;
-      let r = D.bksheet.find((x) => x.id === id); if (r && r.hash === h0 && !r.gone) continue; if (!r && !text) continue;
-      if (!r) { r = { id, sid: p.id, date: d }; D.bksheet.push(r); } Object.assign(r, { text, html, hash: h0 }); /* the same on every device, so two devices never clash */ delete r.gone; touch(r); n++; } }
+    for (const p of Bk.people()) { const on = Bk.hours(p, d) || Bk.bookingsFor(d, p.id).length; const sh = on && Bk.bookingsFor(d, p.id).length ? bkSheetBuild(p.id, d) : { text: '', html: '' }; const text = sh.text, html = sh.html;
+      const pp = on && typeof prepBuild === 'function' ? prepBuild(p.id, d) : { text: '', html: '' }; // the day prep list goes to Google Calendar too
+      const h0 = hs(text + '\u0001' + html + '\u0001' + pp.html); const id = p.id + ':' + d;
+      let r = D.bksheet.find((x) => x.id === id); if (r && r.hash === h0 && !r.gone) continue; if (!r && !text && !pp.text) continue;
+      if (!r) { r = { id, sid: p.id, date: d }; D.bksheet.push(r); } Object.assign(r, { text, html, prep: pp.text, prepHtml: pp.html, hash: h0 }); /* the same on every device, so two devices never clash */ delete r.gone; touch(r); n++; } }
   D.bksheet.forEach((r) => { if (!r.gone && r.date < bkAdd(t, -7)) { r.gone = true; touch(r); n++; } }); // old ones go after a week
   return n;
 }
