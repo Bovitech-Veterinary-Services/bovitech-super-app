@@ -94,7 +94,7 @@ function bkSheetHtml() {
     const b = it.ref, t = Bk.type(b.type); const c = b.cid && D.contacts.find((x) => x.id === b.cid); const mob = bkMobile(c);
     const stops = Bk.stops(b).map((st, i) => { const pt = Travel.stopPt(st); const ln = bkMapLink(pt); return `${i + 1}. ${h(Bk.stopName(st))}${ln ? ` <a href="${ln}" target="_blank" rel="noopener">🧭 Directions</a>` : ''}`; }).join('<br>');
     const pr = bkProblems(b);
-    return `<div class="bk-si"><div class="t">${bkTime(it.s)}–${bkTime(it.e)} · ${b.urgent ? '⚡ ' : ''}${bkPatientEmoji(b)}${h(Bk.who(b))}</div>
+    const tk = bkSheetTicks(sid, date)[b.id]; return `<div class="bk-si ${tk ? 'sheet-done' : ''}"><label class="t" style="display:flex;gap:8px;align-items:flex-start;cursor:pointer"><input type="checkbox" class="bk-noprint" data-act="sheet-tick" data-k="${b.id}" ${tk ? 'checked' : ''} style="width:22px;height:22px;flex:none" aria-label="Done"><span>${bkTime(it.s)}–${bkTime(it.e)} · ${b.urgent ? '⚡ ' : ''}${bkPatientEmoji(b)}${h(Bk.who(b))}</span></label>
       <div class="hint">${h(t.name)} · ${h(Bk.statusText(b))}${(b.staff || []).length > 1 ? ' · with ' + h(b.staff.filter((x) => x !== sid).map(Bk.pname).join(', ')) : ''}</div>
       ${c ? `<div>📞 ${h(fullName(c))}${mob ? ` <a href="tel:${h(mob.replace(/\s/g, ''))}">${h(mob)}</a>` : ''}</div>` : ''}
       ${stops ? `<div>📍 ${stops}</div>` : ''}
@@ -108,23 +108,28 @@ function bkSheetHtml() {
   const back = day.legs.filter((l) => l.home).pop();
   return `<div class="d-wrap bk-wrap">${pick}<div class="card bk-sheet bk-print"><h3>Day sheet — ${h(p.preferred_name || p.full_name)}, ${bkDate(date, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}</h3>
     <div class="hint">${day.hr ? `Working ${bkTime(day.hr[0])}–${bkTime(day.hr[1])}, starting at ${h(day.dl.startName)}` : 'Not working this day'} · 📟 On call: ${oc ? h(Bk.pname(oc)) : 'not set'}</div>
+    ${typeof remFor === 'function' && remFor(date, sid).length ? `<div class="bk-si"><b>🔔 Reminders</b>${remFor(date, sid).map((r) => `<label style="display:flex;gap:8px;align-items:center;cursor:pointer"><input type="checkbox" class="bk-noprint" data-act="rem-tick" data-id="${r.id}" data-sid="${sid}" ${r.done && r.done[sid] ? 'checked' : ''} style="width:22px;height:22px"> ${h(r.text)}${r.bid && IDX.biz.get(r.bid) ? ' — ' + h(IDX.biz.get(r.bid).name) : ''}</label>`).join('')}</div>` : ''}
     ${body || '<div class="hint" style="margin-top:8px">Nothing booked.</div>'}
     ${back ? `<div class="drv">🏠 Back at ${h(back.to)} about ${bkTime(back.end)}</div>` : ''}</div>
     <div class="hint bk-noprint">Ticks on the checklists save straight away. The day sheet can also be sent each morning — ask in Settings if you'd like that set up.</div></div>`;
 }
 const BK_SHEET_SHOW = [['procs', 'Procedures and head counts'], ['contact', 'Contact name and mobile'], ['maps', 'Map link for each farm'], ['warnings', 'Warnings (safety, biosecurity, booking rules…)'], ['notes', 'Appointment notes'], ['status', 'Confirmed or not'], ['drive', 'Drive times between stops'], ['breaks', 'Lunch and blocks'], ['back', 'Time back at base']];
 const bkSheetShow = () => { const o = (Bk.get('sheets') || {}).show || {}; const r = {}; BK_SHEET_SHOW.forEach(([k]) => (r[k] = o[k] !== false)); return r; }; // Settings → Scheduling → Day sheets
+const bkSheetTickKey = (sid, date) => 'bvp-sheet-' + sid + '-' + date; // ticks on the day sheet stay on that device
+const bkSheetTicks = (sid, date) => { try { return JSON.parse(localStorage.getItem(bkSheetTickKey(sid, date)) || '{}'); } catch (e) { return {}; } };
+document.addEventListener('change', (e) => { const el = e.target; if (!(el.dataset && el.dataset.act === 'sheet-tick')) return; const sid = bkSheetSid(), date = BK.date; const t = bkSheetTicks(sid, date); if (el.checked) t[el.dataset.k] = 1; else delete t[el.dataset.k]; try { localStorage.setItem(bkSheetTickKey(sid, date), JSON.stringify(t)); } catch (x) { } renderAll(); });
 function bkSheetBuild(sid, date) { // the day sheet as plain text (copy / share) and as formatted text (Google Calendar)
   const p = Bk.person(sid); if (!p) return { text: '', html: '' }; const { day, rows } = bkSheetData(sid, date); const o = bkSheetShow();
   const strip = (x) => String(x || '').replace(/<[^>]+>/g, '').trim(); const e = (x) => String(x ?? '').replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
   const title = `${p.preferred_name || p.full_name} — ${bkDate(date, { weekday: 'long', day: 'numeric', month: 'long' })}`; const T = [title], H = [`<b>${e(title)}</b>`];
+  const rems = typeof remFor === 'function' ? remFor(date, sid) : []; if (rems.length) { T.push('🔔 Reminders'); H.push('<br><b>🔔 Reminders</b>'); rems.forEach((r) => { const t = r.text + (r.bid && IDX.biz.get(r.bid) ? ' — ' + IDX.biz.get(r.bid).name : ''); T.push('☐ ' + t); H.push('☐ ' + e(t)); }); }
   rows.forEach((r) => {
     if (r.leg) { if (!o.drive) return; const l = r.leg; const t = `🚗 ${l.need} min ${l.home ? 'back to ' + l.to : 'to ' + l.to}`; T.push('  ' + t); H.push(`<i>${e(t)}</i>`); return; }
     const it = r.it; if (it.kind === 'held') return;
     if (it.kind === 'lunch') { if (!o.breaks) return; T.push(`${bkTime(it.s)} Lunch`); H.push(`<br><b>${bkTime(it.s)}</b> · Lunch`); return; }
     if (it.kind === 'block') { if (!o.breaks) return; const t = `${it.ref.allDay ? 'All day' : bkTime(it.s) + '–' + bkTime(it.e)} ${Bk.btype(it.ref.type).name}${it.ref.note ? ' — ' + it.ref.note : ''}`; T.push(t); H.push(`<br>${e(t)}`); return; }
     const b = it.ref; const c = b.cid && D.contacts.find((x) => x.id === b.cid); const mob = c ? bkMobile(c) || '' : '';
-    const head = `${bkTime(it.s)}–${bkTime(it.e)} ${strip(bkPatientEmoji(b))}${Bk.who(b)}`; T.push(head + (Bk.farmName(b) ? ' @ ' + Bk.farmName(b) : '')); H.push(`<br><b>${e(head)}</b>`);
+    const head = `☐ ${bkTime(it.s)}–${bkTime(it.e)} ${strip(bkPatientEmoji(b))}${Bk.who(b)}`; T.push(head + (Bk.farmName(b) ? ' @ ' + Bk.farmName(b) : '')); H.push(`<br><b>${e(head)}</b>`);
     if (o.status) { const st = Bk.unconf(b) ? '❓ Not confirmed yet' : '✅ Confirmed'; T.push('  ' + st); H.push(e(st)); }
     if (o.procs) { const pr = (b.svcs || []).filter((x) => x.svc).map((x) => Bk.svc(x.svc).name + (x.head ? ' ×' + x.head : '')).join(', ') || Bk.type(b.type).name; T.push('  ' + pr); H.push('🐄 ' + e(pr)); }
     Bk.stops(b).forEach((st) => { const nm = Bk.stopName(st); const ln = o.maps ? bkMapLink(Travel.stopPt(st)) : null; if (!nm && !ln) return; T.push('  📍 ' + nm + (ln ? ' ' + ln : '')); H.push(`📍 ${e(nm)}${ln ? ` — <a href="${e(ln)}">directions</a>` : ''}`); });
