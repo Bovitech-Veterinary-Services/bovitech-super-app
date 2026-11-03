@@ -16,6 +16,7 @@ function bkRender() {
   if (BK.page === 'roster') return bkRosterHtml();
   if (BK.page === 'log') return bkLogHtml();
   if (BK.page === 'sheet') return bkSheetHtml();
+  if (BK.page === 'prep' && typeof prepHtml === 'function') return prepHtml();
   if (BK.page === 'pending') return bkPendingHtml();
   if (BK.page === 'bulk') return `<div class="d-wrap"><h2 class="sec-h" style="font-size:24px">Bulk scheduling lists</h2>${bkBulkHtml()}</div>`;
   const hid = Bk.hidden();
@@ -249,6 +250,8 @@ function bkSettingsHtml() {
   <div class="card"><h3><span class="sp">Who to book under</span>${ed ? '<button class="btn small" data-act="bks-new" data-cfg="bookunder">➕ New</button>' : ''}</h3><div class="hint" style="margin-bottom:6px">The choices for each client's "Who to book under" (business page → 📅 Scheduling). Booking someone else asks permission first.</div>${Bk.cfg('bookunder').map((x) => row(x, `${x.staff && x.staff.length ? x.staff.map(Bk.pname).join(', ') + ' only' : 'anyone'}${x.emergencyAny ? ' — anyone for emergencies' : ''}`)).join('') || '<div class="hint">None yet.</div>'}</div>
   ${bkHolCard(ed)}
   ${bkSheetCard(ed)}
+  ${typeof prepCard === 'function' ? prepCard(ed) : ''}
+  ${typeof vcxCard === 'function' ? vcxCard() : ''}
   ${bkYearCard(ed)}
   ${bkBulkCard(ed)}
   <div class="card"><h3>People — hours, phones, colours and where they start</h3><div class="hint" style="margin-bottom:6px">Working hours, the time kept at the end of the day for records and restocking, mobile (for the on-call list), where they usually start the day, and locums (only bookable on days marked available). To swap a day, use ⚙ / ➕ Make available at the top of their column on the calendar.${adm ? '' : ' Only the admin can change what each person can be booked for.'}</div>
