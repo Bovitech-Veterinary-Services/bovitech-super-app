@@ -16,6 +16,7 @@ const VC_BUILT = [
   ['day', 'What\'s on tomorrow', 'Says how many appointments there are that day and the first few.'],
   ['search', 'Search records for foetal ageing', 'Opens Records → Search with those words.'],
   ['go', 'Go to the calendar', 'Opens a tab: calendar, day sheet, jobs, records, invoices, patients, settings.'],
+  ['hf', 'Hands free', 'On an open record: reads out each question and fills in what you say (or tap 🎧 Hands-free at the top of the record).'],
   ['help', 'What can I say', 'Shows this list.'],
 ];
 const vcPref = (k) => !!(typeof PREF !== 'undefined' && PREF[k]);
@@ -76,6 +77,7 @@ async function vcDo(said, alts) { let t = vcAlias(said.trim()); const s = vcN(t)
   const shown = (msg) => vcBox(`<div class="hint">“${h(said)}”</div><b>${msg}</b>`);
   let m;
   if (/^(what can i say|help|commands)/.test(s)) { vcHelp(); return; }
+  if (/^(hands ?free|fill in (the |this )?record|start (the )?record questions|ask (me )?the questions)/.test(s)) { const r = typeof CR !== 'undefined' && S.tab === 'rec' && CR.page === 'edit' ? crGet('crrec', CR.id) : null; if (!r) { vcSay('Open the record first'); return vcBox('<b>Open the record first</b><p class="hint">Then say "hands free", or tap 🎧 Hands-free at the top of the record.</p>'); } vcClose(); hfStart(r); return; }
   if ((m = /^(?:call|ring|phone|dial)\s+(.+)$/i.exec(t))) { const x = await vcPick(vcFindBest(m[1]), 'person'); if (!x) return vcNope(said, m[1]); const ph = vcPhones(x); if (!ph.length) { say('No phone number for ' + x.name); return shown(`No phone number for ${h(x.name)}`); }
     const w = vcWarn(x); let p = ph[0]; if (ph.length > 1) { const i = await vcChoose(`Call ${x.name} on which number?`, ph.map((o) => `${o.v} (${o.l})`)); if (i == null) return; p = ph[i]; }
     if (w && !(await ask(`⚠ ${x.name}: ${w}\n\nCall anyway?`, '📞 Call'))) return; vcClose(); location.href = 'tel:' + p.v.replace(/[^\d+]/g, ''); return; }

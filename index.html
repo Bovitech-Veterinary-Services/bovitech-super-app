@@ -552,6 +552,9 @@ html[data-theme=dark] .vcx-warn{background:#3a2412;color:#f7c79b;border-color:#8
 .rem-strip{margin:6px 0;display:flex;flex-wrap:wrap;gap:6px;align-items:center;font-size:14px}.rem-chip{background:#fff6c7;color:#5a4300;border:1px solid #e8d27a;border-radius:999px;padding:3px 10px;cursor:pointer}
 html[data-theme=dark] .rem-chip{background:#3a3010;color:#f2d37b;border-color:#6b5a20}.sheet-done>.t span{text-decoration:line-through;opacity:.6}.ebox{padding:8px 10px;border:1px solid var(--line);border-radius:9px;margin:4px 0;background:var(--card,#fff)}
 @media (max-width:720px){.sheet{overflow-x:hidden}.sheet .form{overflow-wrap:anywhere}.sheet .actions{flex-wrap:wrap}.sheet input,.sheet select,.sheet textarea{max-width:100%;min-width:0;box-sizing:border-box}.sheet .rep{flex-wrap:wrap}.sheet .results{max-width:100%}}
+#hfbox{position:fixed;left:50%;transform:translateX(-50%);bottom:12px;z-index:72;width:min(560px,calc(100% - 20px))}#hfbox[hidden]{display:none}
+#hfbox .vc-in{background:var(--card,#fff);color:var(--ink);border:2px solid var(--green,#2f7a55);border-radius:16px;padding:12px 14px;box-shadow:0 8px 30px rgba(0,0,0,.35);max-height:60vh;overflow:auto}
+.hf-opts{margin:6px 0 6px 18px;padding:0;font-size:14.5px}.hf-opts li{padding:4px 2px;cursor:pointer;border-bottom:1px solid var(--line)}.hf-opts li.on{font-weight:800;color:var(--green,#2f7a55)}
 </style>
 </head>
 <body>
@@ -595,5 +598,6 @@ window.addEventListener('error',function(e){show(e.message||e.error)});window.ad
 <script src="voice.js"></script>
 <script src="vcontrol.js"></script>
 <script src="prep.js"></script>
+<script src="handsfree.js"></script>
 </body>
 </html>

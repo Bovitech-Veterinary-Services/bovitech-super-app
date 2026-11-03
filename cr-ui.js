@@ -18,7 +18,7 @@ window.crBadge = crBadge;
 /* ---------------- the Records tab ---------------- */
 function crRender() {
   crSeed(); const pg = CR.page || 'recs';
-  if (pg === 'edit') { const r = crGet('crrec', CR.id); if (r) return (typeof ezyFindBar === 'function' ? `<div class="ezy-top" style="top:0">${ezyFindBar('')}</div>` : '') + crEditHtml(r); CR.page = 'recs'; }
+  if (pg === 'edit') { const r = crGet('crrec', CR.id); if (r) return (typeof ezyFindBar === 'function' ? `<div class="ezy-top" style="top:0">${typeof hfStart === 'function' && r.status !== 'final' ? '<button class="btn small primary" data-act="hf-start" title="The app reads out each question and fills in what you say">🎧 Hands-free</button>' : ''}${ezyFindBar('')}</div>` : '') + crEditHtml(r); CR.page = 'recs'; }
   if (pg === 'search' && typeof ezySearchHtml === 'function') return ezySearchHtml();
   if (pg === 'inv') { const inv = crGet('crinv', CR.id); if (inv) return crInvHtml(inv); CR.page = 'invs'; }
   if (CR.page === 'invs') return crInvsHtml(); if (CR.page === 'overdue') return crOverdueHtml(); if (CR.page === 'fus') return crFusHtml(); if (CR.page === 'prods') return crProdsHtml();
