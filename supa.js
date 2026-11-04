@@ -57,7 +57,11 @@ const SBAuth = {
   },
   async afterPassword() {
     let st = await rpc('device_status', { k: Dev.k() });
-    if (st.wipe) { wipeLocal(); st = await rpc('device_status', { k: Dev.k() }); } // this device was wiped by the admin: clear it, then carry on as a new device
+    if (st.wipe) { // this device was wiped by the admin: clear it, then carry on as a new device
+      const keepS = this.s; wipeLocal(); // wipeLocal also clears the sign-in we just made, so put it back (fix 2.14.2: was failing with "Please sign in")
+      this.s = keepS; this.save(); this.wipedNow = true;
+      st = await rpc('device_status', { k: Dev.k() }); // new device key → treated as a new device
+    }
     if (!st.active) { const e = this.s.user.email; await this.signOut(true); throw sbErr(`${e} isn't on the staff list (or has been made inactive). Ask the office.`); }
     if (st.trusted) { await this.finish(); return { done: true }; }
     const user = await this.auth('user', null, await this.token(), 'GET');
@@ -224,6 +228,7 @@ async function onLoginSubmit(e) {
 }
 function signedIn() {
   const me = SBAuth.staff; LG.mode = 'password'; LG.qr = LG.secret = null;
+  if (SBAuth.wipedNow) { SBAuth.wipedNow = false; Lock.touch(); location.reload(); return; } // device was cleared during sign-in: restart the app fresh (signed in) so no old data stays in memory
   const bg = document.getElementById('loginbox'); if (bg) bg.remove();
   if (typeof toast === 'function') toast(`✓ Signed in — hi ${typeof niceName === 'function' ? niceName(me.preferred_name || me.full_name) : me.preferred_name || me.full_name}`);
   if (typeof updHi === 'function') updHi();
