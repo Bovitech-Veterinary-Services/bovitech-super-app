@@ -687,7 +687,7 @@ document.addEventListener('change', (e) => {
 });
 document.addEventListener('toggle', (e) => { const d = e.target; if (d.classList && d.classList.contains('bk-ai')) BK['aiOpen_' + d.dataset.pg] = d.open; }, true);
 document.addEventListener('input', (e) => { if (/^bkai-/.test(e.target.id || '')) BK['aiReq_' + e.target.id.slice(5)] = e.target.value; });
-document.addEventListener('input', (e) => { if (e.target.dataset && e.target.dataset.act === 'bkj-q') { BK.jobFilter = e.target.value; const pos = e.target.selectionStart; renderAll(); const q = document.getElementById('bkj-q'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } } });
+document.addEventListener('input', (e) => { if (e.target.dataset && e.target.dataset.act === 'bkj-q') { BK.jobFilter = e.target.value; const pos = e.target.selectionStart; renderAll(); const q = document.getElementById('bkj-q'); refocus(q, pos); } });
 function bkSuggHtml(list, o) {
   if (!list.length) return '<div class="hint">No free time found in the next 6 weeks for the people who can do this. Try fewer procedures, a shorter time, or tick Urgent and book over something.</div>';
   return `<div class="bk-sugg">${list.map((r, i) => `<button type="button" class="bk-sopt" data-act="bk-pick" data-i="${i}"><b>${bkDate(r.date)} ${bkTime(r.start)}</b> · ${h(Bk.pname(r.staff))}<span class="hint">${r.near ? `near ${h(r.near.x.what)} (~${r.near.m} min apart) · ` : ''}${o.type && Bk.type(o.type).where === 'phone' ? 'phone' : `adds ~${r.extra} min driving`}</span>${r.logic ? `<span class="lg">${r.logic.map(h).join('<br>')}</span>` : ''}</button>`).join('')}</div>`;

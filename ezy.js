@@ -356,7 +356,7 @@ document.addEventListener('input', (e) => { const t = e.target; if (!t.classList
   if (t.classList.contains('ezy-hq')) { const c = t.closest('.ezyhist'); const k = c.dataset.ezk; EZ.histQ[k] = { ...(EZ.histQ[k] || {}), q: t.value }; clearTimeout(t._tm); t._tm = setTimeout(async () => {
     const qq = t.value.trim(); if (qq.length > 2) { try { const res = await rpc('ezy_search', { k: Dev.k(), q: qq, contacts: c.dataset.ezc ? c.dataset.ezc.split(',') : null, animals: c.dataset.eza ? c.dataset.eza.split(',') : null, kinds: null, from_: null, to_: null, who: null, lim: 300 }); const ids = new Set((res || []).map((r) => r.kind + ':' + r.id));
       const st = EZ.hist[k]; if (st) st.rows.forEach((r) => (r._hit = ids.has(r.kind + ':' + r.id))); EZ.histQ[k].ids = ids; } catch (x) { } }
-    const pos = t.selectionStart; renderAll(); const n = document.querySelector(`.ezyhist[data-ezk="${CSS.escape(k)}"] .ezy-hq`); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch (x) { } } }, 400); } });
+    const pos = t.selectionStart; renderAll(); const n = document.querySelector(`.ezyhist[data-ezk="${CSS.escape(k)}"] .ezy-hq`); refocus(n, pos); }, 400); } });
 // is database update 9 in? (Admin jobs ticks itself off) — and how much history is loaded
 async function ezProbe() { if (EZ._probed || !(window.SBAuth && SBAuth.s && typeof Dev !== 'undefined')) return; EZ._probed = true; try { EZ.counts = await rpc('ezy_status', { k: Dev.k() }); EZ.sql09 = true; } catch (e) { EZ.sql09 = false; } }
 setInterval(() => { if (!EZ._probed && navigator.onLine) ezProbe(); }, 5000);

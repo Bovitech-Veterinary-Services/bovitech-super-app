@@ -177,7 +177,7 @@ function bkLogHtml() {
     <details><summary class="hint" style="cursor:pointer">What changed (${e.items.length})</summary>${e.items.map((it) => `<div style="margin:4px 0">${det(it)}</div>`).join('')}</details></div>
     ${ed && !e.undoOf ? (e.undone ? `<button class="btn small" data-act="bklog-redo" data-id="${e.id}">↷ Redo</button>` : `<button class="btn small" data-act="bklog-undo" data-id="${e.id}">↶ Undo</button>`) : ''}</div>`).join('') || '<div class="hint">No changes yet.</div>'}</div></div>`;
 }
-document.addEventListener('input', (e) => { if (e.target.id !== 'bklog-q') return; BK.logQ = e.target.value; const pos = e.target.selectionStart; renderAll(); const q = document.getElementById('bklog-q'); if (q) { q.focus(); q.setSelectionRange(pos, pos); } });
+document.addEventListener('input', (e) => { if (e.target.id !== 'bklog-q') return; BK.logQ = e.target.value; const pos = e.target.selectionStart; renderAll(); const q = document.getElementById('bklog-q'); refocus(q, pos); });
 
 /* ---------------- colour: palette, colours in use, and "Edit colours" like Windows 11 Paint ---------------- */
 const BK_BASIC = ['#000000', '#7f7f7f', '#880015', '#ed1c24', '#ff7f27', '#fff200', '#22b14c', '#00a2e8', '#3f48cc', '#a349a4', '#ffffff', '#c3c3c3', '#b97a57', '#ffaec9', '#ffc90e', '#efe4b0', '#b5e61d', '#99d9ea', '#7092be', '#c8bfe7',
