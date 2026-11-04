@@ -19,7 +19,7 @@ function ezCsv(text) { // RFC 4180: quoted fields, "" inside quotes, new lines i
 }
 const EZ_FILES = { contacts: 'ContactExport', ep: 'EmailPhoneExport', animals: 'AnimalExport', products: 'ProductExport', lines: 'InvoiceExpenseExport', invoices: 'InvoiceExport', payments: 'PaymentExport',
   consults: 'ConsultExport', inclinic: 'InClinicExport', history: 'VisitHistoryExport', meds: 'MedicationExport', plans: 'PlanTherapeuticExport', therap: 'TherapeuticExport', dreq: 'DiagnosticRequestExport', dres: 'DiagnosticResultExport',
-  assess: 'ConsultAssessmentExport', cplan: 'ConsultPlanExport', exam: 'VisitExamExport', health: 'HealthStatusExport', docs: 'DocumentExport', comms: 'CommunicationExport', memos: 'MemoExport', files: 'AttachmentExport', appts: 'AppointmentExport', users: 'UserExport' };
+  assess: 'ConsultAssessmentExport', cplan: 'ConsultPlanExport', exam: 'VisitExamExport', health: 'HealthStatusExport', docs: 'DocumentExport', comms: 'CommunicationExport', memos: 'MemoExport', files: 'AttachmentExport', appts: 'AppointmentExport', users: 'UserExport', psup: 'ProductSupplierExport', barcodes: 'BarcodeExport' };
 async function ezRead(file, say) {
   if (typeof JSZip === 'undefined') throw new Error('The zip reader has not loaded yet — try again in a moment');
   const zip = await JSZip.loadAsync(file); const Z = {}; const names = Object.keys(zip.files);
@@ -93,10 +93,12 @@ function ezPlan(Z) {
     if (items.length) bundleOf[p] = items; });
   const CAT = (g, t) => /^medications/i.test(g) ? 'med' : /consumable/i.test(g) ? 'consumable' : /merchandise/i.test(g) ? 'merch' : /lab/i.test(g) || t === 'Diagnostic' ? 'lab' : /certificate/i.test(g) ? 'cert' : 'service';
   const UNIT = (n) => /per head|\(per head\)/i.test(n) ? 'head' : /per minute/i.test(n) ? 'minute' : /per hour|- per hour/i.test(n) ? 'hour' : /^travel/i.test(n) ? 'km' : /single dose/i.test(n) ? 'dose' : 'each';
+  const BC = {}; (Z.barcodes || []).forEach((x) => { if (x['Is Active'] === 'NO' || !(x['Barcode Text'] || '').trim()) return; (BC[x['Product Id']] = BC[x['Product Id']] || []).push(x['Barcode Text'].trim()); });
+  const SUP = {}; (Z.psup || []).forEach((x) => { const pid0 = x['Product ID']; const cur = SUP[pid0]; const def = ezYes(x['Default Supplier']); if (!cur || (def && !cur.def)) SUP[pid0] = { def, ez: x['Supplier Contact ID - Can edit'], name: x['Supplier Name - Can edit'], code: x['Supplier Code - Can edit'], price: ezNum(x['List Price Per Unit (Exc. Tax) - Can edit']), outer: ezNum(x['Units Per Outer - Can edit']) || 1 }; });
   live.forEach((p) => { const id = p['Product Id']; const nm = p['Product Name'].trim(); const price = crR4(ezNum(p['Product Price'])); const b = bundleOf[id];
     P.prods.push({ id: 'ezp-' + id, ezyId: id, code: p['Product Code'], name: nm, cat: b ? 'bundle' : CAT(p['Primary Product Group'], p['Product Type']), group: p['Primary Product Group'], unit: UNIT(nm), price, cost: crR4(ezNum(p['Product Cost Price'])),
       gst: /^S$/i.test((p['Product GST Code'] || '').trim()), whpMeat: (p['Product RVM Withholding Period for Meat'] || '').trim(), whpMilk: (p['Product RVM Withholding Period for Milk'] || '').trim(), dose: (p['Product RVM Dose To Be Given'] || '').trim(), route: (p['Product RVM Route of Administration'] || '').trim(),
-      warn: (p['Product Warning Text'] || '').trim(), items: b || null, fee: feeOf[id] ? feeOf[id].prod : null, feeQty: feeOf[id] ? feeOf[id].qty : null, placeholder: !b && price === 0, s4: /S4|S8/.test(p['Primary Product Group']) }); });
+      warn: (p['Product Warning Text'] || '').trim(), min: ezNum(p['Product Minimum Inventory']) || null, reorder: ezNum(p['Product Minimum Reorder']) || null, barcodes: [...new Set([(p['Product Barcode'] || '').trim(), ...(BC[id] || [])].filter(Boolean))], sup: SUP[id] || null, items: b || null, fee: feeOf[id] ? feeOf[id].prod : null, feeQty: feeOf[id] ? feeOf[id].qty : null, placeholder: !b && price === 0, s4: /S4|S8/.test(p['Primary Product Group']) }); });
   P.bundles = P.prods.filter((p) => p.items).length; P.fees = P.prods.filter((p) => p.fee).length;
   // the starting price list items still to be priced, filled from ezyVet where the match is clear
   const pick = (rx) => P.prods.find((p) => rx.test(p.name) && p.price > 0);
@@ -191,9 +193,10 @@ function ezApplyClients(P) {
   });
   reindex(); ezQueueSave(q); return { S, map };
 }
-function ezApplyProds(P) { let add = 0, upd = 0;
+function ezApplyProds(P) { let add = 0, upd = 0; const supBiz = (ez) => { const b = ez && D.businesses.find((x) => !x.gone && (x.ezyIds || []).includes(String(ez))); return b ? b.id : null; };
   P.prods.forEach((x) => { const ex = crList('crprod').find((p) => !p.gone && (p.ezyId === x.ezyId || p.id === x.id || (x.code && p.code === x.code))) || crList('crprod').find((p) => !p.gone && !p.role && (p.name || '').toLowerCase() === x.name.toLowerCase());
-    const rec = { cat: x.cat, name: x.name, unit: x.unit, price: x.price, gst: x.gst, code: x.code, ezyId: x.ezyId, group: x.group, cost: x.cost, items: x.items || undefined, fee: x.fee || undefined, feeQty: x.feeQty || undefined, whpMeat: x.whpMeat || undefined, whpMilk: x.whpMilk || undefined, dose: x.dose || undefined, route: x.route || undefined, warn: x.warn || undefined, placeholder: x.placeholder || undefined, active: true };
+    const rec = { cat: x.cat, name: x.name, unit: x.unit, price: x.price, gst: x.gst, code: x.code, ezyId: x.ezyId, group: x.group, cost: x.cost, items: x.items || undefined, fee: x.fee || undefined, feeQty: x.feeQty || undefined, whpMeat: x.whpMeat || undefined, whpMilk: x.whpMilk || undefined, dose: x.dose || undefined, route: x.route || undefined, warn: x.warn || undefined, placeholder: x.placeholder || undefined, active: true, min: x.min || undefined, reorder: x.reorder || undefined, barcodes: (x.barcodes || []).length ? x.barcodes : undefined,
+      supplier: x.sup ? (supBiz(x.sup.ez) || undefined) : undefined, supName: x.sup ? x.sup.name : undefined, supCode: x.sup && x.sup.code ? x.sup.code : undefined, supPrice: x.sup && x.sup.price ? x.sup.price : undefined, supOuter: x.sup && x.sup.outer > 1 ? x.sup.outer : undefined };
     Object.keys(rec).forEach((k) => rec[k] === undefined && delete rec[k]);
     if (ex) { if (ex.role) { if (!(+ex.price) || ex.placeholder) { ex.price = x.price; delete ex.placeholder; } ex.gst = x.gst; ex.ezyId = x.ezyId; ex.code = x.code; } else Object.assign(ex, rec); if (!x.placeholder && ex.placeholder) delete ex.placeholder; touch(ex); upd++; }
     else { const r = { id: x.id, ...rec }; touch(r); D.crprod.push(r); add++; } });

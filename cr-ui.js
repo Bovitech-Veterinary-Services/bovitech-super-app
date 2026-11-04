@@ -1,7 +1,7 @@
 /* Bovitech Super App — Clinical records and invoicing (part 2: the pages — records, the record itself,
    quick entry in the crush, invoices, overdue, follow-ups, the price list, settings and PDFs). */
 'use strict';
-const CR_SUBS = [['recs', 'Records'], ['search', 'Search'], ['invs', 'Invoices'], ['overdue', 'Overdue'], ['fus', 'Follow-ups'], ['prods', 'Price list']];
+const CR_SUBS = [['recs', 'Records'], ['search', 'Search'], ['stock', 'Stock'], ['invs', 'Invoices'], ['overdue', 'Overdue'], ['fus', 'Follow-ups'], ['prods', 'Price list']];
 const crPill = (t, cls) => `<span class="cr-pill ${cls || ''}">${h(t)}</span>`;
 const CR_RST = { draft: ['Draft', 'draft'], final: ['Finalised', 'final'] };
 const CR_IST = { notready: 'notready', pending: 'pending', approved: 'approved', sent: 'sent', paid: 'paid' };
@@ -18,8 +18,9 @@ window.crBadge = crBadge;
 /* ---------------- the Records tab ---------------- */
 function crRender() {
   crSeed(); const pg = CR.page || 'recs';
-  if (pg === 'edit') { const r = crGet('crrec', CR.id); if (r) return (typeof ezyFindBar === 'function' ? `<div class="ezy-top" style="top:0">${typeof hfStart === 'function' && r.status !== 'final' ? '<button class="btn small primary" data-act="hf-start" title="The app reads out each question and fills in what you say">🎧 Hands-free</button>' : ''}${ezyFindBar('')}</div>` : '') + crEditHtml(r); CR.page = 'recs'; }
+  if (pg === 'edit') { const r = crGet('crrec', CR.id); if (r) return (typeof ezyFindBar === 'function' ? `<div class="ezy-top" style="top:0">${typeof hfStart === 'function' && r.status !== 'final' ? '<button class="btn small primary" data-act="hf-start" title="The app reads out each question and fills in what you say">🎧 Hands-free</button>' : ''}${ezyFindBar('')}</div>` : '') + (typeof stkRecBar === 'function' ? stkRecBar(r) : '') + crEditHtml(r); CR.page = 'recs'; }
   if (pg === 'search' && typeof ezySearchHtml === 'function') return ezySearchHtml();
+  if (pg === 'stock' && typeof stkHtml === 'function') return stkHtml();
   if (pg === 'inv') { const inv = crGet('crinv', CR.id); if (inv) return crInvHtml(inv); CR.page = 'invs'; }
   if (CR.page === 'invs') return crInvsHtml(); if (CR.page === 'overdue') return crOverdueHtml(); if (CR.page === 'fus') return crFusHtml(); if (CR.page === 'prods') return crProdsHtml();
   return crRecsHtml();

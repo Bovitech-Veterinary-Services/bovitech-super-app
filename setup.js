@@ -2,7 +2,7 @@
    step-by-step instructions and a button to copy the code that's needed. Tick ✓ Done when finished
    (it's remembered on every device). Some tick themselves once the app can see they're done. */
 'use strict';
-const SETUP_FILES = { sql09: 'supabase/09-ezyvet-archive.sql', sql08: 'supabase/08-qr-reset.sql', sql07: 'supabase/07-gcal-lock.sql', users: 'supabase/functions/users/index.ts', sql03: 'supabase/03-sms.sql', sql04: 'supabase/04-users.sql', sql05: 'supabase/05-calendar-sms.sql', sql06: 'supabase/06-admins.sql', gcal: 'supabase/functions/gcal/index.ts', jobs: 'supabase/functions/jobs/index.ts' };
+const SETUP_FILES = { mail: 'supabase/functions/mail/index.ts', sql09: 'supabase/09-ezyvet-archive.sql', sql08: 'supabase/08-qr-reset.sql', sql07: 'supabase/07-gcal-lock.sql', users: 'supabase/functions/users/index.ts', sql03: 'supabase/03-sms.sql', sql04: 'supabase/04-users.sql', sql05: 'supabase/05-calendar-sms.sql', sql06: 'supabase/06-admins.sql', gcal: 'supabase/functions/gcal/index.ts', jobs: 'supabase/functions/jobs/index.ts' };
 const SETUP_REDIRECT = 'https://ymzweuhxdcxkzweacwdi.supabase.co/functions/v1/gcal';
 const SETUP_SUPA = 'https://supabase.com/dashboard/project/ymzweuhxdcxkzweacwdi';
 const setupCopy = (f, label) => `<button class="btn small greenbtn" data-act="setup-copy" data-f="${f}">📋 ${label}</button>`;
@@ -139,6 +139,21 @@ const SETUP = [
     '<button class="btn primary" data-act="ezy-start">📥 Choose the ezyVet backup zip…</button>',
     'A summary opens (clients matched, new, maybe the same; herds; price list and bundles; appointments; history). Check it, then tap <b>📥 Import now</b> at the top of that summary. Leave the app open until it says finished — the history takes a few minutes. If it stops, run it again: nothing is doubled.',
     'Then work through <b>Jobs</b>: "ezyVet import: the same client?", "ezyVet notes: a warning, or just info?" and "No category" (new active clients).'] },
+  { id: 'mailfn', t: 'Email from the app (purchase orders to suppliers, from office@bovitech.com.au)', steps: [
+    'Sign in to <a href="https://resend.com/domains" target="_blank" rel="noopener">resend.com → Domains</a> (the account the backups already use) and tap <b>Add domain</b>: <b>bovitech.com.au</b>, region Sydney if it asks.',
+    'Resend shows a few DNS records (TXT and MX, mostly on <b>send</b> and <b>resend._domainkey</b>). Keep that page open.',
+    'In another tab sign in to <b>HostPapa → cPanel → Zone Editor</b>, tap <b>Manage</b> next to bovitech.com.au, and add each record exactly as Resend shows it (type, name, value, priority). <b>Don\'t change or delete the records already there</b> — your normal email keeps working.',
+    'Back in Resend tap <b>Verify DNS records</b>. It can take from a few minutes to a few hours to say <b>Verified</b>.',
+    `In Supabase → <a href="${SETUP_SUPA}/functions/secrets" target="_blank" rel="noopener">Edge Functions → Secrets</a>, <b>+ Add secret</b>: name <b>MAIL_FROM</b>, value <b>Bovitech Veterinary Services &lt;office@bovitech.com.au&gt;</b>.`,
+    `In Supabase → <a href="${SETUP_SUPA}/functions" target="_blank" rel="noopener">Edge Functions</a> → <b>Deploy a new function</b> → <b>Via Editor</b>, name it <b>mail</b>, tap ${setupCopy('mail', 'Copy the mail code')}, paste it over everything in the code box and <b>Deploy</b>. (Leave "Verify JWT" ON.)`,
+    'Try it: Records → Stock → Orders → make an order to yourself and send it.',
+    'Tick <b>✓ Done</b>.'] },
+  { id: 'ezyimport2', t: 'Run the ezyVet import again (brings in stock minimums, barcodes and suppliers)', after: 'ezyimport', steps: [
+    'On the office computer, signed in as an admin, with bovitechvet_backup.zip.',
+    '<button class="btn primary" data-act="ezy-start">📥 Choose the ezyVet backup zip…</button>',
+    'Tap <b>📥 Import now</b>. Nothing is doubled — it adds each product\'s minimum, usual order amount, barcodes and supplier (with their code and price) to the price list.',
+    'Then Records → Stock → Vehicles: add your vehicles, and Records → Stock → 📝 Stocktake to put in what you have.',
+    'Tick <b>✓ Done</b>.'] },
   { id: 'vcontrol2', t: 'vControl: try uploading the on-call schedule files from the app', steps: [
     'In the app: <b>Scheduling → On call → ⬇ Export (CSV)</b>. Choose the dates, then tap <b>⬇ 111097-Jess.csv</b> and <b>⬇ 111097-Milly.csv</b> (one file per vet, in the same layout as vControl\'s own download: Time and Label).',
     'In vControl, open the <b>111097-Jess</b> schedule and use its CSV import to upload 111097-Jess.csv. Check the times came in right. Do the same for Milly.',

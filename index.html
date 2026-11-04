@@ -560,6 +560,7 @@ header.top{min-width:0;max-width:100vw;box-sizing:border-box;overflow:hidden}hea
 @media (max-width:560px){header.top #net,header.top #sync{display:none}header.top .hbtn{padding:3px 8px}#hdr-mic{padding:3px 7px}}
 html,body{max-width:100%;overflow-x:clip}
 .dupe-pair{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:6px 0}.dupe-card{border:1px solid var(--line);border-radius:10px;padding:8px;min-width:0;overflow-wrap:anywhere}@media (max-width:520px){.dupe-pair{grid-template-columns:1fr}}
+#stkscan{position:fixed;inset:0;z-index:75;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:12px}#stkscan .vc-in{background:var(--card,#fff);color:var(--ink);border-radius:16px;padding:12px 14px;width:min(520px,100%);max-height:94vh;overflow:auto}.stk-recbar{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
 </style>
 </head>
 <body>
@@ -604,5 +605,6 @@ window.addEventListener('error',function(e){show(e.message||e.error)});window.ad
 <script src="vcontrol.js"></script>
 <script src="prep.js"></script>
 <script src="handsfree.js"></script>
+<script src="stock.js"></script>
 </body>
 </html>
