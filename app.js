@@ -8,7 +8,7 @@ const RATING_SET = new Set(RATINGS);
 const RATING_SHORT = { aplus: 'A+', a: 'A', b: 'B', c: 'C' };
 // which photo wins when we must pick one automatically (user is still asked via the job list)
 const PHOTO_PRIORITY = ['dna', 'blockedc', 'blockedn', 'payup', 'newfac', 'newassess', 'newmaybe', 'aplus', 'a', 'b', 'c', 'bvs', 'bfriends', 'sheepreg', 'sheepocc', 'occ', 'industry', 'prac', 'phone', 'family', 'inactive']; // default order; Inactive is overridden by every other tag
-const APP_VERSION = '2.15.1 (4 Nov 2026)'; // Clients module, includes Bovitech Contacts v17.26
+const APP_VERSION = '2.15.2 (4 Nov 2026)'; // Clients module, includes Bovitech Contacts v17.26
 // current photo priority: the order saved in Settings (synced), then any photo tags not yet placed
 function photoOrder() {
   const withPhoto = D.tags.filter((t) => tagPhotoSrc(t.id)).map((t) => t.id);
@@ -750,12 +750,15 @@ function computeJobs() {
   D.contacts.forEach((c) => { const cs = [...new Set(c.tags.filter((t) => isCatTag(t) || RATING_SET.has(t)))]; const both = c.tags.includes('pa') && c.tags.includes('pi');
     if (cs.length > 1 || both) add({ type: 'multicat', key: 'multicat:' + c.id + ':' + cs.join('.') + (both ? ':papi' : ''), kind: 'contact', id: c.id, who: fullName(c), note: [cs.length > 1 ? 'Has ' + cs.length + ' categories (' + cs.map(tagName).join(' + ') + ') — only one is allowed' : '', both ? 'Tagged both Primary (active) and Primary (inactive)' : ''].filter(Boolean).join('. ') + '. Edit the contact and fix it.' }); });
   cjSyncTypes(); cjList().forEach((cj) => { try { cjRecords(cj).forEach((x) => add({ type: 'cj_' + cj.id, ...x, note: cj.why || cjRuleText(cj) })); } catch (e) { } });
+  if (typeof ezNorm === 'function') D.businesses.forEach((b) => { if (b.gone || b.soleTrader) return; const cs = IDX.bizContacts.get(b.id) || []; const p = cs.find((c) => ezNorm(fullName(c)) === ezNorm(b.name)); if (!p) return; const other = bizOf(p).filter((x) => x.id !== b.id && !x.gone); if (!other.length) return;
+    add({ type: 'selfbiz', key: 'selfbiz:' + b.id, kind: 'business', id: b.id, who: b.name, note: `"${b.name}" is a business with just ${p.first || fullName(p)}'s name, and ${p.first || 'they'} also work${other.length === 1 ? 's' : ''} at ${other.map((x) => x.name).join(', ')}. Is it a real business?`, selfbiz: { bid: b.id, cid: p.id, others: other.map((x) => x.id) } }); });
   (D.settings.soleFixed || []).forEach((x) => { const b = IDX.biz.get(x.id); if (!b || b.gone) return; add({ type: 'solecheck', key: 'solecheck:' + x.id, kind: 'business', id: b.id, who: b.name, note: x.now ? `Renamed from "${x.old}" to "${b.name}" and ticked Sole trader — check it's right (Make a change to fix it).` : `"${x.old}" has "trading as" in the middle of its name — if it's a person invoiced in their own name, tap Make a change and tick Sole trader.` }); });
   if (typeof ezyJobs === 'function') { try { ezyJobs().forEach(add); } catch (e) { console.warn('ezyVet jobs', e); } }
   (D.conflicts || []).forEach((cf) => add({ type: 'conflict', kind: cf.kind === 'businesses' ? 'business' : 'contact', id: cf.key, who: cf.who, note: 'Changed on two devices while offline — differences below. Choose which version to keep:', data: cf }));
   return jobs;
 }
 const JOB_TYPES = {
+  selfbiz: { t: 'A business with just a person\'s name', manual: true, btn: 'Leave it — it\'s a real business' },
   solecheck: { t: 'Sole traders — check the new names', manual: true, btn: '✓ Looks right' },
   setup: { t: 'Setup to do (admin)', manual: false },
   conflict: { t: 'Sync conflicts', manual: false },
@@ -3038,17 +3041,24 @@ function dupeCard(kind, r, n) { const w = dupeWhat(kind, r); const isC = kind ==
   const ppl = isC ? bizOf(r).map((b) => b.name) : (IDX.bizContacts.get(r.id) || []).map(fullName); const cat = isC ? catOf(r) : bizCat(r);
   return `<div class="dupe-card"><div class="hint">${n}</div><div><span class="wholink" data-act="open" data-kind="${kind}" data-id="${r.id}"><b>${h(isC ? fullName(r) : r.name)}</b></span></div><div>${w.ico} ${h(w.t)}${cat ? ` · ${h(tagName(cat))}` : ''}</div>
     ${ph.length ? `<div class="hint">📞 ${h(ph.map((p) => p.value).join(', '))}</div>` : ''}${em.length ? `<div class="hint">✉️ ${h(em.map((p) => p.value).join(', '))}</div>` : ''}
-    ${ppl.length ? `<div class="hint">${isC ? '🏢 Works at' : '👥 People'}: ${h(ppl.slice(0, 4).join(', '))}${ppl.length > 4 ? '…' : ''}</div>` : ''}
+    ${ppl.length ? `<div class="hint">${isC ? '🏢 Works at' : '👥 People'}: ${h(ppl.slice(0, 4).join(', '))}${ppl.length > 4 ? '…' : ''}</div>` : ''}${isC && bizOf(r).some((b) => !b.soleTrader && typeof ezNorm === 'function' && ezNorm(b.name) === ezNorm(fullName(r))) ? `<div class="hint" style="color:#8a3b00">"${h(fullName(r))}" as a business is just their name — merging asks what to do with it</div>` : ''}
     ${!isC ? `<div class="hint">${(r.patientIds || []).length} herd/flock${(r.patientIds || []).length === 1 ? '' : 's'} · ${(r.farms || []).length} farm${(r.farms || []).length === 1 ? '' : 's'}${(r.ezyIds || []).length ? ' · from ezyVet' : ''}</div>` : ''}</div>`; }
 function dupeHtml(j) { const x = j.dupe, isC = x.kind === 'contact'; const A = isC ? D.contacts.find((y) => y.id === x.a) : IDX.biz.get(x.a), B = isC ? D.contacts.find((y) => y.id === x.b) : IDX.biz.get(x.b); if (!A || !B) return '';
   return `</div><div style="width:100%"><div class="dupe-pair">${dupeCard(x.kind, A, '1')}${dupeCard(x.kind, B, '2')}</div>
     <div class="acts"><button class="btn small greenbtn" data-act="dupe-same" data-key="${h(j.key)}" data-kind="${x.kind}" data-a="${x.a}" data-b="${x.b}">✓ They're the same — merge…</button>${!isC ? `<button class="btn small" data-act="dupe-person" data-key="${h(j.key)}" data-a="${x.a}" data-b="${x.b}">👤 One is a person at the other business…</button>` : ''}<button class="btn small" data-act="dupe-not" data-key="${h(j.key)}">✕ Not the same</button></div>`; }
 async function dupeSame(d) { const isC = d.kind === 'contact'; const get = (id) => (isC ? D.contacts.find((y) => y.id === id) : IDX.biz.get(id)); const A = get(d.a), B = get(d.b); if (!A || !B) return; const nm = (r) => (isC ? fullName(r) : r.name);
   const types = isC ? [['client', '👤 Client contact (a person)'], ['industry', '👤 Industry contact (a person)']] : [['client', '🏢 Client business'], ['nonclient', '🏭 Industry business']]; const cur = isC ? (isClientPerson(A) ? 'client' : 'industry') : (isClientBiz(A) ? 'client' : 'nonclient');
+  const selfB = isC ? [...new Set([...bizOf(A), ...bizOf(B)])].filter((b) => ezNorm(b.name) === ezNorm(fullName(A)) || ezNorm(b.name) === ezNorm(fullName(B))) : [];
+  const realB = isC ? [...new Set([...bizOf(A), ...bizOf(B)])].filter((b) => !selfB.includes(b)) : [];
+  const selfQ = selfB.length ? `<div class="f" style="margin-top:8px"><label>${selfB.map((b) => '"' + h(b.name) + '"').join(', ')} ${selfB.length === 1 ? 'is a business' : 'are businesses'} with just her/his name. What is it?</label>
+    ${realB.length ? `<label class="bk-radio" style="display:flex"><input type="radio" name="dsb" data-ask="selfb" value="into" checked> Not a real business — fold it into <b>${h(realB[0].name)}</b> (its herds, farms, history, records and invoices move there)</label>` : ''}
+    <label class="bk-radio" style="display:flex"><input type="radio" name="dsb" data-ask="selfb" value="sole" ${realB.length ? '' : 'checked'}> They're invoiced in their own name — keep it as their <b>sole trader</b> business</label>
+    <label class="bk-radio" style="display:flex"><input type="radio" name="dsb" data-ask="selfb" value="keep"> Leave it as it is</label></div>` : '';
   const ok = await askBox('Merge into one', `<div class="f"><label>Keep which name?</label><label class="bk-radio" style="display:flex"><input type="radio" name="dk" data-ask="keep" value="a" checked onchange="this.form&&0"> ${h(nm(A))}</label><label class="bk-radio" style="display:flex"><input type="radio" name="dk" data-ask="keep" value="b"> ${h(nm(B))}</label></div>
-    <div class="f"><label>The merged one is a…</label>${types.map(([v, l]) => `<label class="bk-radio" style="display:flex"><input type="radio" name="dt" data-ask="type" value="${v}" ${v === cur ? 'checked' : ''}> ${l}</label>`).join('')}</div><div class="hint">Next you'll see anything that's different between them (like info or category) to choose which to keep.</div>`, 'Next ›');
-  if (!ok) return; const keep = ASK_FORM.keep === 'b' ? B : A, other = keep === A ? B : A; const ty = ASK_FORM.type || cur;
-  S.afterMerge = (a) => { if (isC) { if (ty === 'industry') { setOne(a, 'industry'); a.ownCats = true; } else if (!isClientPerson(a)) { const bc = bizOf(a).map(bizCat).find(Boolean); if (bc && catClass('b', bc) !== 'n') { a.ownCats = false; a.tags = a.tags.filter((t) => !isCatTag(t) && !RATING_SET.has(t)); } } }
+    <div class="f"><label>The merged one is a…</label>${types.map(([v, l]) => `<label class="bk-radio" style="display:flex"><input type="radio" name="dt" data-ask="type" value="${v}" ${v === cur ? 'checked' : ''}> ${l}</label>`).join('')}</div>${selfQ}<div class="hint">Next you'll see anything that's different between them (like info or category) to choose which to keep.</div>`, 'Next ›');
+  if (!ok) return; const keep = ASK_FORM.keep === 'b' ? B : A, other = keep === A ? B : A; const ty = ASK_FORM.type || cur; const selfDo = selfB.length ? ASK_FORM.selfb || (realB.length ? 'into' : 'sole') : null;
+  S.afterMerge = (a) => { if (isC && selfDo) { selfB.forEach((sb) => { if (!IDX.biz.get(sb.id) || sb.gone) return; if (selfDo === 'into' && realB[0]) mergeBiz(realB[0], sb); else if (selfDo === 'sole') { sb.name = soleName(sb.name, true); sb.soleTrader = true; touch(sb); } }); reindex(); }
+    if (isC) { if (ty === 'industry') { setOne(a, 'industry'); a.ownCats = true; } else if (!isClientPerson(a)) { const bc = bizOf(a).map(bizCat).find(Boolean); if (bc && catClass('b', bc) !== 'n') { a.ownCats = false; a.tags = a.tags.filter((t) => !isCatTag(t) && !RATING_SET.has(t)); } } }
     else { setBizType(a, ty); a.typeLocked = true; if (ty === 'nonclient' && !bizCat(a)) setBizCat(a, 'industry'); } touch(a); };
   mergeSheet(d.kind, keep.id, other.id); }
 async function dupePerson(d) { const A = IDX.biz.get(d.a), B = IDX.biz.get(d.b); if (!A || !B) return;
@@ -3072,6 +3082,7 @@ function jobItemHtml(j, inline) { // one job with all its buttons — used on th
         <button class="btn small" data-act="pin-diff" data-key="${h(j.key)}">Different farms</button>
         <button class="btn small" data-act="pin-same" data-key="${h(j.key)}" data-keep="${fa.id}" data-other="${fb.id}">Same yards — compare and merge…</button>`; })() : ''}
       ${j.dupe ? dupeHtml(j) : ''}
+      ${j.selfbiz ? j.selfbiz.others.map((oid) => { const o = IDX.biz.get(oid); return o ? `<button class="btn small greenbtn" data-act="selfbiz-into" data-key="${h(j.key)}" data-bid="${j.selfbiz.bid}" data-into="${oid}">↪ Not a real business — fold it into ${h(o.name)}</button>` : ''; }).join('') + `<button class="btn small" data-act="selfbiz-sole" data-key="${h(j.key)}" data-bid="${j.selfbiz.bid}">👤 It's their sole trader business</button>` : ''}
       ${j.bizonly ? `<button class="btn small greenbtn" data-act="bizonly-convert" data-cid="${j.bizonly.cid}" data-bid="${j.bizonly.bid}">✓ Yes — it's just the business (move details onto it)</button><button class="btn small" data-act="edit-contact" data-id="${j.bizonly.cid}">Edit contact</button><button class="btn small" data-act="edit-biz" data-id="${j.bizonly.bid}">Edit business</button>` : ''}
       ${j.type === 'biznodetails' ? `<button class="btn small primary" data-act="edit-biz" data-id="${j.id}">Add phone / email</button>` : ''}
       ${j.type === 'ezynote' ? `<button class="btn small" data-act="ezynote-del" data-k="${h(j.key)}" style="color:var(--red)">🗑 Delete this note</button>` : ''}
@@ -3319,6 +3330,7 @@ const GUIDE_MANUAL = [
 <p><b>Edit contact</b> has its own sections for <b>📝 Side notes</b> and <b>👪 Related people</b> (search for the person and tap them, or type a name that isn't in the app, then choose how they're related — it's saved both ways). <b>Edit business</b> lists its farms / locations with <b>➕ Add a farm</b> (saves the form first, then opens the new farm).</p>
 <p><b>Sole traders</b>: invoices, statements and records are always on a business. Someone invoiced in their own name has a business ticked <b>Sole trader</b> (Edit business) — its name gets " (sole trader)" on the end, like "Joe Bloggs (sole trader)". Starting a record for a person without a business makes their sole-trader business. Names ending "(trading as)" were changed to "(sole trader)" — Jobs → Sole traders asks you to check each.</p>
 <p><b>Possible duplicates</b> (and <b>ezyVet import: the same client?</b>): the two are shown side by side — what each one is (client contact, industry contact, client business or industry business), its category, phone numbers, emails, people and herds — tap a name to open it. Then choose: <b>✓ They're the same — merge…</b> (choose which name to keep and what the merged one is, then settle any differences), <b>👤 One is a person at the other business…</b> (for businesses: the person's herds, farms, numbers and ezyVet history move to the business, and the person is added as a contact there), or <b>✕ Not the same</b>.</p>
+<p><b>A person's name as a business</b>: when two of the same person are merged and one has a business that's just their name (like "Jenny Murray" next to AG &amp; JC Murray), the merge asks what it is — <b>not a real business</b> (folded into their real business: herds, farms, history, records and invoices move across), their <b>sole trader</b> business, or leave it. <b>Jobs → A business with just a person's name</b> lists any others, with the same choices in one tap.</p>
 <p><b>ezyVet notes: a warning, or just info?</b> also has <b>🗑 Delete this note</b> — it comes out of the business's Info.</p>
 <p><b>⇄ Merge patients</b> (on a herd / flock's page): choose another herd or flock to merge into this one — its clinical records, ezyVet history and details come across and it's removed.</p>
 <p><b>Names in Jobs are links</b>: every person or business a job mentions (both businesses in Possible duplicates, for example) opens when tapped. <b>Linking a person to a business with no category</b>: the link shows "This business has no category yet — choose one" just under the business's name; choose it there and save.</p>
@@ -4655,6 +4667,10 @@ function mergeBiz(keep, other) {
   keep.info = join(keep.info, other.info); mergeNotes(keep, other, 'business'); keep.rating = keep.rating || other.rating; keep.primaryContact = keep.primaryContact || other.primaryContact;
   if (keep.infoHtml || other.infoHtml) keep.infoHtml = [keep.infoHtml || h(keep.info || ''), other.infoHtml || ''].filter(Boolean).join('<br>');
   D.contacts.forEach((c) => { if (c.links.some((l) => l.bid === other.id)) { c.links = c.links.filter((l) => l.bid !== other.id); if (!c.links.some((l) => l.bid === keep.id)) c.links.push({ bid: keep.id }); touch(c); } });
+  keep.ezyIds = [...new Set([...(keep.ezyIds || []), ...(other.ezyIds || [])])]; if (!keep.ezyIds.length) delete keep.ezyIds;
+  keep.phones = [...(keep.phones || []), ...(other.phones || []).filter((p) => !(keep.phones || []).some((q) => lastDigits(q.value) === lastDigits(p.value)))]; keep.emails = [...(keep.emails || []), ...(other.emails || []).filter((p) => !(keep.emails || []).some((q) => (q.value || '').toLowerCase() === (p.value || '').toLowerCase()))];
+  // records, invoices, appointments and reminders on the other business move across too
+  ['crrec', 'crinv', 'bookings', 'bkrem', 'followups'].forEach((k) => (D[k] || []).forEach((r) => { if (r.bid === other.id) { r.bid = keep.id; touch(r); } }));
   touch(keep); other.farmLinks = []; trashBiz(other);
 }
 
@@ -5398,6 +5414,8 @@ document.addEventListener('click', async (e) => {
     case 'mg-all': { const root = el.closest('#sheet') || document; const v = d.v; root.querySelectorAll('input[type=radio][name^="mg-"], input[type=radio][name^="fmg-"]').forEach((x) => { if (x.value === v) x.checked = true; else if (v === 'both' && !root.querySelector(`input[name="${x.name}"][value="both"]`) && x.value === 'a') x.checked = true; }); break; }
     case 'dupe-not': D.dismissed = D.dismissed || {}; D.dismissed[d.key] = Date.now(); D._dismissDirty = true; Sync.soon(); changed(); break;
     case 'dupe-same': await dupeSame(d); break;
+    case 'selfbiz-into': case 'selfbiz-sole': { const b = IDX.biz.get(d.bid); if (!b) break; if (a === 'selfbiz-into') { const into = IDX.biz.get(d.into); if (!into || !(await ask(`Fold "${b.name}" into ${into.name}?\n\nIts herds, farms, phone numbers, emails, ezyVet history, records and invoices move to ${into.name}, and "${b.name}" goes to the trash (Settings → Trash to undo).`, 'Yes — fold it in'))) break; mergeBiz(into, b); NEXT_LOG_LABEL = `Folded "${b.name}" into ${into.name}`; }
+      else { b.name = soleName(b.name, true); b.soleTrader = true; touch(b); NEXT_LOG_LABEL = `"${b.name}" marked as a sole trader`; } reindex(); JOBS_CACHE = null; S.skipConfirm = true; if (await changed()) toast('✓ Done'); break; }
     case 'dupe-person': await dupePerson(d); break;
     case 'dupe-merge': { /* opens the merge screen, where any differences (names, info…) are settled before merging */
       const isC = d.kind === 'contact'; const keep = isC ? D.contacts.find((x) => x.id === d.keep) : IDX.biz.get(d.keep); const other = isC ? D.contacts.find((x) => x.id === d.other) : IDX.biz.get(d.other);
