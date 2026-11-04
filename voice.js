@@ -3,7 +3,11 @@
    "book Wallacup next Tuesday", "who's on call Saturday", "what's on tomorrow", "search records for foetal ageing".
    Works while the app is open on screen (phones don't let any app but their own assistant listen all the time). */
 'use strict';
-const VC = { rec: null, on: false, keep: false, last: '', wake: /^(hey\s+)?super\s*app[,\s]*/i };
+const VC = { rec: null, on: false, keep: false, last: '' };
+// her name: "Shazza" (change it in Settings → 🎤 Voice commands). Speech-to-text spells it a few ways, so those count too.
+const vcName = () => ((typeof D !== 'undefined' && D && D.settings && D.settings.voiceName) || 'Shazza').trim();
+const VC_SOUNDS = { shazza: ['shazza', 'shaza', 'shazzer', 'shazzah', 'sharza', 'shazar', 'chazza', 'shasa', 'shasta', 'shazam', 'sha za', 'shah za'] };
+Object.defineProperty(VC, 'wake', { get() { const n = vcName().toLowerCase(); const alts = [...new Set([n, ...(VC_SOUNDS[n] || []), 'super app', 'superapp'])].map((x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\s+/g, '\\s*')); return new RegExp('^(?:(?:hey|hi|ok|okay|oi)[,\\s]+)?(?:' + alts.join('|') + ')[,.!\\s]*(?:please[,\\s]+)?', 'i'); } });
 const VC_SR = window.SpeechRecognition || window.webkitSpeechRecognition;
 const VC_BUILT = [
   ['call', 'Call Cody Shilling', 'Rings their mobile (or the business phone). Asks which number if there are several, and warns first if they have a warning or are Do not answer.'],
@@ -33,7 +37,7 @@ const vcClose = () => { const el = document.getElementById('vcbox'); if (el) el.
 function vcListen(opts) { opts = opts || {}; if (!VC_SR) { vcBox('<b>Voice commands need Chrome</b><p class="hint">This browser can\'t turn speech into words. Use the app in Chrome (Android or computer).</p>', true); return; }
   try { if (VC.rec) VC.rec.abort(); } catch (e) { }
   const r = new VC_SR(); VC.rec = r; r.lang = 'en-AU'; r.interimResults = true; r.maxAlternatives = 3; r.continuous = !!opts.keep;
-  VC.on = true; VC.keep = !!opts.keep; if (!opts.quiet) vcBox(`<div class="vc-mic">🎤</div><b>${opts.keep ? 'Listening — say "Super app" then the command' : 'Listening…'}</b><div class="vc-heard hint" id="vc-heard">${opts.keep ? '' : 'Say a command, like "call Cody Shilling"'}</div>`, true);
+  VC.on = true; VC.keep = !!opts.keep; if (!opts.quiet) vcBox(`<div class="vc-mic">🎤</div><b>${opts.keep ? `Listening — say "${h(vcName())}" then the command` : 'Listening…'}</b><div class="vc-heard hint" id="vc-heard">${opts.keep ? '' : 'Say a command, like "call Cody Shilling"'}</div>`, true);
   r.onresult = (ev) => { let fin = '', tmp = ''; for (let i = ev.resultIndex; i < ev.results.length; i++) { const x = ev.results[i]; if (x.isFinal) fin += x[0].transcript; else tmp += x[0].transcript; }
     const hd = document.getElementById('vc-heard'); if (hd && (tmp || fin) && (!VC.keep || VC.wake.test((tmp || fin).trim()))) hd.textContent = '“' + (fin || tmp) + '”';
     if (fin) { let t = fin.trim(); if (VC.keep) { if (!VC.wake.test(t)) return; t = t.replace(VC.wake, ''); if (!t) { vcBox('<div class="vc-mic">🎤</div><b>Yes?</b>', true); return; } } VC.last = t; vcDo(t, [...ev.results[ev.results.length - 1]].map((a) => a.transcript)); } };
@@ -73,7 +77,7 @@ const vcSplitWhen = (t) => { const m = /\b(today|tomorrow|yesterday|(?:next\s+)?
 
 /* ---------- doing it ---------- */
 function vcAlias(t) { const L = ((D && D.settings && D.settings.voiceAlias) || []); const n = vcN(t); const a = L.find((x) => x.say && vcN(x.say) === n) || L.find((x) => x.say && n.startsWith(vcN(x.say) + ' ')); if (!a) return t; return a.cmd + t.slice(a.say.length).replace(/^\s*/, ' ').replace(/\s+$/, ''); }
-async function vcDo(said, alts) { let t = vcAlias(said.trim()); const s = vcN(t); const say = (m) => { vcSay(m); };
+async function vcDo(said, alts) { let t = vcAlias(said.trim().replace(VC.wake, '').replace(/^please[,\s]+/i, '').trim() || said.trim()); const s = vcN(t); const say = (m) => { vcSay(m); };
   const shown = (msg) => vcBox(`<div class="hint">“${h(said)}”</div><b>${msg}</b>`);
   let m;
   if (/^(what can i say|help|commands)/.test(s)) { vcHelp(); return; }
@@ -114,8 +118,9 @@ function vcHelp() { vcBox(`<b>🎤 Things you can say</b>${VC_BUILT.map(([, ex, 
 /* ---------- Settings → 🎤 Voice commands ---------- */
 function voiceCard() { const st = D.settings || {}; const al = st.voiceAlias || []; const ideas = vcIdeas();
   return `<div class="card"><h3>🎤 Voice commands</h3><div class="hint" style="margin-bottom:6px">Tap <b>🎤</b> at the top of the app and say a command. Phones only let their own assistant listen all the time, so "Hey Google, open Bovitech Super App" opens the app — with <b>Hands-free</b> on, it then starts listening straight away.</div>
+    <div class="f"><label for="vc-name">Her name (say it first: "${h(vcName())}, call Cody Shilling")</label><div class="cr-row"><input id="vc-name" value="${h(vcName())}" style="flex:1"><button class="btn small" data-act="vc-name">Save</button></div></div>
     <label class="bk-radio" style="display:flex"><input type="checkbox" data-act="vc-auto" ${vcPref('voiceAuto') ? 'checked' : ''}> <span><b>Hands-free</b> (this device): start listening when the app opens or comes back on screen</span></label>
-    <label class="bk-radio" style="display:flex"><input type="checkbox" data-act="vc-keep" ${vcPref('voiceKeep') ? 'checked' : ''}> <span><b>Keep listening</b> (this device) while the app is on screen — say <b>"Super app"</b> first, then the command (uses more battery; some phones beep each time it starts listening again)</span></label>
+    <label class="bk-radio" style="display:flex"><input type="checkbox" data-act="vc-keep" ${vcPref('voiceKeep') ? 'checked' : ''}> <span><b>Keep listening</b> (this device) while the app is on screen — say <b>"${h(vcName())}"</b> first, then the command (uses more battery; some phones beep each time it starts listening again)</span></label>
     <div class="lbl" style="margin-top:10px">What you can say</div>${VC_BUILT.map(([, ex, what]) => `<div class="kv"><div class="k">“${h(ex)}”</div><div class="v hint">${h(what)}</div></div>`).join('')}
     <div class="lbl" style="margin-top:10px">Your shortcuts <span class="hint">(for everyone)</span></div><div class="hint">Words you say → the command they mean. For example "ring the office" → "call Bovitech office", or "Cody" → "call Cody Shilling".</div>
     ${al.map((a, i) => `<div class="kv" style="align-items:center"><div class="v">“${h(a.say)}” → <b>${h(a.cmd)}</b></div><button class="btn small" data-act="vc-aldel" data-i="${i}" aria-label="Delete this shortcut">🗑</button></div>`).join('') || '<div class="hint">None yet.</div>'}
@@ -131,6 +136,7 @@ document.addEventListener('click', async (e) => { const el = e.target.closest &&
   if (a === 'vc-mic' || a === 'vc-again') { vcStop(); vcListen(); }
   if (a === 'vc-close') { vcStop(); vcClose(); if (vcPref('voiceKeep')) setTimeout(() => vcListen({ keep: true, quiet: true }), 600); }
   if (a === 'vc-help') vcHelp();
+  if (a === 'vc-name') { const v = ((document.getElementById('vc-name') || {}).value || '').trim(); if (!v) return; st.voiceName = v; touch(st); save(); if (window.Sync) Sync.soon(); renderAll(); toast(`Her name is ${v} now — say "${v}, call …"`); vcSay(`Hi, I'm ${v}`); }
   if (a === 'vc-pick') { const f = VC._pick; VC._pick = null; const L = VC._list || []; if (f) f(typeof L[+d.i] === 'number' ? L[+d.i] : L[+d.i]); }
   if (a === 'vc-aladd') { const ok = await askBox('🎤 Add a shortcut', '<div class="f"><label>When I say</label><input data-ask="say" style="width:100%;padding:9px;font-size:16px"></div><div class="f"><label>Do this command</label><input data-ask="cmd" style="width:100%;padding:9px;font-size:16px"></div><div class="hint">The command is said the usual way — "call Bovitech office", "navigate to Wallacup Farms", "go to the day sheet".</div>', 'Save');
     if (!ok || !(ASK_FORM.say || '').trim() || !(ASK_FORM.cmd || '').trim()) return; st.voiceAlias = [...(st.voiceAlias || []), { say: ASK_FORM.say.trim(), cmd: ASK_FORM.cmd.trim() }]; touch(st); save(); renderAll(); }

@@ -41,8 +41,9 @@ function stkRecBar(r) { if (!stkVehicles().length && !('BarcodeDetector' in wind
 // replaces the old single stock count: out of the record's vehicle, by batch, and back exactly the same way if it's reopened
 window.crStock = function (r, dir) {
   if (dir > 0) { const loc = stkRecVeh(r) || 'office'; r.stockLoc = loc; (r.items || []).forEach((it) => { const p = crProd(it.prod); if (!stkTracked(p)) return; const u = it.as === 'pack' ? (+it.qty || 0) * (+p.pack || 1) : +it.qty || 0; if (!u) return;
+    if (p.stock != null) { p.stock = crR4(p.stock - u); touch(p); } // the old single count, if it was being used
     it.lots = stkTake(p.id, u, loc, 'Used — ' + ((IDX.biz.get(r.bid) || {}).name || 'record'), r.id); if (!it.batch && it.lots[0] && it.lots[0].batch) it.batch = it.lots[0].batch; }); }
-  else { const loc = r.stockLoc || 'office'; (r.items || []).forEach((it) => { const p = crProd(it.prod); if (!p || !it.lots) return; it.lots.forEach((u) => stkAdd(p.id, u.qty, loc, u.short ? '' : u.batch, u.short ? '' : u.exp, null)); stkLog({ prod: p.id, qty: it.lots.reduce((s, u) => s + u.qty, 0), to: loc, why: 'Record reopened', ref: r.id }); delete it.lots; }); }
+  else { const loc = r.stockLoc || 'office'; (r.items || []).forEach((it) => { const p = crProd(it.prod); if (!p || !it.lots) return; it.lots.forEach((u) => stkAdd(p.id, u.qty, loc, u.short ? '' : u.batch, u.short ? '' : u.exp, null)); if (p.stock != null) { p.stock = crR4(p.stock + it.lots.reduce((s2, u) => s2 + u.qty, 0)); touch(p); } stkLog({ prod: p.id, qty: it.lots.reduce((s, u) => s + u.qty, 0), to: loc, why: 'Record reopened', ref: r.id }); delete it.lots; }); }
   stkSync(); };
 
 /* ---------- 📷 scanning ---------- */
