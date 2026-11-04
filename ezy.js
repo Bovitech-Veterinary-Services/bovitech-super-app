@@ -60,6 +60,7 @@ function ezPlan(Z) {
     const id = e['Contact Id']; const bn = (e['Business Name'] || '').trim(); const first = (e['Contact First'] || '').trim(), last = (e['Contact Last'] || '').trim(); const pn = [first, last].filter(Boolean).join(' ');
     const isBiz = ezYes(e['Contact Is Business']) && bn; const name = isBiz ? bn : pn; const cust = ezYes(e['Contact Is Customer']), sup = ezYes(e['Contact Is Supplier']);
     if (!name || ezSkipName(name) || ezSkipName(pn) || ezYes(e['Contact Is User']) || ezYes(e['Contact Is ezyVet User']) || /EMPLOYEE/i.test(e['Contact Code']) || (!cust && !sup)) return;
+    if (ezGone().has(String(id))) { P.goneSkipped = (P.goneSkipped || 0) + 1; return; } // deleted in the app on purpose — never brought back by importing again
     const eps = EP[id] || []; const phones = eps.filter((x) => !/@/.test(x.v) && ezDig(x.v).length >= 8); const emails = eps.filter((x) => /@/.test(x.v));
     const animals = animalsOf[id] || []; const active = ezYes(e['Contact Is Active']);
     // score every app business
@@ -158,6 +159,11 @@ function ezArchive(P) {
 }
 
 /* ---------- making the changes ---------- */
+/* importing again (e.g. the final export before closing ezyVet) never undoes work done in the app:
+   each business remembers what the import already gave it (ezyGot), so anything since removed, moved or changed isn't put back */
+const ezGot = (b) => { b.ezyGot = b.ezyGot || []; return { has: (k) => b.ezyGot.includes(k), add: (k) => { if (!b.ezyGot.includes(k)) b.ezyGot.push(k); } }; };
+const ezHash = (t) => { let x = 0; const s = String(t || ''); for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return (x >>> 0).toString(36) + s.length; };
+function ezGone() { const s = new Set((D.settings && D.settings.ezyGone) || []); (D.trash || []).forEach((t) => { if (t.kind === 'business' && t.rec) (t.rec.ezyIds || []).forEach((x) => s.add(String(x))); }); return s; }
 function ezApplyClients(P) {
   const S = { merged: 0, added: 0, inactive: 0, unsure: 0, people: 0, herds: 0, herdsNew: 0, notes: 0 }; const q = ezQueue(); const map = {}; // ezyVet contact id → app business id
   const addPh = (arr, v, label) => { if (!arr.some((x) => ezDig(x.value) === ezDig(v))) arr.push({ value: v, label: label || '' }); };
@@ -174,21 +180,26 @@ function ezApplyClients(P) {
     const knownE = (v) => cs.some((x) => (x.emails || []).some((p) => (p.value || '').toLowerCase() === v.toLowerCase()));
     // the person on the ezyVet record
     let person = c.person || (c.pn ? cs.find((x) => ezNorm(fullName(x)) === ezNorm(c.pn)) : null);
-    if (!person && c.first && c.last && (isNew || !cs.length)) { person = { id: uid('c'), first: c.first, middle: '', last: c.last, role: '', links: [{ bid: b.id }], tags: [], emails: [], mobiles: [], landlines: [], postal: [], info: '', warnings: '', starred: false, photoChoice: 'auto', flags: [], createdAt: Date.now() };
+    if (!person && c.first && c.last && (isNew || !cs.length) && !(b.ezyGot || []).includes('person')) { ezGot(b).add('person'); person = { id: uid('c'), first: c.first, middle: '', last: c.last, role: '', links: [{ bid: b.id }], tags: [], emails: [], mobiles: [], landlines: [], postal: [], info: '', warnings: '', starred: false, photoChoice: 'auto', flags: [], createdAt: Date.now() };
       if (!c.active) { person.inactFollow = true; person.inactBy = b.id; } D.contacts.push(person); S.people++; }
     if (person && !(person.links || []).some((l) => l.bid === b.id)) { person.links = [...(person.links || []), { bid: b.id }]; }
-    c.phones.forEach((p) => { if (known(p.v) || (b.phones || []).some((x) => ezDig(x.value) === ezDig(p.v))) return; if (person && /mobile/i.test(p.type) && (isNew || person.createdAt > Date.now() - 60000)) addPh(person.mobiles, p.v, ''); else addPh(b.phones, p.v, /mobile/i.test(p.type) ? 'mobile' : ''); });
-    c.emails.forEach((p) => { if (knownE(p.v) || (b.emails || []).some((x) => (x.value || '').toLowerCase() === p.v.toLowerCase())) return; addEm(b.emails, p.v, /account/i.test(p.name) ? 'accounts' : ''); });
+    const G = ezGot(b); const first = !isNew && !(b.ezyGot || []).length && !D.settings.ezyImport; if (first) { /* a business here before the first import: what it has now counts as already given */ (b.phones || []).forEach((x) => G.add('ph:' + ezDig(x.value))); (b.emails || []).forEach((x) => G.add('em:' + (x.value || '').toLowerCase())); }
+    c.phones.forEach((p) => { const k = 'ph:' + ezDig(p.v); if (G.has(k) && !first) return; G.add(k); if (known(p.v) || (b.phones || []).some((x) => ezDig(x.value) === ezDig(p.v))) return; if (person && /mobile/i.test(p.type) && (isNew || person.createdAt > Date.now() - 60000)) addPh(person.mobiles, p.v, ''); else addPh(b.phones, p.v, /mobile/i.test(p.type) ? 'mobile' : ''); });
+    c.emails.forEach((p) => { const k = 'em:' + p.v.toLowerCase(); if (G.has(k) && !first) return; G.add(k); if (knownE(p.v) || (b.emails || []).some((x) => (x.value || '').toLowerCase() === p.v.toLowerCase())) return; addEm(b.emails, p.v, /account/i.test(p.name) ? 'accounts' : ''); });
     const e = c.e; const addr = (pre) => [e[pre + ' Street 1'], e[pre + ' Street 2'], e[pre + ' Suburb'] || e[pre + ' City'], [e[pre + ' State'], e[pre + ' Post Code']].filter(Boolean).join(' ')].map((x) => (x || '').trim()).filter(Boolean).join(', ');
-    const pa = addr('Contact Postal') || addr('Contact Physical'); if (pa && !b.postal.length) b.postal.push(pa);
+    const pa = addr('Contact Postal') || addr('Contact Physical'); if (pa && !G.has('postal')) { G.add('postal'); if (!b.postal.length) b.postal.push(pa); }
     // herds and flocks: matched on the ezyVet animal code
     c.animals.forEach((a) => { const code = String(a['Animal Code'] || '').trim(); if (!code || ezSkipName(a['Animal Name'])) return; const spx = a['Animal Species'] || ''; const sp = /bovine/i.test(spx) ? 'cattle' : /ovine/i.test(spx) ? 'sheep' : 'other';
       const off = !ezYes(a['Is Active']) || ezYes(a.Dead) || sp === 'other'; let p = (b.patientIds || []).find((x) => String(x.value || '').trim() === code);
-      if (p) { p.ezyId = a['Animal Id']; p.species = p.species || sp; if (!p.label) p.label = a['Animal Name']; if (off && sp === 'other') p.inactive = true; S.herds++; }
+      const pk = 'pt:' + code; const seen = (b.ezyGot || []).includes(pk); ezGot(b).add(pk);
+      if (!p && (seen || D.businesses.some((x) => (x.patientIds || []).some((q) => String(q.value) === code || (q.aka || []).some((y) => String(y.v) === code))) || ((D.settings && D.settings.ptGone) || []).includes(code))) { S.herds++; return; } // merged, moved or deleted in the app — leave it
+      if (p && seen) { p.ezyId = p.ezyId || a['Animal Id']; S.herds++; }
+      else if (p) { p.ezyId = a['Animal Id']; p.species = p.species || sp; if (!p.label) p.label = a['Animal Name']; if (off && sp === 'other') p.inactive = true; S.herds++; }
       else { b.patientIds.push({ label: (a['Animal Name'] || 'Patient').trim() + (sp === 'other' && spx ? ` (${spx}${a['Animal Breed'] ? ', ' + a['Animal Breed'] : ''})` : ''), value: code, ezyId: a['Animal Id'], species: sp, inactive: off || undefined, breed: a['Animal Breed'] || undefined }); S.herdsNew++; } });
     // notes: kept in Info and a job asks whether each is really a warning and where it goes
-    ((c.notes || '').toUpperCase().match(/\bW[A-Z]{3}\d{4}\b/g) || []).forEach((pic) => { if (!(b.pics || []).some((x) => (x.value || '').toUpperCase() === pic)) { b.pics = [...(b.pics || []), { value: pic, label: '' }]; S.pics = (S.pics || 0) + 1; } }); // PICs written in the ezyVet notes
-    if (c.notes && !(b.info || '').includes(c.notes)) { b.info = [b.info, '*From ezyVet:* ' + c.notes].filter((x) => (x || '').trim()).join('\n\n'); delete b.infoHtml; q.notes.push({ bid: b.id, txt: c.notes, imp: c.important }); S.notes++; }
+    ((c.notes || '').toUpperCase().match(/\bW[A-Z]{3}\d{4}\b/g) || []).forEach((pic) => { if ((b.ezyGot || []).includes('pic:' + pic)) return; ezGot(b).add('pic:' + pic); if (!(b.pics || []).some((x) => (x.value || '').toUpperCase() === pic)) { b.pics = [...(b.pics || []), { value: pic, label: '' }]; S.pics = (S.pics || 0) + 1; } }); // PICs written in the ezyVet notes
+    const nk = 'note:' + ezHash(c.notes || ''); const noteSeen = (b.ezyGot || []).includes(nk); if (c.notes) ezGot(b).add(nk);
+    if (c.notes && !noteSeen && !(b.info || '').includes(c.notes)) { b.info = [b.info, '*From ezyVet:* ' + c.notes].filter((x) => (x || '').trim()).join('\n\n'); delete b.infoHtml; q.notes.push({ bid: b.id, txt: c.notes, imp: c.important }); S.notes++; }
     touch(b); if (person) touch(person); map[c.id] = b.id;
   });
   reindex(); ezQueueSave(q); return { S, map };
@@ -198,15 +209,19 @@ function ezApplyProds(P) { let add = 0, upd = 0; const supBiz = (ez) => { const 
     const rec = { cat: x.cat, name: x.name, unit: x.unit, price: x.price, gst: x.gst, code: x.code, ezyId: x.ezyId, group: x.group, cost: x.cost, items: x.items || undefined, fee: x.fee || undefined, feeQty: x.feeQty || undefined, whpMeat: x.whpMeat || undefined, whpMilk: x.whpMilk || undefined, dose: x.dose || undefined, route: x.route || undefined, warn: x.warn || undefined, placeholder: x.placeholder || undefined, active: true, min: x.min || undefined, reorder: x.reorder || undefined, barcodes: (x.barcodes || []).length ? x.barcodes : undefined,
       supplier: x.sup ? (supBiz(x.sup.ez) || undefined) : undefined, supName: x.sup ? x.sup.name : undefined, supCode: x.sup && x.sup.code ? x.sup.code : undefined, supPrice: x.sup && x.sup.price ? x.sup.price : undefined, supOuter: x.sup && x.sup.outer > 1 ? x.sup.outer : undefined };
     Object.keys(rec).forEach((k) => rec[k] === undefined && delete rec[k]);
-    if (ex) { if (ex.role) { if (!(+ex.price) || ex.placeholder) { ex.price = x.price; delete ex.placeholder; } ex.gst = x.gst; ex.ezyId = x.ezyId; ex.code = x.code; } else Object.assign(ex, rec); if (!x.placeholder && ex.placeholder) delete ex.placeholder; touch(ex); upd++; }
-    else { const r = { id: x.id, ...rec }; touch(r); D.crprod.push(r); add++; } });
-  P.defaults.forEach((d) => { const p = crProd(d.id); if (p) { p.price = d.price; delete p.placeholder; touch(p); } });
+    if (ex) { const edited = ex.ezyAt ? (ex._u || 0) > ex.ezyAt : !ex.ezyId && !ex.role; // changed in the app since the last import (or made in the app)
+      if (ex.role) { if (!(+ex.price) || ex.placeholder) { ex.price = x.price; delete ex.placeholder; } if (!edited) ex.gst = x.gst; ex.ezyId = x.ezyId; ex.code = ex.code || x.code; }
+      else if (edited) { Object.keys(rec).forEach((k) => { if (ex[k] == null || ex[k] === '') ex[k] = rec[k]; }); ex.ezyId = ex.ezyId || x.ezyId; } // keep what was changed here; only fill in what's missing
+      else Object.assign(ex, rec);
+      if (!x.placeholder && ex.placeholder && !edited) delete ex.placeholder; touch(ex); ex.ezyAt = ex._u; upd++; }
+    else { const r = { id: x.id, ...rec }; touch(r); r.ezyAt = r._u; D.crprod.push(r); add++; } });
+  P.defaults.forEach((d) => { const p = crProd(d.id); if (p && (p.placeholder || !(+p.price))) { p.price = d.price; delete p.placeholder; touch(p); } });
   return { add, upd }; }
 function ezApplyAppts(P, map) { let n = 0, nb = 0; const L = Bk.list('bookings'), B = Bk.list('blocks');
-  P.appts.forEach((a) => { if (L.some((x) => x.ezyId === a.id && !x.gone)) return; const bid = map[a.cidEz] || null; const b = bid ? IDX.biz.get(bid) : null; const fid = b && b.farmLinks && b.farmLinks[0] ? b.farmLinks[0].fid : (b && b.farms && b.farms[0] ? b.farms[0].id : null);
+  P.appts.forEach((a) => { if (L.some((x) => x.ezyId === a.id)) return; const bid = map[a.cidEz] || null; const b = bid ? IDX.biz.get(bid) : null; const fid = b && b.farmLinks && b.farmLinks[0] ? b.farmLinks[0].fid : (b && b.farms && b.farms[0] ? b.farms[0].id : null);
     const r = { id: uid('bk'), ezyId: a.id, type: a.type, status: a.status, staff: a.staff, svcs: [], mins: a.mins, date: a.date, start: a.start, bid, cid: null, stops: fid && a.type === 'type-farm' ? [{ fid, yid: null }] : [], sms: { send: false }, notes: [a.notes, `(from ezyVet${!bid ? ' — client: ' + a.who : ''}${!a.staff.length && a.res ? ' — ' + a.res : ''})`].filter(Boolean).join('\n'), createdAt: Date.now(), by: SBAuth.staff && SBAuth.staff.id };
     r.fids = r.stops.map((s) => s.fid); r.fid = r.fids[0] || null; touch(r); L.push(r); n++; });
-  P.blocks.forEach((x) => { if (B.some((y) => y.ezyId === x.id && !y.gone)) return; const r = { id: uid('blk'), ezyId: x.id, type: x.type, staff: x.staff, date: x.date, start: x.allDay ? '' : x.start, end: x.allDay ? '' : x.end, allDay: x.allDay, repeat: { every: 'none', days: [] }, on: true, note: x.note }; touch(r); B.push(r); nb++; });
+  P.blocks.forEach((x) => { if (B.some((y) => y.ezyId === x.id)) return; const r = { id: uid('blk'), ezyId: x.id, type: x.type, staff: x.staff, date: x.date, start: x.allDay ? '' : x.start, end: x.allDay ? '' : x.end, allDay: x.allDay, repeat: { every: 'none', days: [] }, on: true, note: x.note }; touch(r); B.push(r); nb++; });
   return { n, nb }; }
 function ezStampLast(rows) { /* each herd / flock remembers the date of its newest ezyVet record (for "not seen in 12 months") */
   const last = new Map(); rows.forEach((r) => { if (r.animal_id && r.d && (!last.has(r.animal_id) || r.d > last.get(r.animal_id))) last.set(r.animal_id, r.d); });
@@ -238,7 +253,7 @@ function ezStart() { if (!(window.SBAuth && SBAuth.isAdmin && SBAuth.isAdmin()))
   inp.click(); }
 function ezReview() { const P = EZ.plan; const C = P.clients; const sure = C.filter((c) => c.match && c.match.sure), un = C.filter((c) => c.match && !c.match.sure), nw = C.filter((c) => !c.match);
   const li = (L, f) => L.slice(0, 400).map(f).join('');
-  ezBox(`<h2>📥 ezyVet import — check before saving</h2><div class="ezy-bar"><button class="btn primary" data-act="ezy-go">📥 Import now</button><button class="btn" data-act="ezy-close">Cancel</button><span id="ezy-say" class="hint"></span></div><p class="hint">Nothing has changed yet. Have a look, then tap <b>📥 Import now</b> (it stays at the top as you scroll). It's safe to import again later — nothing is doubled.</p>
+  ezBox(`<h2>📥 ezyVet import — check before saving</h2><div class="ezy-bar"><button class="btn primary" data-act="ezy-go">📥 Import now</button><button class="btn" data-act="ezy-close">Cancel</button><span id="ezy-say" class="hint"></span></div><p class="hint">Nothing has changed yet. Have a look, then tap <b>📥 Import now</b> (it stays at the top as you scroll). It's safe to import again later — nothing is doubled.</p>${D.settings.ezyImport ? `<div class="vcx-ok">✓ <b>Importing again keeps every change made in the app.</b> Anything already brought in from ezyVet and since changed, moved, merged or deleted here (businesses, people, phone numbers, emails, notes, PICs, patients, appointments, prices) is left as it is — only things that are new in ezyVet are added.${P.goneSkipped ? ` ${P.goneSkipped} client${P.goneSkipped === 1 ? '' : 's'} deleted in the app ${P.goneSkipped === 1 ? 'is' : 'are'} skipped.` : ''}</div>` : ''}
   <details class="card" open><summary><b>Clients</b> — ${C.length} from ezyVet</summary>
     <p>✓ <b>${sure.length}</b> match a business already in the app — their missing phone numbers, emails, postal address, herds and flocks are added to it.<br>❓ <b>${un.length}</b> might be a client already in the app — they're added as their own business and a <b>Jobs</b> item asks you to merge them or keep them apart.<br>➕ <b>${nw.length}</b> are new (${nw.filter((c) => !c.active).length} inactive — added as Inactive, ${nw.filter((c) => c.sup && !c.cust).length} suppliers — added as Industry). New active clients need a category: they show in Jobs → No category.<br>📝 <b>${P.notes}</b> have ezyVet notes — they go into Info, and a Jobs item asks whether each is a warning and where it belongs.</p>
     <details><summary>Matched (${sure.length})</summary><div class="ezy-list">${li(sure, (c) => `<div>${h(c.name)} → <b>${h(c.match.b.name)}</b> <span class="hint">${h(c.match.why)}</span></div>`)}</div></details>

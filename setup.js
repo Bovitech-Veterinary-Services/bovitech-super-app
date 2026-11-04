@@ -148,6 +148,12 @@ const SETUP = [
     `In Supabase → <a href="${SETUP_SUPA}/functions" target="_blank" rel="noopener">Edge Functions</a> → <b>Deploy a new function</b> → <b>Via Editor</b>, name it <b>mail</b>, tap ${setupCopy('mail', 'Copy the mail code')}, paste it over everything in the code box and <b>Deploy</b>. (Leave "Verify JWT" ON.)`,
     'Try it: Records → Stock → Orders → make an order to yourself and send it.',
     'Tick <b>✓ Done</b>.'] },
+  { id: 'ezyfinal', t: 'Final ezyVet import — just before closing ezyVet', after: 'ezyimport2', steps: [
+    'Do this last, when you are ready to stop using ezyVet. Ask ezyVet for a fresh full export (the same backup zip as before).',
+    'On the office computer, signed in as an admin: <button class="btn primary" data-act="ezy-start">📥 Choose the new ezyVet backup zip…</button>',
+    'The summary says <b>Importing again keeps every change made in the app</b>. Everything you have fixed here stays as it is: merged or deleted clients, people, phone numbers, emails, notes, PICs and patients aren\'t brought back, and prices you changed aren\'t overwritten. Only what is new in ezyVet since the last import is added (new clients, herds, appointments, and the latest history).',
+    'Tap <b>📥 Import now</b> and leave the app open until it says finished, then check Jobs for anything new to sort out.',
+    'Tick <b>✓ Done</b> — then ezyVet can be closed.'] },
   { id: 'ezyimport2', t: 'Run the ezyVet import again (brings in stock minimums, barcodes and suppliers)', after: 'ezyimport', steps: [
     'On the office computer, signed in as an admin, with bovitechvet_backup.zip.',
     '<button class="btn primary" data-act="ezy-start">📥 Choose the ezyVet backup zip…</button>',
