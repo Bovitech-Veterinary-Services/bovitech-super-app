@@ -98,3 +98,13 @@ revoke all on function public.ezy_put(text, jsonb), public.ezy_status(text), pub
   public.ezy_get(text, text, text), public.ezy_search(text, text, text[], text[], text[], date, date, text, integer) from public, anon;
 grant execute on function public.ezy_put(text, jsonb), public.ezy_status(text), public.ezy_list(text, text[], text[], text[], integer),
   public.ezy_get(text, text, text), public.ezy_search(text, text, text[], text[], text[], date, date, text, integer) to authenticated;
+
+-- everyone signed in on a trusted device: the newest record date for each ezyVet animal (for "patients not seen in 12 months")
+create or replace function public.ezy_last(k text) returns jsonb
+language plpgsql security definer set search_path = public as $$
+begin
+  perform public.require_device(k);
+  return coalesce((select jsonb_object_agg(animal_id, d) from (select animal_id, max(d) d from public.ezy_archive where animal_id is not null and d is not null group by animal_id) s), '{}'::jsonb);
+end $$;
+revoke all on function public.ezy_last(text) from public, anon;
+grant execute on function public.ezy_last(text) to authenticated;

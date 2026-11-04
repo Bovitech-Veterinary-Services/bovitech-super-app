@@ -208,6 +208,9 @@ function ezApplyAppts(P, map) { let n = 0, nb = 0; const L = Bk.list('bookings')
     r.fids = r.stops.map((s) => s.fid); r.fid = r.fids[0] || null; touch(r); L.push(r); n++; });
   P.blocks.forEach((x) => { if (B.some((y) => y.ezyId === x.id && !y.gone)) return; const r = { id: uid('blk'), ezyId: x.id, type: x.type, staff: x.staff, date: x.date, start: x.allDay ? '' : x.start, end: x.allDay ? '' : x.end, allDay: x.allDay, repeat: { every: 'none', days: [] }, on: true, note: x.note }; touch(r); B.push(r); nb++; });
   return { n, nb }; }
+function ezStampLast(rows) { /* each herd / flock remembers the date of its newest ezyVet record (for "not seen in 12 months") */
+  const last = new Map(); rows.forEach((r) => { if (r.animal_id && r.d && (!last.has(r.animal_id) || r.d > last.get(r.animal_id))) last.set(r.animal_id, r.d); });
+  D.businesses.forEach((b) => { let ch = false; (b.patientIds || []).forEach((p) => { const d = [p.ezyId, ...(p.ezyIds || [])].filter(Boolean).map((id) => last.get(String(id))).filter(Boolean).sort().pop(); if (d && p.ezyLast !== d) { p.ezyLast = d; ch = true; } }); if (ch) touch(b); }); }
 async function ezUpload(rows, say) { // to the practice database, a batch at a time (safe to repeat — rows are replaced, not doubled)
   const k = 'bvp-ezyup'; let start = 0; try { const s = JSON.parse(localStorage.getItem(k) || '{}'); if (s.n === rows.length) start = s.i || 0; } catch (e) { }
   let i = start; while (i < rows.length) { let j = i, size = 0; while (j < rows.length && (size < 700000 || j === i) && j - i < 400) { size += JSON.stringify(rows[j]).length; j++; }
@@ -253,7 +256,7 @@ async function ezGo() { if (EZ.busy) return; EZ.busy = true; const P = EZ.plan; 
   try { ezSay('Adding clients, herds and notes…'); await new Promise((r) => setTimeout(r, 20));
     const { S, map } = ezApplyClients(P); const pr = ezApplyProds(P); const ap = ezApplyAppts(P, map);
     D.settings.ezyImport = { at: Date.now(), by: SBAuth.staff && SBAuth.staff.id, clients: P.clients.length }; touch(D.settings); JOBS_CACHE = null; save(); if (window.SupaSync) SupaSync.soon(); if (window.Sync) Sync.soon();
-    ezSay('Building the history…'); await new Promise((r) => setTimeout(r, 20)); const rows = ezArchive(P); await ezUpload(rows, ezSay);
+    ezSay('Building the history…'); await new Promise((r) => setTimeout(r, 20)); const rows = ezArchive(P); ezStampLast(rows); await ezUpload(rows, ezSay);
     EZ.plan = null; EZ.busy = false;
     ezBox(`<h2>✓ ezyVet import finished</h2><p>Clients: ${S.merged} merged, ${S.added} added (${S.inactive} inactive), ${S.unsure} to check in Jobs, ${S.people} people added.<br>Herds and flocks: ${S.herds} matched, ${S.herdsNew} added.<br>Notes to check in Jobs: ${S.notes}.${S.pics ? ` PICs found in the notes and added: ${S.pics}.` : ''}<br>Price list: ${pr.add} added, ${pr.upd} updated.<br>Appointments: ${ap.n} added, ${ap.nb} leave / block-outs.<br>History: ${rows.length.toLocaleString()} old records saved and searchable.</p><div class="actions"><button class="btn primary" data-act="ezy-close">Done</button><button class="btn" data-act="ezy-jobs">Open Jobs</button></div>`);
     renderAll(); }
@@ -272,7 +275,10 @@ function ezHistCard(key, contacts, animals) { const st = EZ.hist[key]; const tab
     ${!st ? '<div class="hint">Loading…</div>' : st.err ? `<div class="hint">Couldn't load the ezyVet history${navigator.onLine ? '' : ' — it needs the internet'}. ${h(st.err)}</div>` : !rows.length ? '<div class="hint">Nothing from ezyVet.</div>' : `
     <div class="search" style="margin:4px 0 6px"><input type="search" class="ezy-hq" placeholder="Search these records' words…" value="${h(q)}" aria-label="Search this history"></div>
     <div class="chips">${EZ_KINDS.filter(([k]) => n(k)).map(([k, l]) => `<button class="chip ${tab === k ? 'on' : ''}" data-act="ezy-htab" data-k="${k}">${l} <span class="cn">${n(k)}</span></button>`).join('')}</div>
-    ${shown.slice(0, 200).map(ezRowHtml).join('') || '<div class="hint">None.</div>'}${shown.length > 200 ? `<div class="hint">Showing 200 of ${shown.length} — search to narrow it down.</div>` : ''}`}</div>`; }
+    ${ezPagesHtml(shown)}`}</div>`; }
+function ezPagesHtml(shown) { /* the 5 most recent, then scroll across for older ones, 5 at a time */
+  if (!shown.length) return '<div class="hint">None.</div>'; const L = shown.slice().sort((a, b) => String(b.d || '').localeCompare(String(a.d || ''))).slice(0, 200); const pages = []; for (let i = 0; i < L.length; i += 5) pages.push(L.slice(i, i + 5));
+  return `<div class="ezpages">${pages.map((pg, i) => `<div class="ezpage"><div class="hint" style="margin-bottom:2px">${i ? `Older · ${i * 5 + 1}–${i * 5 + pg.length}` : 'Most recent'}</div>${pg.map(ezRowHtml).join('')}</div>`).join('')}</div>${pages.length > 1 ? `<div class="hint">Scroll across ➜ for ${L.length - 5} older${shown.length > 200 ? ` (showing 200 of ${shown.length} — search to narrow it down)` : ''}</div>` : ''}`; }
 function ezRowHtml(r) { const d = r.data || {}; return `<div class="kv bk-tap" data-act="ezy-open" data-kind="${h(r.kind)}" data-id="${h(r.id)}"><div class="k">${r.d ? bkDate(r.d, { day: 'numeric', month: 'short', year: 'numeric' }) : ''}</div><div class="v"><b>${h(d.title || ezOne[r.kind])}</b>${r.kind === 'invoice' && d.total != null ? ' · ' + crMoney(d.total) : ''}<br><span class="hint">${h([d.who, d.animal].filter(Boolean).join(' · '))}</span></div></div>`; }
 const ezHtml = (t) => h(t || '').replace(/\n/g, '<br>');
 async function ezOpen(kind, id) { ezBox(`<h2>${h(ezOne[kind] || 'Record')}</h2><p class="hint">Loading…</p>`);
