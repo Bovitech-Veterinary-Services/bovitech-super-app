@@ -8,7 +8,7 @@
 ['stk', 'stkmv', 'stkpo', 'stkeq'].forEach((k) => { if (typeof BOOK_KINDS !== 'undefined' && !BOOK_KINDS.includes(k)) BOOK_KINDS.push(k); }); // synced with everything else
 const STK = { tab: 'stock', q: '', loc: 'all', show: 'all', sel: null, po: null, veh: null };
 const stkL = (k) => (D && (D[k] || (D[k] = []))) || [];
-const stkCfg = () => { let r = crCfg('stkcfg'); return r || { id: 'stkcfg', cfg: 'stkcfg', vehicles: [], usual: {}, byStaff: {}, day: {}, poNext: 1, _new: true }; };
+const stkCfg = () => { let r = crCfg('stkcfg'); return r || { id: 'stkcfg', cfg: 'stkcfg', vehicles: [['COWVET', '2020 Toyota LandCruiser 200 Series'], ['COWVET2', '2016 Toyota Hilux'], ['COWVET3', '2025 Toyota Hilux']].map(([n, d]) => ({ id: 'veh-' + n.toLowerCase(), name: n, desc: d })), sup: { 'Prime Animal Health': { minTotal: 1000, note: 'Free freight on orders of $1,000 ex GST or more' } }, usual: {}, byStaff: {}, day: {}, poNext: 1, _new: true }; }; // the practice's vehicles to start with
 function stkCfgSave(f) { let r = crCfg('stkcfg'); if (!r) { r = stkCfg(); delete r._new; crList('crcfg').push(r); } f(r); touch(r); save(); if (window.Sync) Sync.soon(); }
 const stkVehicles = () => (stkCfg().vehicles || []).filter((v) => !v.gone);
 const stkLocName = (l) => (l === 'office' ? '🏢 Office' : '🚗 ' + ((stkVehicles().find((v) => v.id === l) || (stkCfg().vehicles || []).find((v) => v.id === l) || {}).name || 'Vehicle'));
@@ -179,8 +179,7 @@ STK_TABS.splice(STK_TABS.findIndex((x) => x[0] === 'history'), 0, ['suppliers', 
 const STK_BC = '<svg viewBox="0 0 24 16" width="22" height="15" aria-hidden="true" style="vertical-align:-2px"><g fill="currentColor"><rect x="1" y="1" width="2" height="14"/><rect x="4" y="1" width="1" height="14"/><rect x="6" y="1" width="2" height="14"/><rect x="9" y="1" width="1" height="14"/><rect x="11" y="1" width="3" height="14"/><rect x="15" y="1" width="1" height="14"/><rect x="17" y="1" width="2" height="14"/><rect x="20" y="1" width="1" height="14"/><rect x="22" y="1" width="1" height="14"/></g></svg>';
 // the vehicles (Jess, 4 Nov 2026)
 const STK_VEH_DEF = [['COWVET', '2020 Toyota LandCruiser 200 Series'], ['COWVET2', '2016 Toyota Hilux'], ['COWVET3', '2025 Toyota Hilux']];
-setInterval(() => { if (!window.APP_READY || !D || !D.sync || !D.sync.last || typeof crCfg !== 'function') return; const c = crCfg('stkcfg'); if (c && (c.vehicles || []).length) return; if (D.settings.stkVeh1) return;
-  stkCfgSave((x) => { x.vehicles = STK_VEH_DEF.map(([n, dsc]) => ({ id: 'veh-' + n.toLowerCase(), name: n, desc: dsc })); x.sup = x.sup || { 'Prime Animal Health': { minTotal: 1000, note: 'Free freight on orders of $1,000 ex GST or more' } }; }); D.settings.stkVeh1 = 1; touch(D.settings); save(); }, 7000);
+// (used until the vehicles or supplier rules are first changed — then saved like everything else)
 const stkSupRule = (name) => ((stkCfg().sup || {})[name]) || {};
 const stkOnHand = (p) => stkQty(p.id);
 function stkOrderQty(p) { const max = +p.max || (p.min ? +p.min + (+p.reorder || 0) : 0); let q = Math.max(0, crR4(max - stkOnHand(p) - stkOnOrder(p.id))); if (!q && p.min) q = +p.reorder || 1; if (p.moq && q < p.moq) q = +p.moq; if (p.supOuter > 1) q = Math.ceil(q / p.supOuter) * p.supOuter; return crR4(q); }
