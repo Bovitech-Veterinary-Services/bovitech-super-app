@@ -1,4 +1,4 @@
-/* Bovitech Super App — Settings → 📟 vControl export (update vControl) and 📟 vControl import (check vControl) — anyone can use them.
+/* Bovitech Super App — Scheduling → On call → 📟 vControl: export (update vControl) and 📟 vControl import (check vControl) — anyone can use them.
    vControl keeps one schedule per vet ("111097-Jess", "111097-Milly"), so it's one CSV per person, in vControl's own layout:
    "Time","Label" — "Nov-03 00:00 - Nov-04 23:59","On call". Export: from the app's on-call roster. Import: vControl's
    download of a schedule (Time, Label, Edit Schedule Times, Delete) is checked against the app — the app is always right. */

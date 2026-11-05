@@ -161,7 +161,7 @@ const SETUP = [
     'Then Records → Stock → Vehicles: add your vehicles, and Records → Stock → 📝 Stocktake to put in what you have.',
     'Tick <b>✓ Done</b>.'] },
   { id: 'vcontrol2', t: 'vControl: try uploading the on-call schedule files from the app', steps: [
-    'In the app: <b>Scheduling → On call → ⬇ Export (CSV)</b>. Choose the dates, then tap <b>⬇ 111097-Jess.csv</b> and <b>⬇ 111097-Milly.csv</b> (one file per vet, in the same layout as vControl\'s own download: Time and Label).',
+    'In the app: <b>Scheduling → On call → 📟 vControl</b> (tap it to open). Choose the dates, then tap <b>⬇ 111097-Jess.csv</b> and <b>⬇ 111097-Milly.csv</b> (one file per vet, in the same layout as vControl\'s own download: Time and Label).',
     'In vControl, open the <b>111097-Jess</b> schedule and use its CSV import to upload 111097-Jess.csv. Check the times came in right. Do the same for Milly.',
     'If vControl rejects it or the times are wrong, send Claude the error message (or what it shows) — the layout is easy to change.',
     'Tick <b>✓ Done</b> when it works.'] },

@@ -251,7 +251,6 @@ function bkSettingsHtml() {
   ${bkHolCard(ed)}
   ${bkSheetCard(ed)}
   ${typeof prepCard === 'function' ? prepCard(ed) : ''}
-  ${typeof vcxCard === 'function' ? vcxCard() : ''}
   ${bkYearCard(ed)}
   ${bkBulkCard(ed)}
   <div class="card"><h3>People — hours, phones, colours and where they start</h3><div class="hint" style="margin-bottom:6px">Working hours, the time kept at the end of the day for records and restocking, mobile (for the on-call list), where they usually start the day, and locums (only bookable on days marked available). To swap a day, use ⚙ / ➕ Make available at the top of their column on the calendar.${adm ? '' : ' Only the admin can change what each person can be booked for.'}</div>
