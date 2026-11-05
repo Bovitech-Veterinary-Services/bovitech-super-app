@@ -173,7 +173,7 @@ function setupJobs() { // admin logins only
 }
 function setupJobHtml(j) {
   const x = SETUP.find((y) => y.id === j.id); if (!x) return '';
-  return `<div class="job setupjob"><div class="t"><div class="who"><b>🛠 ${h(x.t)}</b></div>${j.note ? `<div class="note">⏳ ${h(j.note)}</div>` : ''}
+  return `<div class="job setupjob"><div class="t"><div class="who"><b>🛠 ${h(x.t)}</b></div>${j.note ? `<div class="note">⏳ ${h(j.note)}</div>` : ''}${/^ezy(final|import2?)$/.test(x.id) ? (() => { const L = D.settings.ezyImports || (D.settings.ezyImport ? [D.settings.ezyImport] : []); return `<div class="note">${L.length ? `📥 ezyVet imports recorded in the app: ${h(L.map((y) => new Date(y.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' }) + (y.clients ? ` (${y.clients} clients)` : '')).join(', '))}${L.length === 1 && !D.settings.ezyImports ? ' — the most recent one (earlier ones weren\'t listed before this version)' : ''}` : '⚠ No ezyVet import is recorded in the app yet.'}</div>`; })() : ''}
     <details ${S.setupOpen === x.id ? 'open' : ''} data-setup="${x.id}"><summary class="hint" style="cursor:pointer">Step-by-step instructions (${x.steps.length} steps)</summary><ol class="setupsteps">${x.steps.map((s) => `<li>${s}</li>`).join('')}</ol></details>
     <div class="acts"><button class="btn small greenbtn" data-act="job-dismiss" data-key="${h(j.key)}">✓ Done</button></div></div></div>`;
 }
