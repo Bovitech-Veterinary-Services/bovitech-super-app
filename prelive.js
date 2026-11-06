@@ -1,7 +1,7 @@
 /* Bovitech Super App — v2.28: before go-live.
    • Every setting is open to everyone (no admin-only sections or permissions) until go-live — just before then the app asks which to lock.
    • The testing pages (Scheduling, Records) are switched on for everyone.
-   • Admin job "Settings still to set up" lists what hasn't been done yet (it can see most of it), and ticks itself when they're all done.
+   • Admin jobs "Set up: …" — one for each setting not done yet, with a go-there button and ✓ Done (they tick themselves off when the app can see it's done).
    • Client Scheduling: preg testing and bull testing details (frequency and type from lists — add your own — comments, "has not … before"). */
 const PRE = { live: () => !!(typeof D !== 'undefined' && D && D.settings && D.settings.liveAt) || (navigator.webdriver && !window.PRELIVE_TEST) }; // automated tests check the go-live behaviour unless they ask for this
 if (typeof setLocked === 'function') setLocked = (function (orig) { return function (title, devOnly) { return PRE.live() ? orig.apply(this, arguments) : false; }; })(setLocked);
@@ -26,7 +26,9 @@ function preTodo() { const out = []; const has = (fn) => { try { return !!fn(); 
    ['Texts and emails — try them in 🧪 Test', 'Settings → Scheduling → Texts and emails before go-live', () => { const c = Bk.get('comms'); return c && (c.mode === 'test' || c.mode === 'live'); }]
   ].forEach(([t, where, ok]) => out.push({ t, where, done: has(ok) }));
   return out; }
-if (typeof SETUP !== 'undefined' && !SETUP.some((x) => x.id === 'settodo')) SETUP.push({ id: 'settodo', t: 'Settings still to set up', auto: () => preTodo().every((x) => x.done), get steps() { const L = preTodo(); return [`The app can see ${L.filter((x) => x.done).length} of ${L.length} done. Each one says where it is — tap it to go there:`, ...L.map((x) => `${x.done ? '✅' : '⬜'} <b>${h(x.t)}</b> — ${h(x.where)}`), 'Some can\'t be checked by the app (it can only tell if they\'ve been changed) — tick <b>✓ Done</b> when you\'re happy with them all.']; } });
+/* one admin job for each setting still to set up — each with a go-there button and ✓ Done; the ones the app can see are done tick themselves off */
+if (typeof SETUP !== 'undefined') preTodo().forEach((x, i) => { const id = 'set-' + x.t.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40); if (SETUP.some((y) => y.id === id)) return;
+  SETUP.push({ id, t: 'Set up: ' + x.t, auto: () => { const it = preTodo().find((y) => y.t === x.t); return !!(it && it.done); }, get steps() { return [`Where: ${h(x.where)} ${typeof goBtn === 'function' ? goBtn(x.where, 'Go there') : ''}`, 'Check it or set it up, then tap <b>✓ Done</b>. (If the app can see it\'s been done, this job ticks itself off.)']; } }); });
 /* ---------- the lists for preg / bull testing details ---------- */
 const PRE_LISTS = { listFreq: ['All animals, yearly', 'Yearly', 'Twice a year', 'Several times a year', 'Heifers only, yearly', 'Cows only, yearly', 'Every second year', 'Occasionally'], listPType: ['PNP', 'FA', 'FA heifers, PNP cows', 'FA and PNP', 'DP/NDP', 'Sometimes FA, sometimes PNP'], listBFreq: ['All bulls, yearly', 'Yearly', 'Twice a year', 'New bulls only', 'Every second year', 'Occasionally'] };
 const preList = (k) => { const v = (D.settings || {})[k]; return Array.isArray(v) && v.length ? v : PRE_LISTS[k]; };
