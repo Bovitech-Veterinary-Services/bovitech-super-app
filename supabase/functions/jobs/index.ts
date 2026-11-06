@@ -154,7 +154,10 @@ async function daySheets(today: string, keys: Set<string>, send: (row: any) => P
 async function smsRun() {
   const now = perthNow(), today = ymd(now), hm = now.getHours() * 60 + now.getMinutes();
   const sent: any[] = []; const errors: string[] = []; let budget = 30;
-  const send = async (row: any) => { if (budget-- <= 0) return; try { const gid = await gateway(row.phone, row.body); await setLog(row.id, { status: "sending", gateway_id: gid }); sent.push(row.id); } catch (e) { await setLog(row.id, { status: "failed", error: String((e as Error).message).slice(0, 300) }); errors.push((e as Error).message); } };
+  // client texts are OFF until go-live (Settings → Texts and emails before go-live): off → not sent; test → to the test mobile, marked TEST
+  const comms = ((await recs("bkcfg")).find((c) => c.id === "comms" && !c.gone)) || { mode: "off" }; const CLIENT = ["booked", "reminder", "proposal", "manual"];
+  const send0 = async (row: any) => { if (budget-- <= 0) return; try { const gid = await gateway(row.phone, row.body); await setLog(row.id, { status: "sending", gateway_id: gid }); sent.push(row.id); } catch (e) { await setLog(row.id, { status: "failed", error: String((e as Error).message).slice(0, 300) }); errors.push((e as Error).message); } };
+  const send = async (row: any) => { if (CLIENT.includes(row.kind) && comms.mode !== "live") { if (comms.mode !== "test") { await setLog(row.id, { status: "failed", error: "Not sent — texts to clients are switched off until go-live" }); return; } const was = row.phone; row.phone = auMobile(comms.phone || "0413107113") || row.phone; row.body = "[TEST — would go to " + was + "] " + row.body; await setLog(row.id, { phone: row.phone }); } return send0(row); };
   // 1) hand-written texts
   for (const row of await (await sb("/rest/v1/sms_log?status=eq.queued&kind=eq.manual&order=at.asc&limit=30")).json()) { const ph = auMobile(row.phone); if (!ph) { await setLog(row.id, { status: "failed", error: "Not a mobile number" }); continue; } row.phone = ph; await send(row); }
   // 2) booking texts that are due

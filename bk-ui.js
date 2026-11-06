@@ -106,7 +106,7 @@ function bkJobs() {
   if (!D || !Bk.list) return []; const t = bkToday(), soon = bkAdd(t, 7), fort = bkAdd(t, 14); const out = [];
   const live = Bk.list('bookings').filter((b) => Bk.live(b) && b.date >= t && !Bk.done(b));
   live.forEach((b) => {
-    if (b.sms && b.sms.send && !b.sms.booked && !b.sms.skip && !Bk.smsOk(Bk.smsKey('booked:' + b.id))) out.push({ k: 'sms', b, t: 'Booking SMS not sent', d: `${bkDate(b.date)} ${bkTime(b.start)} — ${Bk.who(b)}${b.cid ? '' : ' (no one chosen to text)'}` });
+    if ((typeof glMode !== 'function' || glMode() === 'live') && b.sms && b.sms.send && !b.sms.booked && !b.sms.skip && !Bk.smsOk(Bk.smsKey('booked:' + b.id))) out.push({ k: 'sms', b, t: 'Booking SMS not sent', d: `${bkDate(b.date)} ${bkTime(b.start)} — ${Bk.who(b)}${b.cid ? '' : ' (no one chosen to text)'}` });
     if (b.proposal && !b.proposal.smsSent && !b.proposal.smsSkip && !Bk.smsOk(Bk.smsKey(`proposal:${b.id}:${b.proposal.at}`))) out.push({ k: 'psms', b, t: 'New-time SMS not sent', d: `${Bk.who(b)}: suggested ${bkDate(b.proposal.date)} ${bkTime(b.proposal.start)}` });
     if (b.proposal) out.push({ k: 'prop', b, t: 'Reschedule pending approval', d: `${Bk.who(b)}: ${bkDate(b.date)} ${bkTime(b.start)} → ${bkDate(b.proposal.date)} ${bkTime(b.proposal.start)} (held since ${new Date(b.proposal.at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short' })})` });
     const left = Date.parse(`${b.date}T${b.start || '08:00'}:00`) - Date.now(); const c0 = b.cid && D.contacts.find((x) => x.id === b.cid);
