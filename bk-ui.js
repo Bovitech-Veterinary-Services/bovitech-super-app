@@ -122,6 +122,8 @@ function bkJobs() {
   bkWxJobs().forEach((j) => out.push(j));
   { const ck = bkHolCfg().checked; if (!ck || Date.now() - ck.at > 365 * 864e5) out.push({ k: 'hols', t: 'Check the public holidays', d: ck ? `Last checked ${new Date(ck.at).toLocaleDateString('en-AU', { day: 'numeric', month: 'short', year: 'numeric' })} — check once a year in case WA has changed or added any` : 'The WA public holidays haven\'t been checked yet — check once a year in case WA has changed or added any' }); }
   Bk.list('bkpending').filter((x) => !x.gone && !x.done && x.by && x.by < bkAdd(t, 7)).forEach((x) => out.push({ k: 'pend', p: x, t: 'To schedule', d: `${bkPendWho(x)} — ${bkPendWhat(x)}${x.by < t ? ' (was wanted by ' : ' (wanted by '}${bkDate(x.by)})` }));
+  if (typeof vcxChanges === 'function') { const ch = vcxChanges(); if (ch.length) out.push({ k: 'vcx', t: 'vControl needs updating', d: `The on-call roster changed after vControl was last updated — ${ch.map((x) => `${bkDate(x.d, { weekday: 'short', day: 'numeric', month: 'short' })}: ${x.was ? Bk.pname(x.was) : 'nobody'} → ${x.now ? Bk.pname(x.now) : 'nobody'}`).join('; ')}. Download the new file and upload it to vControl, and delete ${ch.some((x) => x.was) ? 'those days from ' + [...new Set(ch.filter((x) => x.was).map((x) => Bk.pname(x.was)))].join(' and ') + "'s schedule" : 'the old days'} in vControl.` }); }
+  { const ck = Bk.get('occheck'); if (!ck || !ck.at || Date.now() - ck.at > 14 * 864e5) out.push({ k: 'occheck', t: 'Check the on-call roster', d: ck && ck.at ? `Last checked ${new Date(ck.at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}${ck.by ? ' by ' + Bk.pname(ck.by) : ''} — check it at least every fortnight (and that vControl matches).` : 'Not checked yet — check it at least every fortnight (and that vControl matches).' }); }
   for (let i = 0; i < 14; i++) { const d = bkAdd(t, i); if (!bkOncallWho(d)) out.push({ k: 'oncall', d0: d, t: 'On call not set', d: bkDate(d, { weekday: 'long', day: 'numeric', month: 'short' }) }); }
   ((D && D.smsLog) || []).forEach((x) => {
     if (x.kind === 'reply' && !x.handled) out.push({ k: 'reply', x, t: 'SMS reply', d: `${bkSmsWho(x)}: “${(x.body || '').slice(0, 160)}”${x.note ? ' — ' + x.note : ''} · ${new Date(x.at).toLocaleString('en-AU', { day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })}` });
@@ -147,6 +149,8 @@ function bkJobsHtml() {
     case 'check': return '';
     case 'wx': return '';
     case 'hols': return '<button class="btn small primary" data-act="bkj-holcheck">🔎 Check now</button>';
+    case 'vcx': return '<button class="btn small primary" data-act="vcx-openroster">📟 Open vControl</button><button class="btn small" data-act="vcx-uptodate">✓ vControl is up to date</button>';
+    case 'occheck': return '<button class="btn small primary" data-act="vcx-openroster" data-plain="1">📅 Open the roster</button><button class="btn small greenbtn" data-act="oc-checked">✓ Roster checked</button>';
     case 'year': return `<button class="btn small primary" data-act="bky-done" data-id="${j.yr.id}" data-y="${j.yy}">✓ Done</button>`;
     case 'bulk': return '<button class="btn small primary" data-act="bkb-open">📋 Open the list</button>';
     case 'review': return `<button class="btn small" data-act="bkb-revadd" data-bid="${j.rv.bid}" data-k="${j.rv.k}">➕ To schedule</button><button class="btn small primary" data-act="bkb-revdone" data-bid="${j.rv.bid}" data-k="${j.rv.k}">✓ Done today</button>`;

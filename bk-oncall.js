@@ -10,6 +10,7 @@ function bkOncallWho(date) { const r = bkOncallRec(date); return r ? r.who : bkO
 function bkOncallSet(date, who) { // who: a person, null (nobody), or undefined (back to the pattern)
   let o = Bk.list('oncall').find((x) => x.id === date); if (!o) { o = { id: date, date }; D.oncall.push(o); }
   delete o.all; delete o.night; delete o.evening; delete o.gone; if (who === undefined) delete o.who; else o.who = who; touch(o);
+  setTimeout(() => { if (window.vcxAfterChange) vcxAfterChange(); }, 400); // vControl doesn't change by itself — say so
 }
 const BK_DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
 function bkRosterHtml() {
@@ -21,6 +22,8 @@ function bkRosterHtml() {
   const cycleWeek = (d) => (pat ? (((Math.floor(bkDays(pat.start, bkWeekStart(d)) / 7) % pat.weeks) + pat.weeks) % pat.weeks) + 1 : null);
   return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><b class="bk-title">On-call roster</b></div>
 </div>
+  ${(() => { const ck = Bk.get('occheck'); const days = ck && ck.at ? Math.floor((Date.now() - ck.at) / 864e5) : null; const due = days == null || days >= 14;
+    return `<div class="oc-checked ${due ? 'due' : ''}"><div style="flex:1">${ck && ck.at ? `✅ <b>Roster last checked</b> ${new Date(ck.at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}${ck.by ? ' by ' + h(Bk.pname(ck.by)) : ''} (${days === 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago'})${due ? ' — <b>due for a check</b>' : ''}` : '⚠ <b>The roster hasn\'t been checked yet</b>'}<br><span class="hint">Check it at least every fortnight — look through the next few weeks, and that vControl matches (📟 vControl below).</span></div>${ed ? '<button class="btn small greenbtn" data-act="oc-checked">✓ I\'ve checked the roster</button>' : ''}</div>`; })()}
   ${bkAiCard('roster')}
   <div class="hint" style="margin-bottom:8px">One vet on call each day, midnight to midnight. The usual pattern fills the roster; change any day by hand (it says "changed"), or pick the "(pattern)" choice to put it back.${ed ? '' : ' You can see the roster but not change it.'}</div>
   <details class="card" ${BK.ocpOpen || !pat ? 'open' : ''} data-ocp="1"><summary><b>🔁 Regular pattern</b> <span class="hint">${pat ? `${h(act.pname || 'not named')} · ${pat.weeks}-week cycle` : 'not set yet'}${dirty ? ' · <b style="color:var(--red)">changes not saved</b>' : ''}</span></summary>
@@ -68,10 +71,10 @@ document.addEventListener('click', async (e) => { const el = e.target.closest &&
       if (!ok) return; const nm = (ASK_FORM.n || '').trim(); if (!nm) { toast('Give the pattern a name'); return; }
       let sv = Bk.cfg('ocsaved').find((x) => x.name.toLowerCase() === nm.toLowerCase()); if (!sv) { sv = { id: uid('ocs'), cfg: 'ocsaved', name: nm }; D.bkcfg.push(sv); }
       Object.assign(sv, { name: nm, weeks: src.weeks || 2, start: src.start || bkWeekStart(bkToday()), grid: bkClone(src.grid || {}) }); touch(sv);
-      BK.ocDraft = null; if (act.saved === sv.id || !act.saved && !Bk.cfg('ocsaved').some((x) => x !== sv)) { Object.assign(act, { weeks: sv.weeks, start: sv.start, grid: bkClone(sv.grid), saved: sv.id, pname: nm }); touch(act); bkDone(`"${nm}" saved — it's the pattern in use`); return; }
+      BK.ocDraft = null; if (act.saved === sv.id || !act.saved && !Bk.cfg('ocsaved').some((x) => x !== sv)) { Object.assign(act, { weeks: sv.weeks, start: sv.start, grid: bkClone(sv.grid), saved: sv.id, pname: nm }); touch(act); bkDone(`"${nm}" saved — it's the pattern in use`); setTimeout(() => { if (window.vcxAfterChange) vcxAfterChange(); }, 400); return; }
       bkDone(`"${nm}" saved — tap Use this one to use it`); return; }
     const sv = Bk.get(el.dataset.id); if (!sv) return;
-    if (a === 'ocs-use') { if (!(await ask(`Use "${sv.name}" as the regular on-call pattern? Days changed by hand on the roster stay as they are.`, 'Yes — use it'))) return; Object.assign(act, { weeks: sv.weeks, start: sv.start, grid: bkClone(sv.grid || {}), saved: sv.id, pname: sv.name }); touch(act); BK.ocDraft = null; bkDone(`"${sv.name}" is now the regular pattern`); return; }
+    if (a === 'ocs-use') { if (!(await ask(`Use "${sv.name}" as the regular on-call pattern? Days changed by hand on the roster stay as they are.`, 'Yes — use it'))) return; Object.assign(act, { weeks: sv.weeks, start: sv.start, grid: bkClone(sv.grid || {}), saved: sv.id, pname: sv.name }); touch(act); BK.ocDraft = null; bkDone(`"${sv.name}" is now the regular pattern`); setTimeout(() => { if (window.vcxAfterChange) vcxAfterChange(); }, 400); return; }
     if (a === 'ocs-ren') { const ok = await askBox('Rename this pattern', `<div class="f"><label for="ocs-r">Name</label><input id="ocs-r" data-ask="n" value="${h(sv.name)}"></div>`, 'Save', false, 'Cancel'); if (!ok || !(ASK_FORM.n || '').trim()) return; sv.name = ASK_FORM.n.trim(); touch(sv); if (act.saved === sv.id) { act.pname = sv.name; touch(act); } bkDone('Renamed'); return; }
     if (a === 'ocs-del') { if (!(await ask(`Delete the saved pattern "${sv.name}"?${act.saved === sv.id ? ' The roster keeps using it until you choose another.' : ''}`, 'Yes — delete', true))) return; sv.gone = true; touch(sv); if (act.saved === sv.id) { delete act.saved; touch(act); } bkDone('Pattern deleted'); return; } }
   else if (a === 'ocp-usual') { if (!Bk.need('roster')) return; const ppl = Bk.people(); const J = ppl.find((s) => /^jess/i.test(s.preferred_name || s.full_name)), M = ppl.find((s) => /^(milly|amelia)/i.test(s.preferred_name || s.full_name));
