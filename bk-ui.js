@@ -459,3 +459,44 @@ function bkAiText(pg, req) {
 .bk-cval{width:100%;max-width:420px;margin-top:8px;accent-color:var(--c)}
 .bk-lookbox{border:1px dashed var(--line,#ccc);border-radius:8px;padding:6px 8px;margin:8px 0}
 `; document.head.appendChild(st); })();
+
+/* ---------------- quarter-hour time chooser: hour + minute (00 first), replaces the browser's own picker on 15-minute time boxes ---------------- */
+const TP_DESC = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+function tpEnhance(inp) {
+  if (inp.dataset.tp) return; inp.dataset.tp = '1';
+  const wrap = document.createElement('span'); wrap.className = 'tp';
+  const hs = document.createElement('select'), ms = document.createElement('select');
+  hs.setAttribute('aria-label', (inp.getAttribute('aria-label') || 'Time') + ' hour'); ms.setAttribute('aria-label', (inp.getAttribute('aria-label') || 'Time') + ' minutes');
+  const hl = (x) => `${x % 12 || 12} ${x < 12 ? 'am' : 'pm'}`;
+  const fill = () => {
+    const v = TP_DESC.get.call(inp) || ''; const [H, M] = v ? v.split(':').map(Number) : [null, null];
+    hs.innerHTML = (v ? '' : '<option value="">–</option>') + Array.from({ length: 24 }, (_, x) => `<option value="${x}" ${x === H ? 'selected' : ''}>${hl(x)}</option>`).join('');
+    const mins = [0, 15, 30, 45]; if (M != null && !mins.includes(M)) mins.push(M); mins.sort((a, b) => a - b);
+    ms.innerHTML = (v ? '' : '<option value="">–</option>') + mins.map((x) => `<option value="${x}" ${x === M ? 'selected' : ''}>${String(x).padStart(2, '0')}</option>`).join('');
+    hs.disabled = ms.disabled = inp.disabled;
+  };
+  const put = () => {
+    if (hs.value === '' && ms.value === '') return; const H = hs.value === '' ? 8 : +hs.value, M = ms.value === '' ? 0 : +ms.value;
+    TP_DESC.set.call(inp, String(H).padStart(2, '0') + ':' + String(M).padStart(2, '0')); fill();
+    inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true }));
+  };
+  hs.addEventListener('change', (e) => { e.stopPropagation(); put(); }); ms.addEventListener('change', (e) => { e.stopPropagation(); put(); });
+  Object.defineProperty(inp, 'value', { configurable: true, get() { return TP_DESC.get.call(this); }, set(v) { TP_DESC.set.call(this, v); fill(); } }); // code that sets the time still updates the chooser
+  new MutationObserver(fill).observe(inp, { attributes: true, attributeFilter: ['disabled'] });
+  wrap.append(hs, document.createTextNode(' : '), ms); inp.after(wrap); inp.style.display = 'none';
+  if (inp.id) { const lb = document.querySelector(`label[for="${inp.id}"]`); if (lb) lb.setAttribute('for', ''); lb && lb.addEventListener('click', () => hs.focus()); }
+  fill(); if (inp.id === 'bb-start' || inp.id === 'bb-end') setTimeout(bkAllDayUi, 0);
+}
+function tpScan(root) { (root.querySelectorAll ? root : document).querySelectorAll('input[type=time][step="900"]:not([data-tp])').forEach(tpEnhance); }
+if (typeof document !== 'undefined') {
+  const tpGo = () => { tpScan(document); new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType !== 1) return; if (n.matches && n.matches('input[type=time][step="900"]')) tpEnhance(n); else tpScan(n); }))).observe(document.body, { childList: true, subtree: true }); };
+  if (document.body) tpGo(); else document.addEventListener('DOMContentLoaded', tpGo);
+  const st = document.createElement('style'); st.textContent = '.tp{display:inline-flex;align-items:center;gap:2px;white-space:nowrap}.tp select{padding:7px 6px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:16px;color:inherit}.tp select:disabled{opacity:.55}'; document.head.appendChild(st);
+  /* blocks: choosing a time means it isn't all day; ticking All day greys the times */
+  document.addEventListener('change', (e) => {
+    const t = e.target; if (!t || !t.id) return;
+    if ((t.id === 'bb-start' || t.id === 'bb-end')) { const ad = document.getElementById('bb-allday'); if (ad && ad.checked) { ad.checked = false; bkAllDayUi(); } }
+    if (t.id === 'bb-allday') bkAllDayUi();
+  });
+}
+function bkAllDayUi() { const ad = document.getElementById('bb-allday'); if (!ad) return; ['bb-start', 'bb-end'].forEach((id) => { const el = document.getElementById(id); if (el) { const w = el.nextElementSibling; if (w && w.classList.contains('tp')) w.style.opacity = ad.checked ? '.45' : ''; } }); }
