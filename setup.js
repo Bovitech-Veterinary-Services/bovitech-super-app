@@ -169,7 +169,7 @@ const SETUP = [
     'On the office computer, signed in as an admin, with bovitechvet_backup.zip.',
     '<button class="btn primary" data-act="ezy-start">📥 Choose the ezyVet backup zip…</button>',
     'Tap <b>📥 Import now</b>. Nothing is doubled — it adds each product\'s minimum, usual order amount, barcodes and supplier (with their code and price) to the price list.',
-    'Then Records → Stock → Vehicles: add your vehicles, and Records → Stock → 📝 Stocktake to put in what you have.',
+    'Then Scheduling → Vehicles: add your vehicles, and Records → Stock → 📝 Stocktake to put in what you have.',
     'Tick <b>✓ Done</b>.'] },
   { id: 'vcontrol2', t: 'vControl: try uploading the on-call schedule files from the app', steps: [
     'In the app: <b>Scheduling → On call → 📟 vControl</b> (tap it to open). Choose the dates, then tap <b>⬇ 111097-Jess.csv</b> and <b>⬇ 111097-Milly.csv</b> (one file per vet, in the same layout as vControl\'s own download: Time and Label).',
