@@ -7,9 +7,17 @@ function bkOncallRec(date) { const o = Bk.list('oncall').find((x) => x.id === da
 function bkOncallPat() { const p = Bk.get('ocpat'); return p && !p.gone && p.start ? p : null; }
 function bkOncallFromPat(date) { const p = bkOncallPat(); if (!p) return null; const w = ((Math.floor(bkDays(p.start, bkWeekStart(date)) / 7) % p.weeks) + p.weeks) % p.weeks; return (p.grid || {})[w + '-' + bkDow(date)] || null; }
 function bkOncallWho(date) { const r = bkOncallRec(date); return r ? r.who : bkOncallFromPat(date); }
+/* the roster check: due every second Monday, starting Mon 9 Nov 2026 */
+const BK_OC_DUE0 = '2026-11-09';
+function bkOcDue() { const t = bkToday(); const ck = Bk.get('occheck'); const lastD = ck && ck.at ? new Date(ck.at).toLocaleDateString('en-CA') : null; let was = null, next = BK_OC_DUE0;
+  if (t >= BK_OC_DUE0) { const k = Math.floor(bkDays(BK_OC_DUE0, t) / 14); was = bkAdd(BK_OC_DUE0, k * 14); next = bkAdd(was, 14); }
+  const due = !!was && (!lastD || lastD < was); return { due, was, next: due ? was : next }; }
+/* days changed in the app since vControl was last updated */
+function bkVcxPending() { const ch = typeof vcxChanges === 'function' ? vcxChanges() : []; const p = Bk.get('vcxpend'); const extra = (p && p.days || []).filter((d) => d >= bkToday() && !ch.some((x) => x.d === d)).map((d) => ({ d })); return [...ch, ...extra].sort((a, b) => (a.d < b.d ? -1 : 1)); }
 function bkOncallSet(date, who) { // who: a person, null (nobody), or undefined (back to the pattern)
   let o = Bk.list('oncall').find((x) => x.id === date); if (!o) { o = { id: date, date }; D.oncall.push(o); }
   delete o.all; delete o.night; delete o.evening; delete o.gone; if (who === undefined) delete o.who; else o.who = who; touch(o);
+  { let p = Bk.get('vcxpend'); if (!p) { p = { id: 'vcxpend', cfg: 'vcxpend', days: [] }; D.bkcfg.push(p); } if (!(p.days || []).includes(date)) { p.days = [...(p.days || []), date]; touch(p); } } // shown under the roster check until vControl is updated
   setTimeout(() => { if (window.vcxAfterChange) vcxAfterChange(); }, 400); // vControl doesn't change by itself — say so
 }
 const BK_DOW_ORDER = [1, 2, 3, 4, 5, 6, 0];
@@ -23,8 +31,10 @@ function bkRosterHtml() {
   const cycleWeek = (d) => (pat ? (((Math.floor(bkDays(pat.start, bkWeekStart(d)) / 7) % pat.weeks) + pat.weeks) % pat.weeks) + 1 : null);
   return `<div class="d-wrap bk-wrap"><div class="bk-top"><div class="bk-nav"><b class="bk-title">On-call roster</b></div>
 </div>
-  ${(() => { const ck = Bk.get('occheck'); const days = ck && ck.at ? Math.floor((Date.now() - ck.at) / 864e5) : null; const due = days == null || days >= 14;
-    return `<div class="oc-checked ${due ? 'due' : ''}"><div style="flex:1">${ck && ck.at ? `✅ <b>Roster last checked</b> ${new Date(ck.at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short' })}${ck.by ? ' by ' + h(Bk.pname(ck.by)) : ''} (${days === 0 ? 'today' : days === 1 ? 'yesterday' : days + ' days ago'})${due ? ' — <b>due for a check</b>' : ''}` : '⚠ <b>The roster hasn\'t been checked yet</b>'}<br><span class="hint">Check it at least every fortnight — look through the next few weeks, and that vControl matches (📟 vControl below).</span></div>${ed ? '<button class="btn small greenbtn" data-act="oc-checked">✓ I\'ve checked the roster</button>' : ''}</div>`; })()}
+  ${(() => { const ck = Bk.get('occheck'); const D2 = bkOcDue(); const fmt = (d) => bkDate(d, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+    const pend = bkVcxPending();
+    return `<div class="oc-checked ${D2.due ? 'due' : ''}"><div style="flex:1">${D2.due ? '⚠ <b>The roster is due to be checked</b>' : '✅ <b>Roster checked</b>'}<br>${ck && ck.at ? `Last checked: <b>${new Date(ck.at).toLocaleDateString('en-AU', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</b>${ck.by ? ' by ' + h(Bk.pname(ck.by)) : ''}` : 'Last checked: <b>not yet</b>'} · ${D2.due ? `Was due: <b>${fmt(D2.was)}</b>` : `Next due: <b>${fmt(D2.next)}</b>`}<br><span class="hint">Due every second Monday — look through the next few weeks, and check vControl matches (📟 vControl below).</span></div>${ed ? '<button class="btn small greenbtn" data-act="oc-checked">✓ I\'ve checked the roster</button>' : ''}</div>
+    ${pend.length ? `<div class="vcx-warn" style="margin:-4px 0 10px">⚠ <b>On-call changed in the app, but not yet in vControl:</b> ${h(pend.slice(0, 8).map((x) => bkDate(x.d, { weekday: 'short', day: 'numeric', month: 'short' }) + (x.now !== undefined ? ': ' + vclWho(x.was) + ' → ' + vclWho(x.now) : '')).join(' · '))}${pend.length > 8 ? ' …' : ''}. Update vControl (steps under <b>⬆ vControl export</b> in 📟 vControl below), then tap <button class="btn small greenbtn" data-act="vcx-done">✓ I've uploaded it to vControl</button></div>` : ''}`; })()}
   ${bkAiCard('roster')}
   <div class="hint" style="margin-bottom:8px">One vet on call each day, midnight to midnight. The usual pattern fills the roster; change any day by hand (it says "changed"), or pick the "(pattern)" choice to put it back.${ed ? '' : ' You can see the roster but not change it.'}</div>
   <details class="card" ${BK.ocpOpen || !pat ? 'open' : ''} data-ocp="1"><summary><b>🔁 Regular pattern</b> <span class="hint">${pat ? `${h(act.pname || 'not named')} · ${pat.weeks}-week cycle` : 'not set yet'}${dirty ? ' · <b style="color:var(--red)">changes not saved</b>' : ''}</span></summary>

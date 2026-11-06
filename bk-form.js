@@ -577,7 +577,7 @@ document.addEventListener('dragend', () => { BK._drag = null; document.querySele
 /* ---------------- taps and changes ---------------- */
 document.addEventListener('click', async (e) => {
   const col = e.target.closest && e.target.closest('.bk-col');
-  if (col && !e.target.closest('.bk-appt, .bk-block, .bk-prop, .bk-drive')) { if (!Bk.can('book')) return; const r = col.getBoundingClientRect(); const m = Math.floor((BK_START + (e.clientY - r.top) / BK_PX) / 15) * 15; bkOpen(null, { staff: [col.dataset.staff], date: BK.date, start: bkHHMM(Math.max(BK_START, Math.min(BK_END - 15, m))) }); return; }
+  if (col && !e.target.closest('.bk-appt, .bk-block, .bk-prop, .bk-drive, .bk-meetno')) { if (!Bk.can('book')) return; const r = col.getBoundingClientRect(); const m = Math.floor((BK_START + (e.clientY - r.top) / BK_PX) / 15) * 15; bkOpen(null, { staff: [col.dataset.staff], date: BK.date, start: bkHHMM(Math.max(BK_START, Math.min(BK_END - 15, m))) }); return; }
   const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return; const a = el.dataset.act; if (!/^(bk|bkf|bkj|bks|bb|fu|bklog)-/.test(a)) return;
   const d = el.dataset;
   switch (a) {

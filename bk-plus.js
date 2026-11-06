@@ -168,7 +168,7 @@ const BKDR = { on: null };
 function bkDragStart(el, x, y) {
   const col = el.closest('.bk-col'); if (!col) return; const r = col.getBoundingClientRect(); const top = parseFloat(el.style.top) || 0;
   /* appointments: grab the top edge to change the start, the bottom edge to change the end, the middle to move it (same length) */
-  const inEl = y - el.getBoundingClientRect().top, H0 = el.offsetHeight, edge = Math.max(4, Math.min(8, H0 / 5)); const mode = el.dataset.drag !== 'appt' ? 'move' : inEl <= edge ? 'top' : inEl >= H0 - edge ? 'bottom' : 'move';
+  const inEl = y - el.getBoundingClientRect().top, H0 = el.offsetHeight, edge = Math.max(4, Math.min(8, H0 / 5)); const mode = !['appt', 'block'].includes(el.dataset.drag) ? 'move' : inEl <= edge ? 'top' : inEl >= H0 - edge ? 'bottom' : 'move';
   BKDR.on = { el, kind: el.dataset.drag, mode, id: el.dataset.id, staff: el.dataset.staff, day: el.dataset.day || BK.date, grab: (y - r.top) - top, x, y, col: col, startMin: Math.round(BK_START + top / BK_PX), endMin: Math.round(BK_START + (top + H0) / BK_PX), h: H0, moved: false, ghost: null, min: null, toStaff: el.dataset.staff };
   el.classList.add('bk-dragging'); if (navigator.vibrate) try { navigator.vibrate(15); } catch (e) { }
 }
@@ -177,7 +177,7 @@ function bkDragMove(x, y) {
   const sc = document.querySelector('.bk-dayscroll.v'); if (sc) { const r = sc.getBoundingClientRect(); if (y < r.top + 40) sc.scrollTop -= 12; else if (y > r.bottom - 40) sc.scrollTop += 12; }
   d.el.style.pointerEvents = 'none'; const under = document.elementFromPoint(x, y); d.el.style.pointerEvents = '';
   const col = (under && under.closest && under.closest('.bk-col')) || d.col; if (d.kind === 'lunch' && col.dataset.staff !== d.staff) { /* lunch stays with its person */ }
-  const tcol = d.kind === 'lunch' || d.mode !== 'move' ? d.el.closest('.bk-col') : col; const r = tcol.getBoundingClientRect();
+  const tcol = d.kind === 'lunch' || d.kind === 'block' || d.mode !== 'move' ? d.el.closest('.bk-col') : col; const r = tcol.getBoundingClientRect();
   if (d.mode !== 'move') { /* resizing: the other end stays put */ let m = Math.round((BK_START + (y - r.top) / BK_PX) / 15) * 15; if (d.mode === 'top') m = Math.max(BK_START, Math.min(d.endMin - 15, m)); else m = Math.min(BK_END, Math.max(d.startMin + 15, m)); d.min = m; d.toStaff = d.staff;
     if (!d.ghost) { d.ghost = document.createElement('div'); d.ghost.className = 'bk-ghost'; } if (d.ghost.parentNode !== tcol) tcol.appendChild(d.ghost);
     const s0 = d.mode === 'top' ? m : d.startMin, e0 = d.mode === 'top' ? d.endMin : m; d.ghost.style.top = (s0 - BK_START) * BK_PX + 'px'; d.ghost.style.height = (e0 - s0) * BK_PX + 'px'; d.ghost.textContent = `${bkTime(s0)}–${bkTime(e0)} (${e0 - s0} min)`; return; }
@@ -189,6 +189,7 @@ function bkDragMove(x, y) {
 function bkDragEnd(cancel) {
   const d = BKDR.on; BKDR.on = null; if (!d) return; d.el.classList.remove('bk-dragging'); if (d.ghost) d.ghost.remove(); document.querySelectorAll('.bk-col.dropcol').forEach((c) => c.classList.remove('dropcol'));
   if (!d.moved) return; BK._dragEnd = Date.now(); if (cancel || d.min == null) return;
+  if (d.kind === 'block') { if (d.min === (d.mode === 'bottom' ? d.endMin : d.startMin)) return; setTimeout(() => bkDropBlock(d), 0); return; }
   if (d.mode !== 'move') { if (d.min === (d.mode === 'top' ? d.startMin : d.endMin)) return; setTimeout(() => bkResizeAppt(d), 0); return; }
   if (d.min === d.startMin && d.toStaff === d.staff) return;
   setTimeout(() => (d.kind === 'lunch' ? bkDropLunch(d) : bkDropAppt(d)), 0);
@@ -204,6 +205,12 @@ async function bkDropLunch(d) {
   if (msgs.length && !(await ask(msgs.join('\n') + '\n\nMove lunch there anyway?', 'Yes — move it'))) { renderAll(); return; }
   bkSetLunch(sid, date, m); bkDone(`${Bk.pname(sid)}'s lunch moved to ${bkTime(m)}`);
 }
+async function bkDropBlock(d) { // dragged a block: the top (new start), the bottom (new end) or the middle (move it, same length)
+  const b = Bk.list('blocks').find((x) => x.id === d.id); if (!b || !Bk.need('blocks')) { renderAll(); return; } const s0 = bkMin(b.start), e0 = bkMin(b.end);
+  const ns = d.mode === 'bottom' ? s0 : d.min, ne = d.mode === 'top' ? e0 : d.mode === 'bottom' ? d.min : d.min + (e0 - s0); if (ne - ns < 15) { renderAll(); return; }
+  const v = { start: bkHHMM(ns), end: bkHHMM(ne), allDay: false, office: false }; const rep = !b.of && b.repeat && b.repeat.every && b.repeat.every !== 'none'; const nm = Bk.btype(b.type).name;
+  if (rep) { const scope = await bkScope('block', 'Change'); if (!scope) { renderAll(); return; } const base = bkClone(b); ['id', 'skip', 'of', 'occ'].forEach((k) => delete base[k]); bkBlockScopeSave(b, d.day, { ...base, ...v, date: d.day, toDate: null }, scope); }
+  else { Object.assign(b, v); touch(b); } bkDone(`${nm}: now ${bkTime(ns)}–${bkTime(ne)}`); }
 async function bkResizeAppt(d) { // dragged the top (new start) or bottom (new end) of an appointment
   const b = bkRec(d.id); if (!b || !Bk.need('book')) { renderAll(); return; } const s0 = bkMin(b.start), e0 = s0 + b.mins;
   const ns = d.mode === 'top' ? d.min : s0, ne = d.mode === 'top' ? e0 : d.min; if (ne - ns < 15) { renderAll(); return; }

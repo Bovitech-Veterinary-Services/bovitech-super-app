@@ -153,7 +153,9 @@ const Bk = {
         D.sync.bkMig = 5;
       }
       /* blocks from ezyVet that were 8 hours or more came in as all day — they're office hours (8:30am–5pm). Marked once (ezyOff), so choosing All day later sticks; safe to run again */
-      Bk.list('blocks').forEach((b) => { if (b.ezyId && b.type === 'bt-leave' && /\bRDO\b|rostered day off/i.test(b.note || '') && Bk.get('bt-rdo')) { b.type = 'bt-rdo'; touch(b); n++; } }); // ezyVet RDOs came in as leave — safe to run again
+      Bk.list('blocks').forEach((b) => { if (b.ezyId && !b.gone && (b.type === 'bt-rdo' || /\bRDO\b|rostered day off/i.test(b.note || ''))) { b.gone = true; touch(b); n++; } }); // RDOs from ezyVet aren't needed — the person's usual days already show them as not working (safe to run again)
+      [['bt-sick', 'Sick leave', '#c2410c', 'stripes', 7], ['bt-comp', 'Compassionate leave', '#7c3aed', 'dots', 8]].forEach(([id, name, colour, pattern, order]) => { if (!Bk.get(id)) { const r = { id, cfg: 'blocktype', order, name, colour, pattern, where: 'anywhere', leave: true }; touch(r); D.bkcfg.push(r); n++; } });
+      { const lv = Bk.get('bt-leave'); if (lv && lv.name === 'Leave / not available') { lv.name = 'Annual leave'; lv.leave = true; touch(lv); n++; } }
       Bk.list('blocks').forEach((b) => { if (b.ezyId && b.allDay && !b.ezyOff) { b.allDay = false; b.office = true; b.start = '08:30'; b.end = '17:00'; b.ezyOff = 1; touch(b); n++; } });
       if (n) D.sync.bkSeeded = true; save();
     } finally { BK._quiet = false; }
