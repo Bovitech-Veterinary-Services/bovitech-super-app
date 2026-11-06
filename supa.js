@@ -354,9 +354,9 @@ const SupaSync = {
       if (changes || !S.migDone) { S.migDone = true; photoCache.clear(); JOBS_CACHE = null; reindex(); logChanges(); migrate(); logChanges('Automatic update'); baseline(); renderAll(); if (pendingCount()) this.soon(); }
       save(); this.set(D.conflicts.length ? 'conflict' : 'ok');
       if (typeof GContacts !== 'undefined') GContacts.maybeRun(); // caller photos, on the one device that does them
-      if (window.Bk && Bk.on()) { // bookings: texts sent / replies (only once 03-sms.sql has been run)
-        if (this.kickSms) { this.kickSms = false; rpc('sms_kick', { k: Dev.k() }).catch(() => {}); }
-        if (!this.smsAt || Date.now() - this.smsAt > 90000) { this.smsAt = Date.now(); rpc('sms_status', { k: Dev.k(), days: 60 }).then((l) => { D.smsLog = l || []; save(); if (S.tab === 'book' && !SHEET && !CONFIRM) renderAll(); else renderTabs(); }).catch(() => {}); }
+      { // texts sent / replies (only once 03-sms.sql has been run) — for the 💬 Texts tab, contact pages and Scheduling
+        if (this.kickSms && window.Bk && Bk.on()) { this.kickSms = false; rpc('sms_kick', { k: Dev.k() }).catch(() => {}); }
+        if (!this.smsAt || Date.now() - this.smsAt > (S.tab === 'texts' ? 30000 : 90000)) { this.smsAt = Date.now(); rpc('sms_status', { k: Dev.k(), days: 120 }).then((l) => { D.smsLog = l || []; save(); if ((S.tab === 'book' || S.tab === 'texts') && !SHEET && !CONFIRM && !(document.activeElement && document.activeElement.id === 'tx-q')) renderAll(); else renderTabs(); }).catch(() => {}); }
       }
       if (!this.meChecked || Date.now() - this.meChecked > 15 * 60000) { this.meChecked = Date.now(); SBAuth.loadList().catch(() => {}); SBAuth.loadMe().then((me) => { if (!me) { SBAuth.signOut(true); showLogin("You're not on the active staff list any more — ask the office."); } else if (typeof updHi === 'function') updHi(); }).catch(() => {}); }
     } catch (e) {

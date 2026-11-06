@@ -725,19 +725,6 @@ function bkFill(text, b) { // the same fill-ins the office phone uses
   const v = { first: c ? c.first || '' : '', name: c ? fullName(c) : '', business: bz ? bz.name : '', type: Bk.type(b.type).name.toLowerCase(), day: bkDate(b.date, { weekday: 'long' }), date: bkDate(b.date, { day: 'numeric', month: 'long' }), time: b.start ? bkTime(b.start) : '', farm: f ? f.name || '' : '', at_farm: f && f.name ? ' at ' + f.name : '', vet: (b.staff || []).map(Bk.pname).join(' and '), old_date: bkDate(b.date, { weekday: 'long', day: 'numeric', month: 'long' }) };
   return text.replace(/\{(\w+)\}/g, (m, k) => (k in v ? v[k] : m)).replace(/\s+([.,])/g, '$1');
 }
-async function bkTextOpen(d) {
-  const b = d.booking ? bkRec(d.booking) : null; const cons = d.bid ? bkContactsOf(d.bid) : d.cid ? D.contacts.filter((c) => c.id === d.cid) : [];
-  const opts = cons.filter(bkMobile).map((c) => ({ v: bkMobile(c), l: `${fullName(c)} · ${bkMobile(c)}`, cid: c.id }));
-  if (d.phone && !opts.some((o) => o.v.replace(/\D/g, '').replace(/^61/, '0') === d.phone.replace(/\D/g, '').replace(/^61/, '0'))) opts.unshift({ v: d.phone, l: d.phone, cid: d.cid || '' });
-  const tpls = Bk.cfg('sms');
-  const ok = await askBox('Send a text', `<div class="f"><label for="bt-to">To</label><select id="bt-to" data-ask="to">${opts.map((o) => `<option value="${h(o.v)}" data-cid="${o.cid}" ${o.cid === (b && b.cid) ? 'selected' : ''}>${h(o.l)}</option>`).join('')}</select>${opts.length ? '' : '<div class="hint">No mobile number saved for this client.</div>'}</div>
-    <div class="f"><label for="bt-tpl">Start from</label><select id="bt-tpl"><option value="">A blank message</option>${tpls.map((t) => `<option value="${t.id}">${h(t.name)}</option>`).join('')}</select></div>
-    <div class="f"><label for="bt-body">Message</label><textarea id="bt-body" data-ask="body" rows="5"></textarea><div class="hint" id="bt-n">0 characters</div></div>
-    <div class="hint">Sent from the office phone (0499 489 919). Replies show in Scheduling → Jobs.</div>`, 'Send', false, 'Cancel');
-  if (!ok) return; const to = ASK_FORM.to, body = (ASK_FORM.body || '').trim(); if (!to || !body) { toast('Choose who to text and write the message'); return; }
-  const c = cons.find((x) => bkMobile(x) === to);
-  try { await rpc('sms_queue', { k: Dev.k(), phone: to, body, contact_id: c ? c.id : d.cid || null, business_id: d.bid || null, booking_id: b ? b.id : null }); toast('Text queued — it goes from the office phone in a moment'); SupaSync.smsAt = 0; SupaSync.soon(); }
-  catch (e) { toast(e.offline ? 'No internet — the text wasn\'t sent. Try again when you have signal.' : e.message); }
-}
+async function bkTextOpen(d) { return smsCompose(d); } // 📲 the office-number text box (sms.js)
 document.addEventListener('change', (e) => { if (e.target.id !== 'bt-tpl') return; const t = Bk.get(e.target.value); const box = document.getElementById('bt-body'); if (!box) return; const b = BK._textBooking; box.value = t ? (b ? bkFill(t.text, b) : t.text) : ''; box.dispatchEvent(new Event('input', { bubbles: true })); });
 document.addEventListener('input', (e) => { if (e.target.id !== 'bt-body') return; const n = e.target.value.length; const el = document.getElementById('bt-n'); if (el) el.textContent = `${n} characters${n > 160 ? ` · ${Math.ceil(n / 153)} texts` : ''}`; });
