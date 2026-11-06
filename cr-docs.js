@@ -79,7 +79,7 @@ function crDocFields(body) { const out = [], seen = new Set(); String(body || ''
 const crDMY = (d) => (d ? d.slice(8, 10) + '/' + d.slice(5, 7) + '/' + d.slice(0, 4) : '');
 const crLongDate = (d) => (d ? bkDate(d, { day: 'numeric', month: 'long', year: 'numeric' }) : '');
 function crVetInfo(sid) { const s = ((crCfg('sigs') || {}).list || {})[sid] || {}; const p = Bk.person(sid) || {}; const full = s.name || p.full_name || '';
-  return { name: full ? (/^dr\b/i.test(full) ? full : (p.role === 'vet' ? 'Dr ' : '') + full) : '', quals: s.title || '', reg: s.reg || '', phone: s.phone || ((crBrand().lines || []).find((l) => /\d{4}\s?\d{3}\s?\d{3}/.test(l)) || '0499 489 919').replace(/^phone:\s*/i, ''), email: s.email || 'office@bovitech.com.au', img: s.img || '' }; }
+  return { name: full ? (/^dr\b/i.test(full) ? full : (p.role === 'vet' ? 'Dr ' : '') + full) : '', quals: s.title || '', reg: s.reg || '', phone: s.phone || ((crBrand().lines || []).find((l) => /\d{4}\s?\d{3}\s?\d{3}/.test(l)) || '0499 489 919').replace(/^phone:\s*/i, ''), email: (s.emails && s.emails.length ? s.emails.join(' · ') : s.email) || 'office@bovitech.com.au', img: s.img || '' }; }
 function crDocCtx(r, doc, bull) {
   const b = r && IDX.biz.get(r.bid); const f = r && (r.stops || []).map((s) => IDX.farms.get(s.fid)).find(Boolean); const v = crVetInfo(doc.vet);
   const pdPr = r && (r.procs || []).find((p) => (crTpl(p.tpl) || {}).quick === 'pd');
