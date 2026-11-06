@@ -115,9 +115,17 @@ function crDocBodyHtml(tpl, doc, r, bull) {
 function crDocHead(tpl, doc) { const br = crBrand(); const v = crVetInfo(doc.vet); const logo = br.logo ? `<img src="${br.logo}" alt="" class="logo">` : '';
   if (tpl.head === 'none') return ''; if (tpl.head === 'practice' || !doc.vet) return `<div class="lh">${logo}<div>${(br.lines || []).map((l, i) => (i ? h(l) : `<b style="font-size:17px">${h(l)}</b>`)).join('<br>')}</div></div>`;
   return `<div class="lh">${logo}<div><b style="font-size:16px">${h((br.lines || [])[0] || 'Bovitech Veterinary Services')}</b><br>${h(v.name)}${v.quals ? ' ' + h(v.quals) : ''}${v.reg ? `<br><span style="font-size:11px">Veterinary Surgeons’ Board of Western Australia Registration ${h(v.reg)}</span>` : ''}<br>${h(v.phone)}<br>${h(v.email)}</div></div>`; }
+/* every certificate gets its own code (e.g. BVS-PD-261106-K7Q2) and a version number that goes up whenever it's changed */
+const CR_DOC_ABBR = (tpl) => { const n = String(tpl.name || 'Doc'); const m = { bbse: 'BBSE', 'fit to load': 'FTL', insurance: 'INS', 'post mortem': 'PM', 'post-mortem': 'PM', pregnan: 'PD', preg: 'PD' }; for (const [k, v] of Object.entries(m)) if (n.toLowerCase().includes(k)) return v; return n.split(/\s+/).filter(Boolean).map((w) => w[0]).join('').toUpperCase().slice(0, 4) || 'DOC'; };
+function crDocCode(tpl, doc) { const d = String(doc.signed || bkToday()).replace(/-/g, '').slice(2); const al = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789'; const used = new Set(crList('crrec').flatMap((r) => (r.docs || []).map((x) => x.code)).filter(Boolean)); let c;
+  do { c = `BVS-${CR_DOC_ABBR(tpl)}-${d}-${[...Array(4)].map(() => al[Math.floor(Math.random() * al.length)]).join('')}`; } while (used.has(c)); return c; }
+const crDocSig = (doc) => JSON.stringify([doc.vet, doc.date, doc.signed, doc.vals || {}, doc.bulls || null, doc.html || null]);
+function crDocStamp(tpl, doc, before, why) { if (!doc.code) doc.code = crDocCode(tpl, doc); if (!doc.ver) { doc.ver = 1; doc.vers = [{ v: 1, at: Date.now(), by: crMe(), why: 'Made' }]; return; }
+  if (before != null && before !== crDocSig(doc)) { doc.ver += 1; doc.vers = [...(doc.vers || []), { v: doc.ver, at: Date.now(), by: crMe(), why: why || 'Changed' }]; } }
+const crDocIdLine = (doc) => (doc.code ? `<div class="docid">Certificate no. <b>${h(doc.code)}</b> · Version ${doc.ver || 1}${(doc.vers || []).length ? ' · ' + crDMY(new Date((doc.vers[doc.vers.length - 1] || {}).at || Date.now()).toISOString().slice(0, 10)) : ''}</div>` : '');
 function crDocFoot(tpl, doc) { if (tpl.foot === 'none') return ''; const v = crVetInfo(doc.vet); return `<div class="sig"><p>Regards,</p>${v.img ? `<img src="${v.img}" alt="Signature">` : '<div style="height:40px"></div>'}<div>${h(v.name)}${v.quals ? ' ' + h(v.quals) : ''}</div><div>${crDMY(doc.signed || bkToday())}</div></div>`; }
-const CR_DCSS = `.lh{display:flex;gap:16px;align-items:center;justify-content:space-between;border-bottom:2px solid #222;padding-bottom:8px;margin-bottom:14px}.lh>div{text-align:right}.logo{max-height:90px;max-width:200px}h3{font-size:16px;margin:18px 0 12px}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #444;padding:4px 6px;text-align:left;vertical-align:top}th{background:#f1f1f1;font-weight:600}.pdt th{text-align:center}.blank{color:#999}.sig{margin-top:22px}.sig img{max-height:60px;display:block;margin:4px 0}.pb{page-break-after:always;break-after:page}ul,ol{margin:4px 0 8px 20px;padding:0}li{margin:2px 0}`;
-function crDocPage(tpl, doc, r, bull) { return `${crDocHead(tpl, doc)}${crDocBodyHtml(tpl, doc, r, bull)}${crDocFoot(tpl, doc)}`; }
+const CR_DCSS = `.lh{display:flex;gap:16px;align-items:center;justify-content:space-between;border-bottom:2px solid #222;padding-bottom:8px;margin-bottom:14px}.lh>div{text-align:right}.logo{max-height:90px;max-width:200px}h3{font-size:16px;margin:18px 0 12px}table{border-collapse:collapse;width:100%;margin:8px 0}td,th{border:1px solid #444;padding:4px 6px;text-align:left;vertical-align:top}th{background:#f1f1f1;font-weight:600}.pdt th{text-align:center}.blank{color:#999}.sig{margin-top:22px}.sig img{max-height:60px;display:block;margin:4px 0}.pb{page-break-after:always;break-after:page}.docid{margin-top:16px;padding-top:6px;border-top:1px solid #bbb;font-size:11px;color:#444}ul,ol{margin:4px 0 8px 20px;padding:0}li{margin:2px 0}`;
+function crDocPage(tpl, doc, r, bull) { return `${crDocHead(tpl, doc)}${crDocBodyHtml(tpl, doc, r, bull)}${crDocFoot(tpl, doc)}${crDocIdLine(doc)}`; }
 function crDocFull(tpl, doc, r) { // the whole printable file (one page per bull for BBSE certificates)
   const bulls = tpl.perBull ? crBullsFor(r, doc) : null; const pages = bulls && bulls.length ? bulls.map((b, i) => `<div class="${i < bulls.length - 1 ? 'pb' : ''}">${crDocPage(tpl, doc, r, b)}</div>`).join('') : crDocPage(tpl, doc, r, null);
   return `<!doctype html><html><head><meta charset="utf-8"><title>${h(tpl.name)} — ${h(crBizName(r.bid))} — ${h(doc.date || r.date)}</title><style>${CR_PCSS}${CR_DCSS}</style></head><body>${pages}</body></html>`;
@@ -144,7 +152,7 @@ function crDocOpen(r, tplId, docId) {
     const g = (id) => document.getElementById(id).value; doc.vet = g('cd-vet'); doc.date = g('cd-date') || r.date; doc.signed = g('cd-signed') || bkToday();
     document.querySelectorAll('[data-cdf]').forEach((el) => { doc.vals[el.dataset.cdf] = el.value.trim(); });
     if (bbsePr) doc.bulls = [...document.querySelectorAll('.cd-bull:checked')].map((x) => x.value);
-    r.docs = (r.docs || []).filter((d) => d.id !== doc.id); r.docs.push(doc);
+    crDocStamp(tpl, doc, ex ? crDocSig(ex) : null, 'Details changed'); r.docs = (r.docs || []).filter((d) => d.id !== doc.id); r.docs.push(doc);
     if (!ex && tpl.prod && crProd(tpl.prod) && !(r.certs || []).some((x) => x.prod === tpl.prod)) r.certs = [...(r.certs || []), { prod: tpl.prod, qty: tpl.perBull ? Math.max(1, (doc.bulls || []).length) : 1 }]; /* the certificate fee */
     touch(r); crInvSync(r); save(); Sync.soon(); setTimeout(() => { renderAll(); crPrint(crDocFull(tpl, doc, r)); }, 0); return true;
   }, '<button class="btn" data-act="cr-docprev" type="button">👁 Preview</button>');
@@ -160,7 +168,7 @@ function crDocEditText(r, docId) { // change the finished wording directly
   const doc = (r.docs || []).find((d) => d.id === docId); const tpl = doc && crDocTpl(doc.tpl); if (!tpl) return;
   if (tpl.perBull) { toast('BBSE certificates are made from the bull details — change those, or the template'); return; }
   openSheet('Change the wording — ' + tpl.name, `<div class="hint" style="margin-bottom:6px">Type straight into the certificate. The header and footer stay as they are.</div>${crEditorBar('cde-ed')}<div id="cde-ed" class="cr-rich" contenteditable="true">${crDocBodyHtml(tpl, doc, r, null)}</div>`, () => {
-    doc.html = crClean(document.getElementById('cde-ed').innerHTML); touch(r); save(); Sync.soon(); setTimeout(renderAll, 0); toast('Saved — 🖨 to print it'); return true; });
+    const before = crDocSig(doc); doc.html = crClean(document.getElementById('cde-ed').innerHTML); crDocStamp(tpl, doc, before, 'Wording changed'); touch(r); save(); Sync.soon(); setTimeout(renderAll, 0); toast('Saved — 🖨 to print it'); return true; });
 }
 
 /* ---------------- a small editor (bold, italic, lists, headings, fill-in boxes) ---------------- */
@@ -181,7 +189,7 @@ function crClean(html) { // keep simple formatting only (no scripts, no pasted s
 /* ---------------- the record: certificates and reports ---------------- */
 function crDocsHtml(r) {
   const fin = r.status === 'final'; const docs = r.docs || [];
-  return `${docs.map((d) => { const t = crDocTpl(d.tpl); return `<div class="cr-row"><b>📄 ${h(t ? t.name : 'Document')}</b><span class="hint">${d.vet ? h(Bk.pname(d.vet)) + ' · ' : ''}${crDMY(d.signed || d.date)}${t && t.perBull ? ` · ${crBullsFor(r, d).length} bull${crBullsFor(r, d).length === 1 ? '' : 's'}` : ''}${d.html ? ' · wording changed' : ''}</span><span style="flex:1"></span><button class="btn small" data-act="cr-docprint" data-id="${d.id}">🖨</button>${fin ? '' : `<button class="btn small" data-act="cr-docfill" data-id="${d.id}" aria-label="Change the details">✏️</button>${t && !t.perBull ? `<button class="btn small" data-act="cr-docwords" data-id="${d.id}">Wording</button>` : ''}<button class="btn small" data-act="cr-docdel" data-id="${d.id}" aria-label="Remove">✕</button>`}</div>`; }).join('')}
+  return `${docs.map((d) => { const t = crDocTpl(d.tpl); return `<div class="cr-row"><b>📄 ${h(t ? t.name : 'Document')}</b><span class="hint">${d.vet ? h(Bk.pname(d.vet)) + ' · ' : ''}${crDMY(d.signed || d.date)}${t && t.perBull ? ` · ${crBullsFor(r, d).length} bull${crBullsFor(r, d).length === 1 ? '' : 's'}` : ''}${d.html ? ' · wording changed' : ''}${d.code ? ` · <b>${h(d.code)}</b> v${d.ver || 1}` : ''}</span><span style="flex:1"></span><button class="btn small" data-act="cr-docprint" data-id="${d.id}">🖨</button>${fin ? '' : `<button class="btn small" data-act="cr-docfill" data-id="${d.id}" aria-label="Change the details">✏️</button>${t && !t.perBull ? `<button class="btn small" data-act="cr-docwords" data-id="${d.id}">Wording</button>` : ''}<button class="btn small" data-act="cr-docdel" data-id="${d.id}" aria-label="Remove">✕</button>`}</div>`; }).join('')}
   ${fin ? '' : `<div class="cr-row"><select id="cr-adddoc" aria-label="Make a certificate or report"><option value="">➕ Make a certificate or report…</option>${crDocTpls().map((t) => `<option value="${t.id}">${h(t.name)}</option>`).join('')}</select></div>`}`;
 }
 window.crDocsHtml = crDocsHtml;
@@ -283,7 +291,7 @@ document.addEventListener('click', async (e) => {
   const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return; const a = el.dataset.act; if (!/^cr-(doc|dt|bull|qsml|prev)/.test(a)) return; const d = el.dataset;
   const r = CR.page === 'edit' ? crGet('crrec', CR.id) : null; const pr = r && d.pr ? (r.procs || []).find((p) => p.id === d.pr) : null;
   switch (a) {
-    case 'cr-docprint': { const doc = r && (r.docs || []).find((x) => x.id === d.id); const t = doc && crDocTpl(doc.tpl); if (t) crPrint(crDocFull(t, doc, r)); break; }
+    case 'cr-docprint': { const doc = r && (r.docs || []).find((x) => x.id === d.id); const t = doc && crDocTpl(doc.tpl); if (t) { if (!doc.code) { crDocStamp(t, doc, null); touch(r); save(); Sync.soon(); } crPrint(crDocFull(t, doc, r)); } break; } /* made before codes existed: it gets one now */
     case 'cr-docfill': { const doc = r && (r.docs || []).find((x) => x.id === d.id); if (doc) crDocOpen(r, doc.tpl, doc.id); break; }
     case 'cr-docwords': if (r) crDocEditText(r, d.id); break;
     case 'cr-docdel': { if (!r || !(await ask('Remove this document from the record?', 'Remove'))) return; r.docs = (r.docs || []).filter((x) => x.id !== d.id); touch(r); save(); Sync.soon(); renderAll(); break; }
