@@ -117,6 +117,8 @@ const Bk = {
   list(k) { return (D && D[k]) || (D[k] = []); },
   cfg(t) { return Bk.list('bkcfg').filter((x) => x.cfg === t && !x.gone).sort((a, b) => (a.order || 99) - (b.order || 99) || (a.name || '').localeCompare(b.name || '')); },
   get(id) { return Bk.list('bkcfg').find((x) => x.id === id); },
+  /* morning meeting: each person working that day is in person (default), on the phone, or not attending — one record per day */
+  meetAtt(date, sid) { const r = Bk.get('mtatt:' + date); return (r && r.who && r.who[sid]) || 'in'; },
   type(id) { return Bk.get(id) || { name: 'Appointment', colour: '#777', where: 'farm' }; },
   svc(id) { return Bk.get(id) || { name: 'Procedure', mode: 'fixed', mins: 60 }; },
   btype(id) { return Bk.get(id) || { name: 'Block', colour: '#888' }; },
@@ -150,6 +152,9 @@ const Bk = {
           .forEach((d) => { if (!Bk.get(d.id)) { touch(d); D.bkcfg.push(d); n++; } });
         D.sync.bkMig = 5;
       }
+      /* blocks from ezyVet that were 8 hours or more came in as all day — they're office hours (8:30am–5pm). Marked once (ezyOff), so choosing All day later sticks; safe to run again */
+      Bk.list('blocks').forEach((b) => { if (b.ezyId && b.type === 'bt-leave' && /\bRDO\b|rostered day off/i.test(b.note || '') && Bk.get('bt-rdo')) { b.type = 'bt-rdo'; touch(b); n++; } }); // ezyVet RDOs came in as leave — safe to run again
+      Bk.list('blocks').forEach((b) => { if (b.ezyId && b.allDay && !b.ezyOff) { b.allDay = false; b.office = true; b.start = '08:30'; b.end = '17:00'; b.ezyOff = 1; touch(b); n++; } });
       if (n) D.sync.bkSeeded = true; save();
     } finally { BK._quiet = false; }
   },
@@ -168,6 +173,8 @@ const Bk = {
   person(id) { return Bk.people().find((s) => s.id === id) || ((window.SBAuth && SBAuth.list) || []).find((s) => s.id === id) || null; },
   pname(id) { const s = Bk.person(id); return s ? s.preferred_name || s.full_name.split(' ')[0] : '?'; },
   pini(id) { const s = Bk.person(id); return s ? s.initials : '?'; },
+  /* who goes on the on-call roster: set for each person in Settings → Scheduling → People (vets, not locums, to start with) */
+  onCallable(s) { if (!s) return false; const c = Bk.get('staff:' + s.id); if (c && c.oncall != null) return !!c.oncall; return s.role === 'vet' && !(c && c.mode === 'locum') && !/^rory\b/i.test(s.preferred_name || s.full_name || ''); },
   scfg(s) { // a person's hours, what they can be booked for, and days they swap in or out
     const c = Bk.get('staff:' + s.id) || {};
     const tech = s.role === 'vet_tech' || s.role === 'assistant';
@@ -204,6 +211,7 @@ const Bk = {
   lunch(staffId, date) {
     const lc = Bk.lunchCfg(); if (!lc.on) return null;
     const inAppt = Bk.bookingsFor(date, staffId).find((b) => b.lunch && b.lunch.start); if (inAppt) return { start: inAppt.lunch.start, end: bkHHMM(bkMin(inAppt.lunch.start) + lc.mins), inAppt };
+    const inBlk = Bk.blocksFor(date, staffId).find((b) => b.lunchIn && b.lunchIn.start); if (inBlk) return { start: inBlk.lunchIn.start, end: bkHHMM(bkMin(inBlk.lunchIn.start) + lc.mins), inAppt: inBlk, inBlock: true }; // lunch merged into an event (block)
     const rec = Bk.list('blocks').find((x) => x.id === 'lunch:' + staffId + ':' + date);
     if (rec) return rec.gone ? null : { start: rec.start, end: rec.end, rec };
     const p = Bk.person(staffId); const hr = p && Bk.hours(p, date); if (!hr) return null;
@@ -332,10 +340,14 @@ function bkDayLoc(staffId, date) { // where someone starts and finishes the day 
 }
 
 /* ---------------- one person's day: blocks, lunch, appointments and the driving in between ---------------- */
+const BK_MEET = [['in', '🧑‍🤝‍🧑', 'Attending in person'], ['phone', '☎️', 'Attending on the phone'], ['no', '🥲', 'Not attending today']];
+const bkIsMeet = (b) => !!b && !b.allDay && b.type === 'bt-meeting';
+const bkMeetEmo = (v) => (BK_MEET.find((x) => x[0] === v) || BK_MEET[0])[1];
+function bkMeetSet(date, sid, v) { let r = Bk.get('mtatt:' + date); if (!r) { r = { id: 'mtatt:' + date, cfg: 'mtatt', date, who: {} }; D.bkcfg.push(r); } const w = { ...(r.who || {}) }; if (v === 'in') delete w[sid]; else w[sid] = v; r.who = w; touch(r); } // safe to repeat
 function bkBlockLoc(b) { const bt = Bk.btype(b.type); return (bt.where || 'base') === 'base' ? Travel.home() : null; }
 function bkDay(staffId, date, o = {}) { // o: { skipId, add (an appointment-like item to put in), moves {id: start}, noLunch, lunchAt (try lunch at this minute) }
   const p = Bk.person(staffId); const hr = p ? Bk.hours(p, date) : null; const items = [];
-  Bk.blocksFor(date, staffId).forEach((b) => { const bt = Bk.btype(b.type); items.push({ kind: 'block', s: b.allDay ? 0 : bkMin(b.start), e: b.allDay ? 1440 : bkMin(b.end), loc: b.allDay ? null : bkBlockLoc(b), what: bt.name, ref: b }); });
+  Bk.blocksFor(date, staffId).forEach((b) => { const bt = Bk.btype(b.type); const ma = bkIsMeet(b) ? Bk.meetAtt(date, staffId) : 'in'; if (ma === 'no') return; /* not at the meeting: that time is free */ if (ma === 'phone') { items.push({ kind: 'block', s: bkMin(b.start), e: bkMin(b.end), loc: null, what: bt.name, ref: b, meet: 'phone' }); return; } items.push({ kind: 'block', s: b.allDay ? 0 : bkMin(b.start), e: b.allDay ? 1440 : bkMin(b.end), loc: b.allDay ? null : bkBlockLoc(b), what: bt.name, ref: b }); });
   const lc0 = Bk.lunchCfg(); const lu = o.noLunch ? null : o.lunchAt != null ? { start: bkHHMM(o.lunchAt), end: bkHHMM(o.lunchAt + lc0.mins), trial: true } : Bk.lunch(staffId, date); if (lu && !lu.inAppt) items.push({ kind: 'lunch', s: bkMin(lu.start), e: bkMin(lu.end), loc: null, what: 'lunch', ref: lu });
   Bk.bookingsFor(date, staffId).filter((b) => b.id !== o.skipId).forEach((b) => { const s = o.moves && o.moves[b.id] != null ? o.moves[b.id] : bkMin(b.start); items.push({ kind: 'appt', s, e: s + b.mins, loc: Travel.loc(b), locOut: Travel.locOut(b), what: Bk.who(b), ref: b }); });
   Bk.proposalsFor(date, staffId).filter((b) => b.id !== o.skipId && !(o.moves && o.moves[b.id] != null)).forEach((b) => { const s = bkMin(b.proposal.start); items.push({ kind: 'held', s, e: s + (b.proposal.mins || b.mins), loc: Travel.loc(b), locOut: Travel.locOut(b), what: 'held for ' + Bk.who(b), ref: b }); });
@@ -450,6 +462,16 @@ function bkLunchFree(staffId, date, o = {}) { // when nothing fits in the window
   return c.sort((a, b) => dist(a) - dist(b) || Math.abs(a - bkMin(lc.def)) - Math.abs(b - bkMin(lc.def)))[0] ?? null;
 }
 function bkLunchOutside(startMin) { const lc = Bk.lunchCfg(); return startMin < bkMin(lc.from) || startMin + lc.mins > bkMin(lc.to); }
+/* lunch moved onto an appointment or event: what it would land in, and where lunch best fits once that's 30 min longer */
+function bkLunchHit(sid, date, m) { const lc = Bk.lunchCfg(); const day = bkDay(sid, date, { noLunch: true });
+  const it = day.items.find((x) => (x.kind === 'appt' || (x.kind === 'block' && !x.ref.allDay && !x.ref.lunch)) && x.s < m + lc.mins && x.e > m); if (!it) return null;
+  if (it.kind === 'appt' && it.ref.lunch && it.ref.lunch.start) return null; if (it.kind === 'block' && it.ref.lunchIn) return null;
+  const s = it.s, e = it.e + lc.mins; const lo = Math.max(s, bkMin(lc.from)), hi = Math.min(e, bkMin(lc.to)) - lc.mins; const best = lo <= hi ? Math.min(Math.max(m, lo), hi) : Math.min(Math.max(m, s), e - lc.mins);
+  return { it, s, e, at: Math.round(best / 15) * 15, name: it.kind === 'appt' ? Bk.who(it.ref) : Bk.btype(it.ref.type).name + (it.ref.note ? ' — ' + it.ref.note : '') }; }
+function bkLunchMerge(sid, date, hit) { const lc = Bk.lunchCfg(); const r = hit.it.ref; const at = bkHHMM(hit.at);
+  if (hit.it.kind === 'appt') { r.mins = (r.mins || 0) + lc.mins; r.lunch = { start: at }; touch(r); return; }
+  const v = { end: bkHHMM(bkMin(r.end) + lc.mins), lunchIn: { start: at } }; const rep = !r.of && r.repeat && r.repeat.every && r.repeat.every !== 'none';
+  if (rep) { const base = bkClone(r); ['id', 'skip', 'of', 'occ'].forEach((k) => delete base[k]); bkBlockScopeSave(r, date, { ...base, ...v, date, toDate: null }, 'this'); } else { Object.assign(r, v); touch(r); } } // a repeating event only changes that day
 function bkSetLunch(staffId, date, startMin) { // move (or with null, remove) someone's lunch that day
   const lc = Bk.lunchCfg(); const id = 'lunch:' + staffId + ':' + date; let r = Bk.list('blocks').find((x) => x.id === id);
   if (!r) { r = { id, lunch: true, type: 'bt-lunch', staff: [staffId], date, on: true }; D.blocks.push(r); }

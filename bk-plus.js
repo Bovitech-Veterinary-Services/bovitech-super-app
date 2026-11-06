@@ -89,7 +89,7 @@ function bkSheetHtml() {
     if (r.leg) { const l = r.leg; const bad = l.start < l.prevEnd; return `<div class="drv">🚗 ${bkTime(Math.max(l.start, l.prevEnd))}–${bkTime(l.end)} · ~${l.need} min ${l.home ? 'back to ' + h(l.to) : 'from ' + h(l.from) + ' to ' + h(l.to)}${bad ? ' <b style="color:var(--red)">— not enough time</b>' : ''}</div>`; }
     const it = r.it;
     if (it.kind === 'lunch') return `<div class="bk-si"><span class="t">🥪 ${bkTime(it.s)}–${bkTime(it.e)} Lunch</span> <span class="hint">wherever you are</span></div>`;
-    if (it.kind === 'block') { const b = it.ref; return `<div class="bk-si"><span class="t">${b.allDay ? 'All day' : bkTime(it.s) + '–' + bkTime(it.e)} ${h(Bk.btype(b.type).name)}</span>${b.note ? ' — ' + h(b.note) : ''}</div>`; }
+    if (it.kind === 'block') { const b = it.ref; return `<div class="bk-si">${b.lunchIn ? `<div>🥪 Lunch still scheduled during this, about ${bkTime(b.lunchIn.start)}</div>` : ''}<span class="t">${b.allDay ? 'All day' : b.office ? 'Office hours' : bkTime(it.s) + '–' + bkTime(it.e)} ${h(Bk.btype(b.type).name)}${it.meet === 'phone' ? ' ☎️ on the phone' : ''}</span>${b.note ? ' — ' + h(b.note) : ''}</div>`; }
     if (it.kind === 'held') return `<div class="bk-si"><span class="t">${bkTime(it.s)}–${bkTime(it.e)} Held</span> — ${h(it.what)} (waiting for the client)</div>`;
     const b = it.ref, t = Bk.type(b.type); const c = b.cid && D.contacts.find((x) => x.id === b.cid); const mob = bkMobile(c);
     const stops = Bk.stops(b).map((st, i) => { const pt = Travel.stopPt(st); const ln = bkMapLink(pt); return `${i + 1}. ${h(Bk.stopName(st))}${ln ? ` <a href="${ln}" target="_blank" rel="noopener">🧭 Directions</a>` : ''}`; }).join('<br>');
@@ -127,7 +127,7 @@ function bkSheetBuild(sid, date) { // the day sheet as plain text (copy / share)
     if (r.leg) { if (!o.drive) return; const l = r.leg; const t = `🚗 ${l.need} min ${l.home ? 'back to ' + l.to : 'to ' + l.to}`; T.push('  ' + t); H.push(`<i>${e(t)}</i>`); return; }
     const it = r.it; if (it.kind === 'held') return;
     if (it.kind === 'lunch') { if (!o.breaks) return; T.push(`${bkTime(it.s)} Lunch`); H.push(`<br><b>${bkTime(it.s)}</b> · Lunch`); return; }
-    if (it.kind === 'block') { if (!o.breaks) return; const t = `${it.ref.allDay ? 'All day' : bkTime(it.s) + '–' + bkTime(it.e)} ${Bk.btype(it.ref.type).name}${it.ref.note ? ' — ' + it.ref.note : ''}`; T.push(t); H.push(`<br>${e(t)}`); return; }
+    if (it.kind === 'block') { if (!o.breaks) return; const t = `${it.ref.allDay ? 'All day' : it.ref.office ? 'Office hours' : bkTime(it.s) + '–' + bkTime(it.e)} ${Bk.btype(it.ref.type).name}${it.meet === 'phone' ? ' (on the phone)' : ''}${it.ref.note ? ' — ' + it.ref.note : ''}`; T.push(t); H.push(`<br>${e(t)}`); return; }
     const b = it.ref; const c = b.cid && D.contacts.find((x) => x.id === b.cid); const mob = c ? bkMobile(c) || '' : '';
     const head = `☐ ${bkTime(it.s)}–${bkTime(it.e)} ${strip(bkPatientEmoji(b))}${Bk.who(b)}`; T.push(head + (Bk.farmName(b) ? ' @ ' + Bk.farmName(b) : '')); H.push(`<br><b>${e(head)}</b>`);
     if (o.status) { const st = Bk.unconf(b) ? '❓ Not confirmed yet' : '✅ Confirmed'; T.push('  ' + st); H.push(e(st)); }
@@ -167,7 +167,9 @@ async function bkEffOpen() {
 const BKDR = { on: null };
 function bkDragStart(el, x, y) {
   const col = el.closest('.bk-col'); if (!col) return; const r = col.getBoundingClientRect(); const top = parseFloat(el.style.top) || 0;
-  BKDR.on = { el, kind: el.dataset.drag, id: el.dataset.id, staff: el.dataset.staff, day: el.dataset.day || BK.date, grab: (y - r.top) - top, x, y, col: col, startMin: Math.round(BK_START + top / BK_PX), h: el.offsetHeight, moved: false, ghost: null, min: null, toStaff: el.dataset.staff };
+  /* appointments: grab the top edge to change the start, the bottom edge to change the end, the middle to move it (same length) */
+  const inEl = y - el.getBoundingClientRect().top, H0 = el.offsetHeight, edge = Math.max(4, Math.min(8, H0 / 5)); const mode = el.dataset.drag !== 'appt' ? 'move' : inEl <= edge ? 'top' : inEl >= H0 - edge ? 'bottom' : 'move';
+  BKDR.on = { el, kind: el.dataset.drag, mode, id: el.dataset.id, staff: el.dataset.staff, day: el.dataset.day || BK.date, grab: (y - r.top) - top, x, y, col: col, startMin: Math.round(BK_START + top / BK_PX), endMin: Math.round(BK_START + (top + H0) / BK_PX), h: H0, moved: false, ghost: null, min: null, toStaff: el.dataset.staff };
   el.classList.add('bk-dragging'); if (navigator.vibrate) try { navigator.vibrate(15); } catch (e) { }
 }
 function bkDragMove(x, y) {
@@ -175,7 +177,10 @@ function bkDragMove(x, y) {
   const sc = document.querySelector('.bk-dayscroll.v'); if (sc) { const r = sc.getBoundingClientRect(); if (y < r.top + 40) sc.scrollTop -= 12; else if (y > r.bottom - 40) sc.scrollTop += 12; }
   d.el.style.pointerEvents = 'none'; const under = document.elementFromPoint(x, y); d.el.style.pointerEvents = '';
   const col = (under && under.closest && under.closest('.bk-col')) || d.col; if (d.kind === 'lunch' && col.dataset.staff !== d.staff) { /* lunch stays with its person */ }
-  const tcol = d.kind === 'lunch' ? d.el.closest('.bk-col') : col; const r = tcol.getBoundingClientRect();
+  const tcol = d.kind === 'lunch' || d.mode !== 'move' ? d.el.closest('.bk-col') : col; const r = tcol.getBoundingClientRect();
+  if (d.mode !== 'move') { /* resizing: the other end stays put */ let m = Math.round((BK_START + (y - r.top) / BK_PX) / 15) * 15; if (d.mode === 'top') m = Math.max(BK_START, Math.min(d.endMin - 15, m)); else m = Math.min(BK_END, Math.max(d.startMin + 15, m)); d.min = m; d.toStaff = d.staff;
+    if (!d.ghost) { d.ghost = document.createElement('div'); d.ghost.className = 'bk-ghost'; } if (d.ghost.parentNode !== tcol) tcol.appendChild(d.ghost);
+    const s0 = d.mode === 'top' ? m : d.startMin, e0 = d.mode === 'top' ? d.endMin : m; d.ghost.style.top = (s0 - BK_START) * BK_PX + 'px'; d.ghost.style.height = (e0 - s0) * BK_PX + 'px'; d.ghost.textContent = `${bkTime(s0)}–${bkTime(e0)} (${e0 - s0} min)`; return; }
   let m = Math.round((BK_START + (y - r.top - d.grab) / BK_PX) / 15) * 15; m = Math.max(BK_START, Math.min(BK_END - 15, m)); d.min = m; d.toStaff = tcol.dataset.staff;
   if (!d.ghost) { d.ghost = document.createElement('div'); d.ghost.className = 'bk-ghost'; }
   if (d.ghost.parentNode !== tcol) tcol.appendChild(d.ghost); document.querySelectorAll('.bk-col.dropcol').forEach((c) => c !== tcol && c.classList.remove('dropcol')); tcol.classList.add('dropcol');
@@ -184,16 +189,29 @@ function bkDragMove(x, y) {
 function bkDragEnd(cancel) {
   const d = BKDR.on; BKDR.on = null; if (!d) return; d.el.classList.remove('bk-dragging'); if (d.ghost) d.ghost.remove(); document.querySelectorAll('.bk-col.dropcol').forEach((c) => c.classList.remove('dropcol'));
   if (!d.moved) return; BK._dragEnd = Date.now(); if (cancel || d.min == null) return;
+  if (d.mode !== 'move') { if (d.min === (d.mode === 'top' ? d.startMin : d.endMin)) return; setTimeout(() => bkResizeAppt(d), 0); return; }
   if (d.min === d.startMin && d.toStaff === d.staff) return;
   setTimeout(() => (d.kind === 'lunch' ? bkDropLunch(d) : bkDropAppt(d)), 0);
 }
 async function bkDropLunch(d) {
   const lc = Bk.lunchCfg(); const m = d.min; const sid = d.staff, date = d.day;
   const msgs = []; if (bkLunchOutside(m)) msgs.push(`${bkTime(m)} is outside the usual lunch time (${bkTime(lc.from)}–${bkTime(lc.to)}).`);
+  const hit = bkLunchHit(sid, date, m);
+  if (hit) { const ok = await askBox('Lunch during ' + hit.name + '?', `<div>${h(Bk.pname(sid))}'s lunch at ${bkTime(m)} clashes with <b>${h(hit.name)}</b> (${bkTime(hit.it.s)}–${bkTime(hit.it.e)}).</div><div style="margin-top:6px">Merge lunch into it? It becomes <b>${bkTime(hit.s)}–${bkTime(hit.e)}</b> (${Bk.lunchCfg().mins} minutes longer) and is marked <b>🥪 lunch still scheduled</b> — about ${bkTime(hit.at)}, the best fit in the lunch time (${bkTime(Bk.lunchCfg().from)}–${bkTime(Bk.lunchCfg().to)}).${hit.it.kind === 'block' && (hit.it.ref.staff === 'all' || (hit.it.ref.staff || []).length > 1) ? '<div class="hint">This event is for more than one person — it gets longer for all of them.</div>' : ''}</div>`, '🥪 Merge lunch into it', false, 'Cancel', 'Move lunch there anyway');
+    if (!ok) { renderAll(); return; } if (ok === true) { bkLunchMerge(sid, date, hit); bkDone(`Lunch merged into ${hit.name} — about ${bkTime(hit.at)}`); return; }
+    bkSetLunch(sid, date, m); bkDone(`${Bk.pname(sid)}'s lunch moved to ${bkTime(m)}`); return; }
   if (!bkLunchOkAt(sid, date, m)) msgs.push('That\'s during an appointment, a block or a drive.');
   if (msgs.length && !(await ask(msgs.join('\n') + '\n\nMove lunch there anyway?', 'Yes — move it'))) { renderAll(); return; }
   bkSetLunch(sid, date, m); bkDone(`${Bk.pname(sid)}'s lunch moved to ${bkTime(m)}`);
 }
+async function bkResizeAppt(d) { // dragged the top (new start) or bottom (new end) of an appointment
+  const b = bkRec(d.id); if (!b || !Bk.need('book')) { renderAll(); return; } const s0 = bkMin(b.start), e0 = s0 + b.mins;
+  const ns = d.mode === 'top' ? d.min : s0, ne = d.mode === 'top' ? e0 : d.min; if (ne - ns < 15) { renderAll(); return; }
+  const cand = { ...bkClone(b), start: bkHHMM(ns), mins: ne - ns }; const pr = bkProblems(cand);
+  const r = await askBox(`${d.mode === 'top' ? 'Change the start of' : 'Change the end of'} ${Bk.who(b)}?`, `<p style="font-size:16px">${bkDate(b.date)} <b>${bkTime(s0)}–${bkTime(e0)}</b> (${b.mins} min) → <b>${bkTime(ns)}–${bkTime(ne)}</b> (${ne - ns} min)</p>${pr.length ? bkWarnHtml(pr) : '<p class="hint">No clashes, travel or rule problems.</p>'}${b.series ? '<p class="hint">This one only — the rest of the series stays the same.</p>' : ''}`, d.mode === 'top' ? 'Change the start' : 'Change the end', false, 'Cancel');
+  if (!r) { renderAll(); return; } if (!(await bkRuleOverride(cand))) { renderAll(); return; }
+  const before = bkClone(b); b.start = cand.start; b.mins = cand.mins; if (cand.override) b.override = cand.override; if (b.lunch && b.lunch.start && (bkMin(b.lunch.start) < ns || bkMin(b.lunch.start) + Bk.lunchCfg().mins > ne)) b.lunch = { start: bkHHMM(Math.max(ns, Math.min(ne - Bk.lunchCfg().mins, bkMin(b.lunch.start)))) }; touch(b);
+  await bkLunchSort(b); bkDone(`${Bk.who(b)}: now ${bkTime(ns)}–${bkTime(ne)}`); setTimeout(() => bkTidyAsk(before), 450); }
 async function bkDropAppt(d) {
   const b = bkRec(d.id); if (!b || !Bk.need('book')) { renderAll(); return; }
   const start = bkHHMM(d.min); const swap = d.toStaff !== d.staff ? [d.staff, d.toStaff] : null;
