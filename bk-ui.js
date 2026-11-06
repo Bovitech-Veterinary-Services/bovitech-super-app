@@ -298,7 +298,7 @@ function bkRateOk(use, sv) { if (use === 'none' || (use === 'individual' && sv.y
 function bkBizCard(b) {
   if (!Bk.on() || (typeof isClientBiz === 'function' && !isClientBiz(b))) return '';
   const bs = Bk.bsched(b.id), ed = Bk.can('book'), fs = bkFarmsOf(b.id), rs = bkRateSvcs();
-  const sp = (fid, yid, sv) => { const y = bkRate(fid, yid, sv.id); return y && y.hph ? `<b>${y.hph}/hour</b>` : `${sv.hph ? sv.hph + '/hour (usual)' : '<b style="color:var(--red)">not set</b>'}`; };
+  const sp = (fid, yid, sv) => { const y = bkRate(fid, yid, sv.id); return y && y.hph ? `<b>${y.hph}/hour</b>` : `${'<b style="color:#a15c00">TBC</b>' + (sv.hph ? ' <span class="hint">(' + sv.hph + '/hour until known)</span>' : '')}`; };
   const ruleLine = (fid, yid) => { const x = bkYardUse(fid, yid), use = x.use || ''; const rr = rs.filter((sv) => bkRateOk(use, sv));
     return `${use === 'none' ? '<b style="color:var(--red)">⛔ Do not service</b>' : h(BK_USE[use])}${rr.length ? `<br><span class="hint">${rr.map((sv) => h(sv.name) + ' ' + sp(fid, yid, sv)).join(' · ')}</span>` : ''}${x.note ? `<br><span class="hint">${h(x.note)}</span>` : ''}`; };
   return `<div class="card bk-bizcard"><h3><span class="sp">📅 Scheduling</span>${ed ? `<button class="btn small" data-act="bks-bsched" data-id="${b.id}" aria-label="Edit scheduling">✏️</button>` : ''}</h3>
@@ -495,6 +495,7 @@ if (typeof document !== 'undefined') {
   const tpGo = () => { tpScan(document); new MutationObserver((ms) => ms.forEach((m) => m.addedNodes.forEach((n) => { if (n.nodeType !== 1) return; if (n.matches && n.matches('input[type=time][step="900"]')) tpEnhance(n); else tpScan(n); }))).observe(document.body, { childList: true, subtree: true }); };
   if (document.body) tpGo(); else document.addEventListener('DOMContentLoaded', tpGo);
   const st = document.createElement('style'); st.textContent = '.tp{display:inline-flex;align-items:center;gap:2px;white-space:nowrap}.tp select{padding:7px 6px;border:1px solid var(--line);border-radius:8px;background:#fff;font-size:16px;color:inherit}.tp select:disabled{opacity:.55}'; document.head.appendChild(st);
+  document.addEventListener('change', (e) => { const t = e.target; if (t && t.dataset && t.dataset.fztbc) { const i = document.getElementById(t.dataset.fztbc); if (i) { i.disabled = t.checked; if (t.checked) i.value = ''; else i.focus(); } } }); // speed TBC
   /* blocks: choosing a time means it isn't all day; ticking All day greys the times */
   document.addEventListener('change', (e) => {
     const t = e.target; if (!t || !t.id) return;

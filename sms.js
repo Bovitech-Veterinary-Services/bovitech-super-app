@@ -1,7 +1,7 @@
 /* ---------------- Texts (SMS) ----------------
    💬 = text from this device's own number (the phone's Messages app, or Phone Link on a computer)
    📲 = text from the office number (0499 489 919) through SMSGate on the office phone — from any signed-in phone or computer;
-        logged in the app, and replies come back into the 💬 Texts tab and the contact's / business's page.
+        logged in the app, and replies come back into the 💬 Communications tab and the contact's / business's page.
    Signatures (Settings → Texts) and hand-written templates (Settings → Texts → SMS templates) sync to every device. */
 const SMS_OFFICE_NO = '0499 489 919';
 const TX = { page: 'unread', open: null, q: '' }; // the Texts tab: which page, which conversation is open, the search
@@ -78,7 +78,7 @@ async function smsCompose(d, keep) {
   const tpls = Bk.cfg('sms'); const hand = tpls.filter((t) => t.use === 'other'), auto = tpls.filter((t) => t.use !== 'other');
   const sigs = smsSigs(); const defSig = keep.sig || smsSigDefId();
   BK._sms = { b, cid: d.cid || '', bid: d.bid || '', opts };
-  const html = `<div class="smsgate">📲 <b>This text goes through SMSGate on the office phone.</b> The client sees it from the office number <b>${SMS_OFFICE_NO}</b>, not your own. Replies come back into the app (💬 Texts tab, and their contact / business page).</div>
+  const html = `<div class="smsgate">📲 <b>This text goes through SMSGate on the office phone.</b> The client sees it from the office number <b>${SMS_OFFICE_NO}</b>, not your own. Replies come back into the app (💬 Communications tab, and their contact / business page).</div>
     <div class="f"><label for="sm-to">To</label><select id="sm-to" data-ask="to">${opts.map((o) => `<option value="${h(o.v)}" data-cid="${h(o.cid)}" ${smsDigits(o.v) === smsDigits(pickTo) ? 'selected' : ''}>${h(o.l)}</option>`).join('')}<option value="__other" ${keep.to === '__other' ? 'selected' : ''}>Another mobile number…</option></select>
       <input id="sm-other" data-ask="other" inputmode="tel" value="${h(keep.other || '')}" ${keep.to === '__other' || !opts.length ? '' : 'hidden'} aria-label="Mobile number" style="margin-top:6px">${opts.length ? '' : '<div class="hint">No mobile number saved here — type one in.</div>'}</div>
     <div class="f"><label for="sm-tpl">Start from</label><select id="sm-tpl"><option value="">A blank message</option>${hand.length ? `<optgroup label="Templates">${hand.map((t) => `<option value="${t.id}">${h(t.name)}</option>`).join('')}</optgroup>` : ''}${auto.length ? `<optgroup label="Booking texts">${auto.map((t) => `<option value="${t.id}">${h(t.name)}</option>`).join('')}</optgroup>` : ''}</select></div>
@@ -161,7 +161,7 @@ function smsCard(kind, id) { // "💬 Office texts" on a contact / business page
     ${rows.slice(0, 3).reverse().map((x) => smsBubble(x)).join('')}${rows.length > 3 ? `<div class="hint">${rows.length - 3} earlier — tap Open conversation to see them all.</div>` : ''}</div>`;
 }
 
-/* ---- the 💬 Texts tab ---- */
+/* ---- the 💬 Communications tab ---- */
 function smsTabHtml() {
   smsSeed(); const th = smsThreads(); const unread = smsLog().filter(smsUnread).sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
   const top = `<div class="bk-top"><div class="bk-nav"><b class="bk-title">💬 ${h(lab('texts'))}</b></div><div class="actions"><button class="btn small" data-act="tx-refresh">↻ Check for new texts</button><button class="btn small primary" data-act="sms-office">📲 New text from the office</button></div></div>

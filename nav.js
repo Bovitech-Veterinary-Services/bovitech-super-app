@@ -19,7 +19,7 @@ function navGo(path) { const seg = String(path).split(/\s*→\s*/).map((x) => x.
 const NAV_DEST = { veh: 'Scheduling → Vehicles', vsp: 'Settings → Scheduling → Vehicle service providers', roster: 'Scheduling → On-call', bulk: 'Scheduling → Bulk lists', stock: 'Records → Stock', golive: 'Settings → Scheduling → Texts and emails before go-live' };
 function goBtn(dest, label) { const p = NAV_DEST[dest] || dest; return `<button type="button" class="btn small gobtn" data-act="go" data-path="${h(p)}">${h(label || p)} ↗</button>`; }
 /* turn written directions into links */
-const NAV_RX = /((?:Settings|Scheduling|Records|Jobs|Contacts|Patients|Texts)(?:\s*→\s*[^→.,;:()<>\n]{1,48}?)+)(?=\s*(?:[.,;:()]|$|→\s*$|\s+(?:and|or|to|for|—|-|then|shows|is|are|has|in|on|below|above)\b))/g;
+const NAV_RX = /((?:Settings|Scheduling|Records|Jobs|Contacts|Patients|Texts|Communications|Inventory|Finance)(?:\s*→\s*[^→.,;:()<>\n]{1,48}?)+)(?=\s*(?:[.,;:()]|$|→\s*$|\s+(?:and|or|to|for|—|-|then|shows|is|are|has|in|on|below|above)\b))/g;
 function navLinkify(root) { if (!root) return; const tw = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (t) => (t.nodeValue.includes('→') && t.parentElement && !t.parentElement.closest('a,button,select,option,textarea,input,.golink,script,style,[contenteditable],.richedit,pre,code') ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT) });
   const L = []; let t; while ((t = tw.nextNode())) L.push(t);
   L.forEach((node) => { const v = node.nodeValue; NAV_RX.lastIndex = 0; if (!NAV_RX.test(v)) return; NAV_RX.lastIndex = 0; const frag = document.createDocumentFragment(); let last = 0; let m;

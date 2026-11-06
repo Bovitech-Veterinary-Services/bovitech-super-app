@@ -235,7 +235,7 @@ async function emlPastIdeas() { const box = document.getElementById('eml-past');
   const txt = (r) => String((r.data && r.data.text) || r.text || r.body || '').trim(); const seen = new Set(); EML_PAST = rows.map(txt).filter((t) => t && t.length > 40 && !seen.has(t.slice(0, 80)) && seen.add(t.slice(0, 80))).slice(0, 12);
   box.innerHTML = EML_PAST.length ? `<div class="hint">Emails sent from ezyVet matching "${h(q)}" (the template name). Change the name and tap again to search for something else.</div>` + EML_PAST.map((t, i) => `<details class="card" style="margin:6px 0;padding:6px 10px"><summary>${h(t.split('\n').find((l) => l.trim().length > 10) || t).slice(0, 90)}…</summary><div style="white-space:pre-wrap;font-size:13px;margin:6px 0">${h(t.slice(0, 2000))}</div><button type="button" class="btn small" data-act="eml-pastuse" data-i="${i}">Use this text</button></details>`).join('') : `<div class="hint">No sent emails matching "${h(q)}" (the template name). Change the name and try again.</div>`; }
 
-/* ---------------- Records → Emails: send, bulk, unsubscribed, sent ---------------- */
+/* ---------------- Communications → Emails: send, bulk, unsubscribed, sent ---------------- */
 function emlPageHtml() {
   const r = emlRec(); const log = ((r && r.log) || []).slice().reverse().slice(0, 60); const un = [...emlUnsub()].map((id) => IDX.biz.get(id)).filter(Boolean);
   return `<div class="d-wrap"><h2 class="sec-h" style="font-size:26px">📧 Emails</h2>

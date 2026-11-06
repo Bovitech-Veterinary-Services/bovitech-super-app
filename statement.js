@@ -1,4 +1,4 @@
-/* Bovitech Super App — 🧾 Statements (Records → Statements): each client's statement of account for a period
+/* Bovitech Super App — 🧾 Statements (Finance → Statements): each client's statement of account for a period
    (last month to start with): opening balance, invoices, payments, closing balance and what's overdue — print, PDF or email. */
 'use strict';
 const STM = { from: null, to: null, q: '', all: false };

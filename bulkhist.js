@@ -45,6 +45,6 @@ document.addEventListener('click', async (e) => { const el = e.target.closest &&
   if (a === 'bh-match') { const inp = document.querySelector(`[data-bhi="${i}"]`); const nm = (inp && inp.value || '').trim().toLowerCase(); const b = D.businesses.find((x) => !x.gone && (x.name || '').toLowerCase() === nm); if (!b) { toast('Choose the client from the list'); return; } bhMatchOne(i, b.id); NEXT_LOG_LABEL = `Call sheet line matched to ${b.name}`; S.skipConfirm = true; await changed(); }
   if (a === 'bh-skip') { const u = Bk.get('bulkhist'); if (!u) return; u.unm = (u.unm || []).filter((_, j) => j !== i); touch(u); S.skipConfirm = true; await changed(); } });
 /* head counts for herd details when there are no bookings yet */
-if (typeof herdEst === 'function') herdEst = (function (orig) { return function (p) { const r = orig.apply(this, arguments); const hi = (Bk.bsched(p.bid).hist || {}); return { f: r.f || (hi.pd && hi.pd.cows) || null, b: r.b || (hi.bbse && hi.bbse.bulls) || null }; }; })(herdEst);
+/* herd numbers fall back to the call sheet history — that's in herd.js now */
 (function () { const st = document.createElement('style'); st.textContent = '.bk-bulkgrp{margin:10px 0 2px;font-weight:800}'; document.head.appendChild(st); })();
 window.bkHistLine = bkHistLine; window.bkHistCard = bkHistCard; window.bhApply = bhApply;

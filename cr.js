@@ -130,7 +130,7 @@ function crPdSummary(pr) { // counts from quick entry
 }
 function crProcText(r, pr) { // the written record for one procedure, from the template answers
   const t = crTpl(pr.tpl); if (!t) return ''; const L = [];
-  (t.sections || []).forEach((sec) => { const ls = []; sec.inputs.forEach((inp, ii) => { if (inp.show && !crShown(pr, inp)) return; const v = (pr.answers || {})[inp.k]; if (v == null || v === '') return; ls.push(`${inp.l}: ${v}`); }); if (ls.length) L.push(`${sec.title}:`, ...ls); });
+  (t.sections || []).forEach((sec) => { const ls = []; let any = false; sec.inputs.forEach((inp, ii) => { if (inp.fixed) { ls.push(inp.fixed); return; } if (inp.show && !crShown(pr, inp)) return; const v = (pr.answers || {})[inp.k]; if (v == null || v === '') return; any = true; ls.push(inp.l ? `${inp.l}: ${v}` : `${v}`); }); if (any) L.push(`${sec.title}:`, ...ls); });
   if (t.quick === 'pd') { const c = crPdSummary(pr); if (c.n) L.push(`Results: ${c.n} examined — ${c.P + c.H} pregnant${c.H ? ` (${c.H} heavy)` : ''}${c.early || c.late ? ` (early ${c.early}, late ${c.late})` : ''}, ${c.NDP} not detectably pregnant${c.R ? `, ${c.R} recheck` : ''}.`); }
   if (pr.notes) L.push('Notes: ' + pr.notes);
   return L.join('\n');

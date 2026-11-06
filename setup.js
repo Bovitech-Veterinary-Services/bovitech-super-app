@@ -157,7 +157,7 @@ const SETUP = [
     'Back in Resend tap <b>Verify DNS records</b>. It can take from a few minutes to a few hours to say <b>Verified</b>.',
     `In Supabase → <a href="${SETUP_SUPA}/functions/secrets" target="_blank" rel="noopener">Edge Functions → Secrets</a>, <b>+ Add secret</b>: name <b>MAIL_FROM</b>, value <b>Bovitech Veterinary Services &lt;office@bovitech.com.au&gt;</b>.`,
     `In Supabase → <a href="${SETUP_SUPA}/functions" target="_blank" rel="noopener">Edge Functions</a> → <b>Deploy a new function</b> → <b>Via Editor</b>, name it <b>mail</b>, tap ${setupCopy('mail', 'Copy the mail code')}, paste it over everything in the code box and <b>Deploy</b>. (Leave "Verify JWT" ON.)`,
-    'Try it: Records → Stock → Orders → make an order to yourself and send it.',
+    'Try it: Inventory → Stock → Orders → make an order to yourself and send it.',
     'Tick <b>✓ Done</b>.'] },
   { id: 'ezyfinal', t: 'Final ezyVet import — just before closing ezyVet', after: 'ezyimport2', steps: [
     'Do this last, when you are ready to stop using ezyVet. Ask ezyVet for a fresh full export (the same backup zip as before).',
@@ -169,7 +169,7 @@ const SETUP = [
     'On the office computer, signed in as an admin, with bovitechvet_backup.zip.',
     '<button class="btn primary" data-act="ezy-start">📥 Choose the ezyVet backup zip…</button>',
     'Tap <b>📥 Import now</b>. Nothing is doubled — it adds each product\'s minimum, usual order amount, barcodes and supplier (with their code and price) to the price list.',
-    'Then Scheduling → Vehicles: add your vehicles, and Records → Stock → 📝 Stocktake to put in what you have.',
+    'Then Scheduling → Vehicles: add your vehicles, and Inventory → Stock → 📝 Stocktake to put in what you have.',
     'Tick <b>✓ Done</b>.'] },
   { id: 'vcontrol2', t: 'vControl: try uploading the on-call schedule files from the app', steps: [
     'In the app: <b>Scheduling → On call → 📟 vControl</b> (tap it to open). Choose the dates, then tap <b>⬇ 111097-Jess.csv</b> and <b>⬇ 111097-Milly.csv</b> (one file per vet, in the same layout as vControl\'s own download: Time and Label).',

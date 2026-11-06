@@ -158,6 +158,7 @@ const Bk = {
       { const lv = Bk.get('bt-leave'); if (lv && lv.name === 'Leave / not available') { lv.name = 'Annual leave'; lv.leave = true; touch(lv); n++; } }
       Bk.list('blocks').forEach((b) => { if (b.ezyId && b.allDay && !b.ezyOff) { b.allDay = false; b.office = true; b.start = '08:30'; b.end = '17:00'; b.ezyOff = 1; touch(b); n++; } });
       { const jess = Bk.people().find((x) => /^jess/i.test(x.preferred_name || x.full_name)); if (jess && !Bk.get('bu-jessif')) { const r = { id: 'bu-jessif', cfg: 'bookunder', order: 4, name: 'Jess if possible', staff: [jess.id], soft: true }; touch(r); D.bkcfg.push(r); n++; } }
+      [['svc-preg', 150, 50], ['svc-bull', 6, 4]].forEach(([id, was, now]) => { const r = Bk.get(id); if (r && r.hph === was) { r.hph = now; touch(r); n++; } }); // default speeds (Nov 2026)
       if (n) D.sync.bkSeeded = true; save();
     } finally { BK._quiet = false; }
   },

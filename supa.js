@@ -354,7 +354,7 @@ const SupaSync = {
       if (changes || !S.migDone) { S.migDone = true; photoCache.clear(); JOBS_CACHE = null; reindex(); logChanges(); migrate(); logChanges('Automatic update'); baseline(); renderAll(); if (pendingCount()) this.soon(); }
       save(); this.set(D.conflicts.length ? 'conflict' : 'ok');
       if (typeof GContacts !== 'undefined') GContacts.maybeRun(); // caller photos, on the one device that does them
-      { // texts sent / replies (only once 03-sms.sql has been run) — for the 💬 Texts tab, contact pages and Scheduling
+      { // texts sent / replies (only once 03-sms.sql has been run) — for the 💬 Communications tab, contact pages and Scheduling
         if (this.kickSms && window.Bk && Bk.on()) { this.kickSms = false; rpc('sms_kick', { k: Dev.k() }).catch(() => {}); }
         if (!this.smsAt || Date.now() - this.smsAt > (S.tab === 'texts' ? 30000 : 90000)) { this.smsAt = Date.now(); rpc('sms_status', { k: Dev.k(), days: 120 }).then((l) => { D.smsLog = l || []; save(); if ((S.tab === 'book' || S.tab === 'texts') && !SHEET && !CONFIRM && !(document.activeElement && document.activeElement.id === 'tx-q')) renderAll(); else renderTabs(); }).catch(() => {}); }
       }

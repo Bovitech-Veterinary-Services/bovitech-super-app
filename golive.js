@@ -80,7 +80,7 @@ if (typeof SETUP !== 'undefined') {
     'Tick <b>✓ Done</b>.'] });
   if (!S1('golivexero')) SETUP.push({ id: 'golivexero', t: 'Go-live day: check every client\'s balance matches Xero', steps: [
     'On the day you go live, in Xero run <b>Accounting → Reports → Aged Receivables Summary</b> as at that date, and export it.',
-    'In the app open Records → Overdue (and each client\'s statement) and compare each client\'s balance with Xero.',
+    'In the app open Finance → Overdue (and each client\'s statement) and compare each client\'s balance with Xero.',
     'Any difference: find the missing or extra invoice or payment and fix it before sending any statements.',
     'Tick <b>✓ Done</b> when every balance matches.'] });
 }

@@ -1,4 +1,4 @@
-/* Bovitech Super App — 📦 Stock and ordering (Records → Stock). Stock lives in the office and in each vehicle, by batch and expiry.
+/* Bovitech Super App — 📦 Stock and ordering (Inventory → Stock). Stock lives in the office and in each vehicle, by batch and expiry.
    • Used on a record → comes out of the record's vehicle when the record is finalised (and goes back if it's reopened).
    • 📷 Scan a barcode on a record → it's added to the record (and so the invoice).
    • Restock: each vehicle's usual amounts make a "top up the car" list; tick what you moved. Move anything by hand, either way.
@@ -64,7 +64,7 @@ async function stkScan(rid) { const r = crGet('crrec', rid); if (!r) return; con
   catch (e) { toast("Couldn't open the camera — type the barcode number instead"); return; }
   let last = '', lastAt = 0, busy = false; const tick = async () => { if (stop) return; if (!busy) { try { const v = document.getElementById('stk-v'); const L = v ? await det.detect(v) : []; const c = L[0] && L[0].rawValue; if (c && (c !== last || Date.now() - lastAt > 4000)) { last = c; lastAt = Date.now(); busy = true; try { navigator.vibrate && navigator.vibrate(60); } catch (x) { } await got(c); busy = false; } } catch (x) { busy = false; } } setTimeout(tick, 350); }; tick(); }
 
-/* ---------- Records → Stock ---------- */
+/* ---------- Inventory → Stock ---------- */
 const STK_TABS = [['stock', 'Stock'], ['restock', 'Restock vehicles'], ['equip', 'Equipment'], ['orders', 'Orders'], ['history', 'History'], ['vehicles', 'Vehicles']];
 function stkHtml() { const t = STK.tab;
   const tabs = `<div class="chips" style="margin-bottom:8px">${STK_TABS.map(([k, l]) => `<button class="chip ${t === k ? 'on' : ''}" data-act="stk-tab" data-v="${k}">${l}${k === 'orders' && stkReorder().length ? ` <span class="cn">${stkReorder().length}</span>` : ''}</button>`).join('')}</div>`;
