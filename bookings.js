@@ -157,6 +157,7 @@ const Bk = {
       [['bt-sick', 'Sick leave', '#c2410c', 'stripes', 7], ['bt-comp', 'Compassionate leave', '#7c3aed', 'dots', 8]].forEach(([id, name, colour, pattern, order]) => { if (!Bk.get(id)) { const r = { id, cfg: 'blocktype', order, name, colour, pattern, where: 'anywhere', leave: true }; touch(r); D.bkcfg.push(r); n++; } });
       { const lv = Bk.get('bt-leave'); if (lv && lv.name === 'Leave / not available') { lv.name = 'Annual leave'; lv.leave = true; touch(lv); n++; } }
       Bk.list('blocks').forEach((b) => { if (b.ezyId && b.allDay && !b.ezyOff) { b.allDay = false; b.office = true; b.start = '08:30'; b.end = '17:00'; b.ezyOff = 1; touch(b); n++; } });
+      { const jess = Bk.people().find((x) => /^jess/i.test(x.preferred_name || x.full_name)); if (jess && !Bk.get('bu-jessif')) { const r = { id: 'bu-jessif', cfg: 'bookunder', order: 4, name: 'Jess if possible', staff: [jess.id], soft: true }; touch(r); D.bkcfg.push(r); n++; } }
       if (n) D.sync.bkSeeded = true; save();
     } finally { BK._quiet = false; }
   },
@@ -377,8 +378,8 @@ function bkSuggestMins(typeId, svcs, stopsIn, lunchIn) {
   use.forEach((x) => { const sv = Bk.svc(x.svc); const st = t.where === 'farm' ? stops[x.stop || 0] || stops[0] : null; const at = st ? st.fid + ':' + (st.yid || '') : '-';
     setups[at] = Math.max(setups[at] || 0, sv.setup || 0); // set-up and pack-up, once at each set of yards
     if (sv.mode === 'perhead') { const y = sv.rateFrom === 'farm' && st ? bkRate(st.fid, st.yid, x.svc) : null; const hph = x.hph || (y && y.hph) || sv.hph || 60; const head = +x.head || 0;
-      const m = head ? (head / hph) * 60 : 0; mins += m;
-      why.push(`${sv.name}: ${head || '?'} head at ${hph}/hour${x.hph ? '' : y ? (y.yard ? ' (these yards)' : ' (this farm)') : sv.rateFrom === 'farm' ? (sv.hph ? ' (usual — no rate set for these yards)' : ' (no rate set — guessed)') : ''} = ${bkDur(Math.round(m))}`); }
+      const m = head ? (head / hph) * 60 * (x.young ? 2 : 1) : 0; mins += m; // yearling bulls take twice as long (set-up and pack-up stay the same)
+      why.push(`${sv.name}: ${head || '?'} ${x.young ? 'yearling bulls' : 'head'} at ${hph}/hour${x.young ? ' (twice as long for yearlings)' : ''}${x.hph ? '' : y ? (y.yard ? ' (these yards)' : ' (this farm)') : sv.rateFrom === 'farm' ? (sv.hph ? ' (usual — no rate set for these yards)' : ' (no rate set — guessed)') : ''} = ${bkDur(Math.round(m))}`); }
     else { mins += +sv.mins || 0; why.push(`${sv.name}: ${bkDur(+sv.mins || 0)}`); } });
   all.filter((x) => main.length && Bk.svc(x.svc).alongside).forEach((x) => why.push(`${Bk.svc(x.svc).name}: alongside`));
   const setup = Object.values(setups).reduce((a, b) => a + b, 0); if (setup) why.push(`set-up and pack-up ${setup} min`);
@@ -530,7 +531,7 @@ function bkSlots(staffId, date, o) { // o: { type, stops, mins, skipId } → [{ 
 function bkSuggest(o) { // o: { type, stops | fids, mins, svcs, urgent, skipId, from, staff (only these people) }
   const stops = o.stops || (o.fids || (o.fid ? [o.fid] : [])).map((fid) => ({ fid, yid: null }));
   const t = Bk.type(o.type); const target = t.where === 'farm' ? Travel.stopPt(stops[0]) : t.where === 'base' ? Travel.home() : null;
-  const u = o.bid && bkUnder(o.bid); const only = u && !u.gone && u.staff && u.staff.length && !(u.emergencyAny && o.urgent) ? u.staff : null; // "who to book under" for this client
+  const u = o.bid && bkUnder(o.bid); const only = u && !u.gone && !u.soft && u.staff && u.staff.length && !(u.emergencyAny && (o.urgent || ['emergency', 'urgent'].includes(o.triage))) ? u.staff : null; // "who to book under" for this client
   const ppl = Bk.people().filter((s) => (!o.staff || !o.staff.length || o.staff.includes(s.id)) && (!only || only.includes(s.id)) && (o.svcs || []).every((x) => Bk.canDo(s, x.svc)));
   const cr = o.bid ? Bk.bsched(o.bid) : {};
   const today = bkToday(); const from = o.from && o.from > today ? o.from : today; const res = [];
@@ -625,11 +626,18 @@ function bkRuleWords(r) {
 function bkSmsTo(bid) { // who gets a business's automatic texts: the ones ticked on the business page, or its primary contact
   const x = Bk.bsched(bid); const cur = (IDX.bizContacts && IDX.bizContacts.get(bid)) || []; const t = (x.smsTo || []).filter((cid) => cur.some((c) => c.id === cid)); if (t.length) return t;
   const b = IDX.biz && IDX.biz.get(bid); const p = b && typeof primaryOf === 'function' ? primaryOf(b) : null; return p ? [p.id] : []; }
+/* triage: each procedure has a default (Settings → Scheduling → Procedures); an appointment can be changed */
+const BK_TRIAGE = [['emergency', '🔴 Emergency', 'schedule immediately — reschedule the day\'s appointments to fit it in, if required'], ['urgent', '🟠 Urgent', 'schedule same day — fit it into the day without rescheduling others, if possible'], ['semi', '🟡 Semi urgent', 'schedule within a few days'], ['non', '🟢 Non urgent', 'schedule whenever it fits in']];
+const bkTriRank = (t) => { const i = BK_TRIAGE.findIndex((x) => x[0] === t); return i < 0 ? 3 : i; };
+function bkTriageAuto(bk) { const r = Math.min(3, ...(bk.svcs || []).filter((x) => x.svc).map((x) => bkTriRank(Bk.svc(x.svc).triage || 'non'))); return BK_TRIAGE[bk.urgent ? Math.min(r, 1) : r][0]; }
+function bkTriage(bk) { return bk.triage || bkTriageAuto(bk); }
+const bkTriName = (t) => (BK_TRIAGE.find((x) => x[0] === t) || BK_TRIAGE[3])[1];
+function bkIsEmerg(bk) { return !!bk.urgent || ['emergency', 'urgent'].includes(bkTriage(bk)); } // "anyone for emergencies" counts emergencies and urgent ones
 function bkUnder(bid) { const x = Bk.bsched(bid); return x.under ? Bk.get(x.under) : null; }
 function bkUnderIssues(bk) { // who this client should be booked with
-  const u = bk.bid && bkUnder(bk.bid); if (!u || !u.staff || !u.staff.length || u.gone) return []; if (u.emergencyAny && bk.urgent) return [];
+  const u = bk.bid && bkUnder(bk.bid); if (!u || !u.staff || !u.staff.length || u.gone) return []; if (u.emergencyAny && bkIsEmerg(bk)) return [];
   const main = [...new Set((bk.svcs || []).filter((x) => x.svc && !Bk.svc(x.svc).alongside).flatMap((x) => Bk.sstaff(bk, x)))];
-  const wrong = main.filter((id) => !u.staff.includes(id)); return wrong.length ? [{ hard: true, msg: `${Bk.who(bk)}: book under "${u.name}" — not ${wrong.map(Bk.pname).join(', ')}` }] : [];
+  const wrong = main.filter((id) => !u.staff.includes(id)); return wrong.length ? [u.soft ? { msg: `${Bk.who(bk)}: ${u.name} (${u.staff.map(Bk.pname).join(', ')} if possible)` } : { hard: true, msg: `${Bk.who(bk)}: book under "${u.name}" — not ${wrong.map(Bk.pname).join(', ')}` }] : [];
 }
 function bkClientRuleIssues(bk, date, start, mins) {
   const x = bk.bid ? Bk.bsched(bk.bid) : {}; const out = [];
