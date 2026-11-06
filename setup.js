@@ -151,7 +151,7 @@ const SETUP = [
     'A summary opens (clients matched, new, maybe the same; herds; price list and bundles; appointments; history). Check it, then tap <b>📥 Import now</b> at the top of that summary. Leave the app open until it says finished — the history takes a few minutes. If it stops, run it again: nothing is doubled.',
     'Then work through <b>Jobs</b>: "ezyVet import: the same client?", "ezyVet notes: a warning, or just info?" and "No category" (new active clients).'] },
   { id: 'mailfn', t: 'Email from the app (purchase orders to suppliers, from office@bovitech.com.au)', steps: [
-    'Sign in to <a href="https://resend.com/domains" target="_blank" rel="noopener">resend.com → Domains</a> (the account the backups already use) and tap <b>Add domain</b>: <b>bovitech.com.au</b>, region Sydney if it asks.',
+    'Sign in to <a href="https://resend.com/domains" target="_blank" rel="noopener">resend.com → Domains</a> (the account the backups already use) and tap <b>Add domain</b>: <b>bovitech.com.au</b>, region <b>Tokyo (ap-northeast-1)</b> — Resend has no Sydney option and Tokyo is the closest. Leave the other options as they are.',
     'Resend shows a few DNS records (TXT and MX, mostly on <b>send</b> and <b>resend._domainkey</b>). Keep that page open.',
     'In another tab sign in to <b>HostPapa → cPanel → Zone Editor</b>, tap <b>Manage</b> next to bovitech.com.au, and add each record exactly as Resend shows it (type, name, value, priority). <b>Don\'t change or delete the records already there</b> — your normal email keeps working.',
     'Back in Resend tap <b>Verify DNS records</b>. It can take from a few minutes to a few hours to say <b>Verified</b>.',
