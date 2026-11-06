@@ -1,7 +1,7 @@
 /* Bovitech Super App — Clinical records and invoicing (part 2: the pages — records, the record itself,
    quick entry in the crush, invoices, overdue, follow-ups, the price list, settings and PDFs). */
 'use strict';
-const CR_SUBS = [['recs', 'Records'], ['search', 'Search'], ['stock', 'Stock'], ['invs', 'Invoices'], ['stmts', 'Statements'], ['overdue', 'Overdue'], ['fus', 'Follow-ups'], ['prods', 'Price list']];
+const CR_SUBS = [['recs', 'Records'], ['search', 'Search'], ['stock', 'Stock'], ['invs', 'Invoices'], ['stmts', 'Statements'], ['mail', 'Emails'], ['overdue', 'Overdue'], ['fus', 'Follow-ups'], ['prods', 'Price list']];
 const crPill = (t, cls) => `<span class="cr-pill ${cls || ''}">${h(t)}</span>`;
 const CR_RST = { draft: ['Draft', 'draft'], final: ['Finalised', 'final'] };
 const CR_IST = { notready: 'notready', pending: 'pending', approved: 'approved', sent: 'sent', paid: 'paid' };
@@ -22,6 +22,7 @@ function crRender() {
   if (pg === 'search' && typeof ezySearchHtml === 'function') return ezySearchHtml();
   if (pg === 'stock' && typeof stkHtml === 'function') return stkHtml();
   if (pg === 'stmts' && typeof stmHtml === 'function') return stmHtml();
+  if (pg === 'mail' && typeof emlPageHtml === 'function') return emlPageHtml();
   if (pg === 'inv') { const inv = crGet('crinv', CR.id); if (inv) return crInvHtml(inv); CR.page = 'invs'; }
   if (CR.page === 'invs') return crInvsHtml(); if (CR.page === 'overdue') return crOverdueHtml(); if (CR.page === 'fus') return crFusHtml(); if (CR.page === 'prods') return crProdsHtml();
   return crRecsHtml();
@@ -77,7 +78,7 @@ function crEditHtml(r) {
   const farms = b ? (b.farms || []).filter((f) => !f.gone) : []; const worked = crWorkedMins(r); const ahS = crAhSuggest(r), ahE = crAhEff(r); const tr = crTravel(r);
   const warn = crWarnings(r);
   const ppl = Bk.people();
-  return `<div class="d-wrap cr cr-edit"><div class="actions" style="margin-bottom:6px"><button class="btn small" data-act="cr-back">‹ Records</button><button class="btn small" data-act="cr-pdf" data-id="${r.id}">🖨 Record PDF</button>${b ? `<button class="btn small" data-act="cr-biz" data-id="${b.id}">🏠 Business page</button>` : ''}</div>
+  return `<div class="d-wrap cr cr-edit"><div class="actions" style="margin-bottom:6px"><button class="btn small" data-act="cr-back">‹ Records</button><button class="btn small" data-act="cr-pdf" data-id="${r.id}">🖨 Record PDF</button>${b && typeof emlCompose === 'function' ? `<button class="btn small" data-act="eml-compose" data-bid="${b.id}" data-rec="${r.id}" data-tpl="et-res">📧 Email results</button>` : ''}${b ? `<button class="btn small" data-act="cr-biz" data-id="${b.id}">🏠 Business page</button>` : ''}</div>
   <h2 class="sec-h" style="font-size:24px">${h(crBizName(r.bid))} ${crPill(...CR_RST[fin ? 'final' : 'draft'])} ${crInvPill(inv)}</h2>
   ${fin ? `<div class="cr-warn">✓ Finalised${r.finBy ? ' by ' + h(Bk.pname(r.finBy)) : ''}${r.finAt ? ' on ' + new Date(r.finAt).toLocaleDateString('en-AU') : ''}. <button class="btn small" data-act="cr-reopen">Reopen to change it</button></div>` : ''}
   ${warn.length ? `<div class="cr-warn">${warn.map((w) => '⚠ ' + h(w)).join('<br>')}</div>` : ''}
