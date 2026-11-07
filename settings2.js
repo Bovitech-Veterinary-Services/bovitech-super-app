@@ -1,0 +1,31 @@
+/* Bovitech Super App — v2.33: settings for the new features.
+   • Settings → Clinical records → ✅ Compulsory record questions: choose a template and tick the questions that can be left blank when
+     the record is finalised (everything else has to be answered).
+   • Settings → Clinical records → ⌨️ Shortcuts: "Shortcuts for me" — on or off for the person signed in.
+   • Settings → Contacts → ☑️ New phone numbers and emails: what a new number or email starts ticked for. */
+const S2 = { tpl: '' };
+const s2Me = () => (typeof SBAuth !== 'undefined' && SBAuth.staff && SBAuth.staff.id) || (typeof crMe === 'function' ? crMe() : '') || 'device';
+/* compulsory questions */
+function s2ReqCard() { const T = crTpls().filter((t) => !t.gone); const t = T.find((x) => x.id === S2.tpl) || null; const Q = t ? (t.sections || []).flatMap((s) => (s.inputs || []).filter((i) => !i.fixed && !i.once).map((i) => ({ s, i }))) : [];
+  return `<div class="card"><h3><span class="sp">✅ Compulsory record questions</span></h3><div class="hint" style="margin-bottom:6px">When a record is finalised, every question has to be answered — except the ones ticked here as "can be left blank".</div>
+    <div class="f"><label for="s2-tpl">Template</label><select id="s2-tpl"><option value=""></option>${T.map((x) => { const n = (x.sections || []).flatMap((s) => s.inputs || []).filter((i) => i.optional).length; return `<option value="${h(x.id)}" ${x.id === S2.tpl ? 'selected' : ''}>${h(x.name)}${n ? ` (${n} can be left blank)` : ''}</option>`; }).join('')}</select></div>
+    ${t ? `<div class="actions"><button class="btn small" data-act="s2-typed">Typed boxes can be left blank</button><button class="btn small" data-act="s2-allreq">All compulsory</button></div>${Q.map(({ s, i }) => `<label class="bk-radio" style="display:flex;margin:3px 0"><input type="checkbox" data-s2opt="${h(i.k)}" ${i.optional ? 'checked' : ''}> <span><b>${h(i.l || s.title || 'Question')}</b> <span class="hint">${h(s.title || '')}${i.text ? ' · typed' : ''}</span> — can be left blank</span></label>`).join('') || '<div class="hint">No questions to answer in this template.</div>'}<div class="actions"><button class="btn small primary" data-act="s2-reqsave">Save</button></div>` : ''}</div>`; }
+/* shortcuts for me */
+const s2ShMine = () => { const r = typeof shRec === 'function' && shRec(); return !(r && (r.offFor || []).includes(s2Me())); };
+/* new numbers / emails */
+function s2UseCard() { const ph = useDef('phone'), em = useDef('email'); const row = (k, L, cur) => L.map(([v, l]) => `<label class="bk-radio"><input type="checkbox" data-s2use="${k}" value="${v}" ${cur.includes(v) ? 'checked' : ''}> ${h(l)}</label>`).join('');
+  return `<div class="card"><h3><span class="sp">☑️ New phone numbers and emails</span></h3><div class="hint" style="margin-bottom:6px">What a newly added number or email starts ticked for. You can change each one on the contact or business.</div>
+    <div class="f"><label>Phone numbers</label><div class="cr-chks">${row('phone', USE_PH, ph)}</div></div><div class="f"><label>Emails</label><div class="cr-chks">${row('email', USE_EM, em)}</div></div>
+    <div class="actions"><button class="btn small primary" data-act="s2-usesave">Save</button><button class="btn small" data-act="s2-usereset">↺ All ticked</button></div></div>`; }
+if (typeof crSettingsHtml === 'function') crSettingsHtml = (function (orig) { return function () { let html = orig.apply(this, arguments); const w = '<div class="cr-setwrap" data-tab="records">'; html = html.includes(w) ? html.replace(w, w + s2ReqCard()) : html + s2ReqCard();
+  return html.replace(/(<button class="btn small" data-act="sh-add">➕ New shortcut<\/button>)/, `$1<button class="btn small" data-act="s2-shme">Shortcuts for me: ${s2ShMine() ? 'on — turn off' : 'off — turn on'}</button>`); }; })(crSettingsHtml);
+if (typeof renderSettings === 'function') renderSettings = (function (orig) { return function () { const html = orig.apply(this, arguments); const i = html.lastIndexOf('</div>'); return i < 0 ? html : html.slice(0, i) + s2UseCard() + html.slice(i); }; })(renderSettings);
+document.addEventListener('change', (e) => { if (e.target.id !== 's2-tpl') return; S2.tpl = e.target.value; renderAll(); setTimeout(() => { const el = document.getElementById('s2-tpl'); if (el && typeof navPoint === 'function') { const c = el.closest('details, .card'); if (c) { c.open = true; c.scrollIntoView({ block: 'start' }); } } }, 50); });
+document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act^=s2-]'); if (!el) return; e.preventDefault(); e.stopPropagation(); const a = el.dataset.act;
+  if (a === 's2-typed' || a === 's2-allreq') { const t = crTpl(S2.tpl); document.querySelectorAll('[data-s2opt]').forEach((c) => { const i = t && (t.sections || []).flatMap((s) => s.inputs || []).find((x) => x.k === c.dataset.s2opt); c.checked = a === 's2-typed' ? !!(i && i.text) : false; }); return; }
+  if (a === 's2-reqsave') { const t = crTpl(S2.tpl); if (!t) return; const rec = crCfg(t.id) || t; const on = new Set([...document.querySelectorAll('[data-s2opt]:checked')].map((c) => c.dataset.s2opt)); (rec.sections || []).forEach((s) => (s.inputs || []).forEach((i) => { if (on.has(i.k)) i.optional = true; else delete i.optional; })); if (rec.from === 'ezyvet') rec.edited = true; touch(rec); save(); if (window.Sync) Sync.soon(); NEXT_LOG_LABEL = `Compulsory questions changed: ${t.name}`; toast('Saved'); renderAll(); return; }
+  if (a === 's2-shme') { const r = shEnsure(); const me = s2Me(); const wasOn = s2ShMine(); r.offFor = (r.offFor || []).filter((x) => x !== me); if (wasOn) r.offFor.push(me); crSave(r); if (window.Sync) Sync.soon(); toast(s2ShMine() ? 'Shortcuts are on for you' : 'Shortcuts are off for you'); renderAll(); return; }
+  if (a === 's2-usesave') { const g = (k) => [...document.querySelectorAll(`[data-s2use="${k}"]:checked`)].map((c) => c.value); D.settings.useDef = { phone: g('phone'), email: g('email') }; NEXT_LOG_LABEL = 'New phone and email ticks changed'; }
+  if (a === 's2-usereset') delete D.settings.useDef;
+  touch(D.settings); S.skipConfirm = true; await changed(); toast('Saved'); }, true);
+window.s2ReqCard = s2ReqCard; window.s2UseCard = s2UseCard;

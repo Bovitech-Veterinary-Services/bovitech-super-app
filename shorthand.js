@@ -8,7 +8,7 @@
 const SH_ID = 'shorthand';
 const shRec = () => crCfg(SH_ID);
 const shList = () => (shRec() || {}).list || {};
-const shOn = () => { const r = shRec(); return !!r && !r.off && Object.keys(r.list || {}).length > 0; };
+const shOn = () => { const r = shRec(); const me = (typeof SBAuth !== 'undefined' && SBAuth.staff && SBAuth.staff.id) || (typeof crMe === 'function' ? crMe() : '') || 'device'; return !!r && !r.off && !(r.offFor || []).includes(me) && Object.keys(r.list || {}).length > 0; }; /* offFor: people who switched them off for themselves (settings2.js) */
 function shFind(tok) { const L = shList(); if (Object.prototype.hasOwnProperty.call(L, tok)) return tok; if (/^[-#*]/.test(tok)) { const u = tok.toUpperCase(); const k = Object.keys(L).find((x) => x.toUpperCase() === u); if (k) return k; } return null; }
 /* split a pick list "#INPUT#[q/a/b/ ]" — the question, then the answers (an empty last answer means "type your own") */
 function shParse(s) { const m = /^#INPUT#\[([\s\S]*)\]$/.exec(s.trim()); if (!m) return null; const P = m[1].split('/'); const q = (P.shift() || '').trim().replace(/^['‘’"]+|['‘’"]+$/g, '').replace(/:$/, ''); const own = P.some((x) => !x.trim()); return { q, opts: P.map((x) => x.trim()).filter(Boolean), own }; }
