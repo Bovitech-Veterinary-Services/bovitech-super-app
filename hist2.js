@@ -18,3 +18,13 @@ function ptApptsCard(p) { if (typeof Bk === 'undefined' || !Bk.on || !Bk.on()) r
 ptDetail = (function (orig) { return function (p) { const html = orig.apply(this, arguments); const c = ptApptsCard(p); if (!c) return html; const at = html.indexOf('<div class="card"><h3>Clinical records'); return at > 0 ? html.slice(0, at) + c + html.slice(at) : html + c; }; })(ptDetail);
 (function () { const st = document.createElement('style'); st.textContent = '.ezf-mini{width:34px;height:34px;object-fit:cover;border-radius:5px;float:left;margin:0 8px 0 0}.ezf-ico{display:inline-flex;align-items:center;justify-content:center;font-size:22px;background:#f3f3f3}'; document.head.appendChild(st); })();
 window.ptApptsCard = ptApptsCard;
+
+/* admin job: put the old ezyVet / VetlinkPRO files in SharePoint so they preview */
+if (typeof SETUP !== 'undefined' && !SETUP.some((x) => x.id === 'ezyfiles')) SETUP.push({ id: 'ezyfiles', t: 'Put the old ezyVet files in SharePoint (photos and PDFs preview in the history)', after: 'm365', auto: () => !!(D.settings || {}).ezyFilesBase, steps: [
+  'This needs Microsoft 365 Business (the admin job "Move to Microsoft 365 Business" first) — a personal OneDrive can\'t give each file its own fixed address, SharePoint can.',
+  'On a computer, unzip the ezyVet attachments zip (about 15 GB — 14,687 files). Keep the folders as they are (<code>converted/bvs/HSTPDF</code>, <code>CLNMAIL</code>, <code>HSTIMAGE</code> and the loose files).',
+  'In SharePoint, open the Bovitech site → <b>Documents</b> → <b>+ New → Folder</b>, name it <b>ezyVet files</b>.',
+  'Open the new folder and drag everything from the unzipped folder into it (or use <b>Upload → Folder</b>). It can take a few hours — leave the computer on.',
+  'When it\'s finished, open the <b>ezyVet files</b> folder in the browser and copy the address from the address bar. Remove anything after the folder name (for example <code>?id=…</code> or <code>/Forms/AllItems.aspx</code>), so it ends with <code>/ezyVet files</code>.',
+  'Paste it in Settings → Clinical records → ezyVet files folder and tap Save. Open a business with old files and check a photo and a PDF show.',
+  'Everyone who uses the app needs to be signed in to Microsoft 365 in that browser for the files to show (they\'re private to Bovitech).'] });
