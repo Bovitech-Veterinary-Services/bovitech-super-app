@@ -1,0 +1,28 @@
+/* Bovitech Super App — v2.32: settings for the new features.
+   • Settings → Texts → 👍 Replies that confirm an appointment: the words (one per line) that count as YES — no reply needed.
+   • Settings → Texts → 📞 "Log this call?" after tapping 📞 — on or off on this device.
+   • Settings → Clinical records → ✏️ Record text toolbar: which buttons show, and the fonts, text colours and highlights to choose from. */
+const SX_TOOLS = [['bold', 'Bold'], ['italic', 'Italic'], ['underline', 'Underline'], ['strikeThrough', 'Strike through'], ['insertUnorderedList', 'Dot points'], ['insertOrderedList', 'Numbered list'], ['check', 'Checklist'], ['justifyLeft', 'Align left'], ['justifyCenter', 'Centre'], ['justifyRight', 'Align right'], ['justifyFull', 'Justify'], ['outdent', 'Less indent'], ['indent', 'More indent'], ['formatBlock', 'Heading'], ['fontName', 'Font'], ['fontSize', 'Size'], ['foreColor', 'Text colour'], ['hiliteColor', 'Highlight'], ['removeFormat', 'Clear formatting']];
+const sxIn = (html, card, tab) => { const w = `<div class="cr-setwrap" data-tab="${tab}">`; return html.includes(w) ? html.replace(w, w + card) : html + card; };
+const sxCallAsk = () => { try { return localStorage.getItem('bvp-callask') !== '0'; } catch (x) { return true; } };
+if (typeof smsSettingsHtml === 'function') smsSettingsHtml = (function (orig) { return function () { const html = orig.apply(this, arguments); const L = (D.settings.yesWords && D.settings.yesWords.length ? D.settings.yesWords : (typeof ST_YES_DEF !== 'undefined' ? ST_YES_DEF : []));
+  const card = `<div class="card"><h3><span class="sp">👍 Replies that confirm an appointment</span></h3><div class="hint" style="margin-bottom:6px">A reply that says only one of these (capitals and full stops don't matter) confirms the appointment (✔✔) and goes under "No reply needed". One per line. Anything else needs a reply.</div>
+    <div class="f"><label for="sx-yes">Words and emoji</label><textarea id="sx-yes" rows="8">${h(L.join('\n'))}</textarea></div><div class="actions"><button class="btn small primary" data-act="sx-yes-save">Save</button><button class="btn small" data-act="sx-yes-reset">↺ Standard list</button></div></div>
+    <div class="card"><h3><span class="sp">📞 "Log this call?" (this device)</span></h3><div class="kv" style="align-items:center"><div class="v">${sxCallAsk() ? '<b>On</b> — after tapping 📞 on a number, the app asks whether to log the call' : '<b>Off</b> on this device'}</div><button class="btn small" data-act="sx-callask">${sxCallAsk() ? 'Turn off' : 'Turn on'}</button></div></div>`;
+  return sxIn(html, card, 'texts'); }; })(smsSettingsHtml);
+if (typeof crSettingsHtml === 'function') crSettingsHtml = (function (orig) { return function () { const html = orig.apply(this, arguments); const C = D.settings.rtTools || {}; const off = new Set(C.off || []);
+  const fonts = C.fonts && C.fonts.length ? C.fonts : (typeof RT_FONTS !== 'undefined' ? RT_FONTS.filter((x) => x[0]).map((x) => x[0]) : []); const cols = C.cols && C.cols.length ? C.cols : (typeof RT_COLS !== 'undefined' ? RT_COLS : []); const hi = C.hi && C.hi.length ? C.hi : (typeof RT_HI !== 'undefined' ? RT_HI.filter((x) => x !== 'transparent') : []);
+  const card = `<div class="card"><h3><span class="sp">✏️ Record text toolbar</span></h3><div class="hint" style="margin-bottom:6px">The formatting buttons on every typed box in a record. Untick any you don't want.</div>
+    <div class="checks" style="flex-wrap:wrap">${SX_TOOLS.map(([k, l]) => `<label><input type="checkbox" data-sxtool="${k}" ${off.has(k) ? '' : 'checked'}> ${h(l)}</label>`).join('')}</div>
+    <div class="f"><label for="sx-fonts">Fonts (one per line)</label><textarea id="sx-fonts" rows="5">${h(fonts.join('\n'))}</textarea></div>
+    <div class="grid2"><div class="f"><label for="sx-cols">Text colours (one per line, e.g. #c62828)</label><textarea id="sx-cols" rows="5">${h(cols.join('\n'))}</textarea></div><div class="f"><label for="sx-hi">Highlight colours (one per line)</label><textarea id="sx-hi" rows="5">${h(hi.join('\n'))}</textarea></div></div>
+    <div class="actions"><button class="btn small primary" data-act="sx-rt-save">Save</button><button class="btn small" data-act="sx-rt-reset">↺ Standard toolbar</button></div></div>`;
+  return sxIn(html, card, 'records'); }; })(crSettingsHtml);
+const sxLines = (id) => ((document.getElementById(id) || {}).value || '').split('\n').map((x) => x.trim()).filter(Boolean);
+document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act^=sx-]'); if (!el) return; e.stopPropagation(); const a = el.dataset.act;
+  if (a === 'sx-callask') { try { localStorage.setItem('bvp-callask', sxCallAsk() ? '0' : '1'); } catch (x) { } toast(sxCallAsk() ? '"Log this call?" is on for this device' : '"Log this call?" is off for this device'); renderAll(); return; }
+  if (a === 'sx-yes-save') { const L = [...new Set(sxLines('sx-yes'))]; if (!L.length) { toast('Add at least one word'); return; } D.settings.yesWords = L; NEXT_LOG_LABEL = 'YES replies changed'; }
+  if (a === 'sx-yes-reset') delete D.settings.yesWords;
+  if (a === 'sx-rt-save') { const ok = (c) => /^#[0-9a-f]{3,8}$/i.test(c) || /^[a-z]{3,20}$/i.test(c); D.settings.rtTools = { off: [...document.querySelectorAll('[data-sxtool]')].filter((x) => !x.checked).map((x) => x.dataset.sxtool), fonts: sxLines('sx-fonts').map((f) => f.replace(/[^\w\s,'"-]/g, '')), cols: sxLines('sx-cols').filter(ok), hi: sxLines('sx-hi').filter(ok) }; NEXT_LOG_LABEL = 'Record text toolbar changed'; }
+  if (a === 'sx-rt-reset') delete D.settings.rtTools;
+  touch(D.settings); S.skipConfirm = true; await changed(); toast('Saved'); }, true);

@@ -4,7 +4,7 @@
    • 💲 Finance (was in Records): Invoices · Statements · Overdue.
    • Records keeps Records · Search · Follow-ups.
    The pages themselves are the same — only where they live has changed. Tab order (Settings → Display) still works. */
-if (typeof TAB_DEFAULTS !== 'undefined') { TAB_DEFAULTS.texts = 'Communications'; TAB_DEFAULTS.inv = 'Inventory'; TAB_DEFAULTS.fin = 'Finance'; }
+if (typeof TAB_DEFAULTS !== 'undefined') { TAB_DEFAULTS.texts = 'Comms'; TAB_DEFAULTS.inv = 'Inventory'; TAB_DEFAULTS.fin = 'Finance'; }
 if (typeof TAB_GRP_NAMES !== 'undefined') { TAB_GRP_NAMES.t = 'Communications sub-tabs'; TAB_GRP_NAMES.i = 'Inventory sub-tabs'; TAB_GRP_NAMES.f = 'Finance sub-tabs'; }
 const T2 = { comm: [['texts', 'Texts'], ['mail', 'Emails'], ['calls', 'Phone calls'], ['fus', 'Follow-ups'], ['csearch', 'Search']], inv: [['stock', 'Stock'], ['prods', 'Price lists']], fin: [['invs', 'Invoices'], ['stmts', 'Statements'], ['overdue', 'Overdue']], rec: ['recs', 'search', 'fus'] };
 const T2_ICON = { inv: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7l9-4 9 4-9 4z"/><path d="M3 7v10l9 4 9-4V7"/><path d="M12 11v10"/></svg>', fin: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="6" width="18" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/><path d="M7 12h.01M17 12h.01"/></svg>' };

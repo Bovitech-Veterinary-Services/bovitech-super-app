@@ -8,13 +8,13 @@
      emails (subscribed / unsubscribed) for businesses.
    • Follow-ups are in Communications too. */
 const CM = { f: 'needs', q: '', box: {} };
-const CM_YES = /^\W*(y|ye|yes|yep|yeah|yup|ok|okay|sure|confirm|confirmed|yes please|yes thanks|thanks yes|👍|👌|✅)\W*$/iu;
+const cmYes = (t) => (typeof stYes === 'function' ? stYes(t) : /^\W*(y|yes|ok)\W*$/i.test(String(t || '')));
 const cmDone = () => new Set(((typeof Bk !== 'undefined' && Bk.get('smsdone')) || {}).ids || []);
 function cmSetDone(ids, on) { let r = Bk.get('smsdone'); if (!r) { r = { id: 'smsdone', cfg: 'smsdone', ids: [] }; D.bkcfg.push(r); } const s = new Set(r.ids || []); ids.forEach((x) => (on ? s.add(String(x)) : s.delete(String(x)))); r.ids = [...s].slice(-5000); touch(r); }
 const cmIn = (x) => x.kind === 'reply';
 const cmAt = (x) => new Date(x.at).getTime() || 0;
 /* a received text: does it need a reply? */
-function cmClass(x, L) { if (!cmIn(x)) return null; if (cmDone().has(String(x.id))) return 'done'; if (CM_YES.test(String(x.body || '').trim())) return 'noreply';
+function cmClass(x, L) { if (!cmIn(x)) return null; if (cmDone().has(String(x.id))) return 'done'; if (cmYes(x.body)) return 'noreply';
   const k = smsKey(x); const replied = L.some((y) => !cmIn(y) && y.kind === 'manual' && String(y.status || '').toLowerCase() !== 'failed' && smsKey(y) === k && cmAt(y) > cmAt(x)); return replied ? 'replied' : 'needs'; }
 const CM_F = [['needs', '📥 Needs a reply'], ['unread', '🔵 Not read yet'], ['pending', '⏳ Pending'], ['sent', '✓ Sent'], ['failed', '⚠ Failed'], ['noreply', '👍 No reply needed'], ['all', 'All texts']];
 function cmMatch(x, f, L) { const st = String(x.status || '').toLowerCase(); const c = cmClass(x, L);
@@ -59,7 +59,8 @@ function cmCallsHtml() { const q = CM.q.trim().toLowerCase(); const L = cmCalls(
     <div class="card">${L.slice(0, 200).map(cmCallRow).join('') || '<div class="hint">No calls logged yet.</div>'}</div></div>`; }
 /* tapping 📞: ask to log it when you come back to the app */
 let CM_TEL = null;
-document.addEventListener('click', (e) => { const a = e.target.closest && e.target.closest('a[href^="tel:"]'); if (!a) return; const ph = decodeURIComponent(a.getAttribute('href').slice(4)); const det = a.closest('[data-cid],[data-bid]'); CM_TEL = { phone: ph, at: Date.now(), ...cmWhoByPhone(ph) }; const bd = (S.sel && S.sel.kind === 'business') ? S.sel.id : ''; if (!CM_TEL.bid && bd) CM_TEL.bid = bd; setTimeout(cmTelAsk, devIsPhone && devIsPhone() ? 600000 : 8000); });
+const cmCallAskOn = () => { try { return localStorage.getItem('bvp-callask') !== '0'; } catch (x) { return true; } };
+document.addEventListener('click', (e) => { const a = e.target.closest && e.target.closest('a[href^="tel:"]'); if (!a || !cmCallAskOn()) return; const ph = decodeURIComponent(a.getAttribute('href').slice(4)); const det = a.closest('[data-cid],[data-bid]'); CM_TEL = { phone: ph, at: Date.now(), ...cmWhoByPhone(ph) }; const bd = (S.sel && S.sel.kind === 'business') ? S.sel.id : ''; if (!CM_TEL.bid && bd) CM_TEL.bid = bd; setTimeout(cmTelAsk, devIsPhone && devIsPhone() ? 600000 : 8000); });
 async function cmTelAsk() { const t = CM_TEL; if (!t || Date.now() - t.at < 1500) return; CM_TEL = null; if (await ask(`Log this call to ${cmCallWho(t)}?`, '📞 Yes — log it')) cmCallOpen({ phone: t.phone, bid: t.bid, cid: t.cid, at: t.at }); }
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible' && CM_TEL) setTimeout(cmTelAsk, 400); });
 /* ---------- contact / business pages: 💬 Communications ---------- */
