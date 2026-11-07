@@ -48,3 +48,13 @@ document.addEventListener('click', async (e) => { const el = e.target.closest &&
 /* herd numbers fall back to the call sheet history — that's in herd.js now */
 (function () { const st = document.createElement('style'); st.textContent = '.bk-bulkgrp{margin:10px 0 2px;font-weight:800}'; document.head.appendChild(st); })();
 window.bkHistLine = bkHistLine; window.bkHistCard = bkHistCard; window.bhApply = bhApply;
+/* v2.30: admin job — explain the old call sheets, so the app can use them properly */
+if (typeof SETUP !== 'undefined' && !SETUP.some((x) => x.id === 'callsheets')) SETUP.push({ id: 'callsheets', t: 'Explain the old call sheets (2023–2026) to Claude', steps: [
+  'The call sheets are loaded (Scheduling → Bulk lists → 📥). Some of what\'s in them isn\'t clear yet. In a Claude chat, explain each of these, then tap ✓ Done:',
+  '<b>Codes</b> in the code column: <b>1</b>, <b>2</b>, <b>2.1</b>, <b>4.3</b>, <b>5.1</b>, <b>5.2</b>, <b>5.5</b>, <b>6</b>, <b>8</b>, <b>8.1</b>, <b>8.2</b>, <b>10</b> — what does each one mean?',
+  '<b>Status</b> words: completed - all, scheduled, scheduled - half, no, no - call again next year, no - remove from next year\'s list, left sms, ring later in season, need to ring, yes waiting on info, new client - call next season, cancelled — are any of these special (for example, should "remove from next year\'s list" take them off the bulk list)?',
+  '<b>Preg testing</b>: the two month columns next to heifers and cows (e.g. 8 and 9) — are they the months the heifers and cows were tested, or something else? And the date column (e.g. 28/05/2024) — is it the date the bulls went in (joining)?',
+  '<b>Type</b>: DP/NDP, PNP, Full, FA - all, FA - some, FA - heifers, TBC — is "Full" the same as FA (foetal ageing) for everything?',
+  '<b>Bull testing</b>: the month column, and Pre-mating / Pre-sale — anything else they mean?',
+  '<b>AI programs</b>: the PG, ODB, ECP and GnRH numbers on each program — are they mL ordered or used, or number of doses?'],
+  auto: () => false });

@@ -13,8 +13,13 @@ function navGo(path) { const seg = String(path).split(/\s*→\s*/).map((x) => x.
     const cands = [...document.querySelectorAll('#list h2, #list h3, #list summary, #list .lbl, #list b')]; const el = cands.find((x) => low(x.textContent).replace(/[^\p{L}\p{N} ]/gu, '').trim().includes(want));
     if (!el) { toast('Opened ' + seg.slice(0, 2).join(' → ') + ' — look for "' + rest[0] + '"'); return; }
     for (let d = el.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true; if (el.tagName === 'SUMMARY' && el.parentElement) el.parentElement.open = true;
-    const box = el.closest('.card, details') || el; box.scrollIntoView({ behavior: 'smooth', block: 'start' }); box.classList.add('nav-flash'); setTimeout(() => box.classList.remove('nav-flash'), 2200); }, 120);
+    const box = el.closest('.card, details') || el; navPoint(box); }, 120);
   return true; }
+/* show where it is: open it, scroll to it, pulse it a few times and point at it with a bouncing arrow */
+function navPoint(box) { if (!box) return; for (let d = box.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true; if (box.tagName === 'DETAILS') box.open = true;
+  box.scrollIntoView({ behavior: 'smooth', block: 'center' }); box.classList.remove('nav-flash'); void box.offsetWidth; box.classList.add('nav-flash'); setTimeout(() => box.classList.remove('nav-flash'), 3300);
+  document.querySelectorAll('.nav-arrow').forEach((x) => x.remove()); const ar = document.createElement('div'); ar.className = 'nav-arrow'; ar.textContent = '👉'; document.body.appendChild(ar);
+  const place = () => { const r = box.getBoundingClientRect(); ar.style.top = Math.max(4, r.top + Math.min(24, r.height / 2) - 18) + 'px'; ar.style.left = Math.max(2, r.left - 40) + 'px'; }; place(); const iv = setInterval(place, 100); setTimeout(() => { clearInterval(iv); ar.remove(); }, 3600); }
 /* a button for a place (used where code wants one) */
 const NAV_DEST = { veh: 'Scheduling → Vehicles', vsp: 'Settings → Scheduling → Vehicle service providers', roster: 'Scheduling → On-call', bulk: 'Scheduling → Bulk lists', stock: 'Records → Stock', golive: 'Settings → Scheduling → Texts and emails before go-live' };
 function goBtn(dest, label) { const p = NAV_DEST[dest] || dest; return `<button type="button" class="btn small gobtn" data-act="go" data-path="${h(p)}">${h(label || p)} ↗</button>`; }
@@ -30,5 +35,5 @@ document.addEventListener('click', (e) => { const el = e.target.closest && e.tar
 (function () { let tm = null; const run = () => { tm = null; ['list', 'detail'].forEach((id) => navLinkify(document.getElementById(id))); const sh = document.getElementById('sheet'); if (sh) navLinkify(sh); const ab = document.getElementById('askbox'); if (ab) navLinkify(ab); };
   const go = () => { new MutationObserver(() => { if (!tm) tm = setTimeout(run, 150); }).observe(document.body, { childList: true, subtree: true }); run(); };
   if (document.body) go(); else document.addEventListener('DOMContentLoaded', go);
-  const st = document.createElement('style'); st.textContent = 'a.golink{color:inherit;text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer}a.golink:hover{text-decoration-style:solid}a.golink::after{content:" ↗";font-size:.8em}.gobtn{white-space:nowrap}.nav-flash{animation:navflash 2s ease}@keyframes navflash{0%,40%{box-shadow:0 0 0 4px #f5b800}100%{box-shadow:none}}'; document.head.appendChild(st); })();
-window.goBtn = goBtn; window.navGo = navGo;
+  const st = document.createElement('style'); st.textContent = 'a.golink{color:inherit;text-decoration:underline dotted;text-underline-offset:2px;cursor:pointer}a.golink:hover{text-decoration-style:solid}a.golink::after{content:" ↗";font-size:.8em}.gobtn{white-space:nowrap}.nav-flash{animation:navflash .8s ease-in-out 4}@keyframes navflash{0%,100%{box-shadow:none;background-color:inherit}50%{box-shadow:0 0 0 5px #f5b800;background-color:#fff3c4}}.nav-arrow{position:fixed;z-index:9999;font-size:30px;pointer-events:none;animation:navarrow .5s ease-in-out infinite alternate;filter:drop-shadow(0 2px 2px rgba(0,0,0,.3))}@keyframes navarrow{from{transform:translateX(-8px)}to{transform:translateX(4px)}}'; document.head.appendChild(st); })();
+window.goBtn = goBtn; window.navGo = navGo; window.navPoint = navPoint;

@@ -154,10 +154,10 @@ function smsBubble(x, showWho) {
   return `<div class="smsbub ${inn ? 'smsin' : 'smsout'} ${smsUnread(x) ? 'unread' : ''}"><div class="smsmeta">${smsWhen(x.at)} · ${inn ? '📥 Reply' + (showWho ? ' from ' + h(smsKeyName(smsKey(x))) : '') : '📲 ' + h(SMS_KINDS[x.kind] || 'Text') + (x.by ? ' from ' + h(x.by) : '')}${inn ? '' : ' · ' + h(st)}${x.note ? ' · ' + h(x.note) : ''}</div><div class="smsbody">${h(x.body || '')}</div>
     ${inn && !x.handled ? `<div class="actions"><button class="btn small" data-act="tx-read" data-sms="${x.id}">✓ Mark as read</button></div>` : ''}${!inn && x.status === 'failed' && x.kind === 'manual' ? `<div class="actions"><button class="btn small primary" data-act="bkj-smsretry" data-id="${x.id}">Try again</button></div>` : ''}</div>`;
 }
-function smsCard(kind, id) { // "💬 Office texts" on a contact / business page (only when there are some)
+function smsCard(kind, id) { // "📲 Communications from office phone" on a contact / business page (only when there are some)
   const rows = smsFor(kind, id).sort((a, b) => Date.parse(b.at) - Date.parse(a.at)); if (!rows.length) return '';
   const un = rows.filter(smsUnread).length; const key = kind === 'contact' ? 'c:' + id : 'b:' + id;
-  return `<div class="card smscard"><h3><span class="sp">${h(bt('smscard', '💬 Office texts'))} <span class="hint">(${SMS_OFFICE_NO})</span>${un ? ` <span class="smscount">${un} unread</span>` : ''}</span><button class="btn small" data-act="tx-goto" data-key="${key}">Open conversation</button></h3>
+  return `<div class="card smscard"><h3><span class="sp">${h(bt('smscard', '📲 Communications from office phone'))} <span class="hint">(${SMS_OFFICE_NO})</span>${un ? ` <span class="smscount">${un} unread</span>` : ''}</span><button class="btn small" data-act="tx-goto" data-key="${key}">Open conversation</button></h3>
     ${rows.slice(0, 3).reverse().map((x) => smsBubble(x)).join('')}${rows.length > 3 ? `<div class="hint">${rows.length - 3} earlier — tap Open conversation to see them all.</div>` : ''}</div>`;
 }
 
