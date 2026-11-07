@@ -70,7 +70,7 @@ function bkPendOpen(x) {
 
 /* ---------------- the day sheet: one person's day, ready to print or send ---------------- */
 function bkSheetPeople() { return Bk.people().filter((s) => Bk.hours(s, BK.date) || Bk.bookingsFor(BK.date, s.id).length); }
-function bkSheetSid() { const ppl = bkSheetPeople(); const all = Bk.people(); if (BK.sheetStaff && all.some((s) => s.id === BK.sheetStaff)) return BK.sheetStaff; const me = SBAuth.staff && SBAuth.staff.id; return (ppl.find((s) => s.id === me) || ppl[0] || all[0] || {}).id; }
+function bkSheetSid() { const ppl = bkSheetPeople(); const all = Bk.people(); if (BK.sheetStaff && all.some((s) => s.id === BK.sheetStaff)) return BK.sheetStaff; const st = (window.SBAuth && SBAuth.staff) || {}; const mine = all.find((s) => s.id === st.id) || all.find((s) => st.email && s.email && s.email.toLowerCase() === st.email.toLowerCase()) || all.find((s) => st.full_name && s.full_name === st.full_name); return (mine || ppl[0] || all[0] || {}).id; } // the signed-in person's sheet first
 function bkMapLink(pt) { return pt && pt.lat != null ? `https://www.google.com/maps/dir/?api=1&destination=${pt.lat},${pt.lng}` : null; }
 function bkSheetData(sid, date) { // the day in order: drives, appointments, blocks, lunch
   const day = bkDay(sid, date); const rows = [];

@@ -22,8 +22,8 @@ function bkClientResults(q, who) {
 }
 function bkFarmsOf(bid) { const b = bid && IDX.biz.get(bid); return b ? b.farmLinks.filter((l) => !l.past).map((l) => IDX.farms.get(l.fid)).filter(Boolean) : []; }
 function bkContactsOf(bid) { return bid ? IDX.bizContacts.get(bid) || [] : []; }
-function bkMobile(c) { return c && ((c.mobiles || [])[0] || {}).value; }
-function bkPidsOf(bid) { const b = bid && IDX.biz && IDX.biz.get(bid); return b ? (b.patientIds || []).filter((p) => p && p.value) : []; }
+function bkMobile(c) { /* the first mobile ticked for ⏰ Reminders */ if (!c) return undefined; const L = c.mobiles || []; const m = L.find((p) => (typeof phoneUse === 'function' ? phoneUse(p) : ['remind']).includes('remind')); return m ? m.value : undefined; }
+function bkPidsOf(bid) { const b = bid && IDX.biz && IDX.biz.get(bid); return b ? (b.patientIds || []).filter((p) => p && p.value && !p.inactive) : []; } // inactive patients are hidden when booking
 function bkWarnBlock(ws, compact) { // warnings, cautions, side notes and biosecurity from the client, contacts, farms and yards
   if (!ws.length) return ''; const order = ['major', 'safety', 'assess', 'minor', 'bio', 'side'];
   return `<div class="bk-wlist ${compact ? 'compact' : ''}">${ws.slice().sort((a, b) => order.indexOf(a.lvl) - order.indexOf(b.lvl)).map((w) => `<div class="bk-w ${w.lvl}"><span>${BK_WLVL[w.lvl][0]}</span><div><b>${h(BK_WLVL[w.lvl][1])}</b> · ${h(w.from || '')}<br>${h(w.text)}</div></div>`).join('')}</div>`;

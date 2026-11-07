@@ -59,13 +59,16 @@ function crBizCard(b) { // the business page: its clinical records
 window.crBizCard = crBizCard;
 function crOpen(id) { CR.page = 'edit'; CR.id = id; S.tab = 'rec'; renderAll(); const l = document.getElementById('list'); if (l) l.scrollTop = 0; window.scrollTo(0, 0); }
 function crStart(o) { const r = crNewRec(o); r.patients.forEach((p) => p.species === 'cattle' && !p.pid && null); touch(r); D.crrec.push(r); crInvSync(r); save(); crOpen(r.id); }
-async function crPickBiz() { // choose the client for a new record
+async function crPickBiz() { // choose the client for a new record — search only, inactive clients hidden unless you untick
   return new Promise((res) => {
-    const list = (q) => D.businesses.filter((b) => !b.gone && (typeof isClientBiz !== 'function' || isClientBiz(b)) && (!q || (b.name || '').toLowerCase().includes(q))).sort((a, b) => (a.name || '').localeCompare(b.name || '')).slice(0, 40)
-      .map((b) => `<div class="kv bk-tap" data-act="cr-pickb" data-id="${b.id}"><div class="v"><b>${h(b.name)}</b></div></div>`).join('') || '<div class="hint">No client businesses match.</div>';
-    openSheet('New record — choose the client', `<div class="search"><input id="cr-pbq" type="search" placeholder="Search businesses" autocomplete="off" aria-label="Search businesses"></div><div id="cr-pbl" style="margin-top:6px">${list('')}</div>`, () => { res(null); return true; });
+    const off = (b) => typeof bizCat === 'function' && ['inactive', 'dna'].includes(bizCat(b));
+    const list = (q) => { if (!q) return '<div class="hint">Start typing the client\'s name.</div>'; const hide = (document.getElementById('cr-pbhide') || { checked: true }).checked;
+      return D.businesses.filter((b) => !b.gone && (typeof isClientBiz !== 'function' || isClientBiz(b)) && (!hide || !off(b)) && (b.name || '').toLowerCase().includes(q)).sort((a, b) => (a.name || '').localeCompare(b.name || '')).slice(0, 40)
+      .map((b) => `<div class="kv bk-tap" data-act="cr-pickb" data-id="${b.id}"><div class="v"><b>${h(b.name)}</b>${off(b) ? ' <span class="hint">(inactive)</span>' : ''}</div></div>`).join('') || '<div class="hint">No client businesses match.</div>'; };
+    openSheet('New record — choose the client', `<div class="search"><input id="cr-pbq" type="search" placeholder="Search businesses" autocomplete="off" aria-label="Search businesses"></div><label class="bk-radio" style="margin-top:6px"><input type="checkbox" id="cr-pbhide" checked> Hide inactive clients</label><div id="cr-pbl" style="margin-top:6px">${list('')}</div>`, () => { res(null); return true; });
     const sv = document.getElementById('sheet-save'); if (sv) sv.textContent = 'Close';
-    const sh = document.getElementById('sheet'); sh.addEventListener('input', (e) => { if (e.target.id === 'cr-pbq') document.getElementById('cr-pbl').innerHTML = list(e.target.value.toLowerCase().trim()); });
+    const sh = document.getElementById('sheet'); const upd = () => { document.getElementById('cr-pbl').innerHTML = list(document.getElementById('cr-pbq').value.toLowerCase().trim()); }; sh.addEventListener('input', (e) => { if (e.target.id === 'cr-pbq') upd(); }); sh.addEventListener('change', (e) => { if (e.target.id === 'cr-pbhide') upd(); });
+    setTimeout(() => { const q = document.getElementById('cr-pbq'); if (q) q.focus(); }, 50);
     sh.addEventListener('click', (e) => { const el = e.target.closest('[data-act=cr-pickb]'); if (!el) return; closeSheet(); res(el.dataset.id); });
   });
 }
@@ -104,8 +107,8 @@ function crEditHtml(r) {
   </div>
   <div class="card"><h3>Patients</h3><div class="hint" style="margin-bottom:6px">The whole herd or flock, a mob, or individual animals. Each procedure says which one it was for.</div>
     ${(r.patients || []).map((p) => crPatHtml(r, p)).join('')}
-    ${(() => { const b = IDX.biz.get(r.bid); const have = new Set((r.patients || []).map((p) => p.pid).filter(Boolean)); const more = b ? (b.patientIds || []).filter((p) => p.value && !have.has(p.value) && !p.inactive && p.species !== 'other') : []; return more.length ? `<div class="actions">${more.map((p) => `<button class="btn small" data-act="cr-ptherd" data-v="${h(p.value)}">➕ ${/sheep|flock|ovine/i.test(p.label || '') ? '🐑' : '🐄'} ${h(p.value)}</button>`).join('')}</div>` : ''; })()}
-    <div class="actions"><button class="btn small" data-act="cr-ptadd" data-v="herd">➕ Herd / flock</button><button class="btn small" data-act="cr-ptadd" data-v="mob">➕ Mob</button><button class="btn small" data-act="cr-ptadd" data-v="animal">➕ Individual animal</button></div>
+    ${(() => { const b = IDX.biz.get(r.bid); const have = new Set((r.patients || []).map((p) => p.pid).filter(Boolean)); const more = b ? (b.patientIds || []).filter((p) => p.value && !have.has(p.value) && !p.inactive && p.species !== 'other') : []; return more.length ? `<div class="actions">${more.map((p) => `<button class="btn small" data-act="cr-ptherd" data-v="${h(p.value)}">➕ ${p.species === 'sheep' || /sheep|flock|ovine/i.test(p.label || '') ? '🐑' : '🐄'} ${h(p.label || (p.species === 'sheep' ? 'Sheep flock' : 'Cattle herd'))} — ${h(p.value)}</button>`).join('')}</div>` : ''; })()}
+    <div class="actions"><button class="btn small" data-act="cr-ptadd" data-v="mob">➕ Mob</button><button class="btn small" data-act="cr-ptadd" data-v="animal">➕ Individual animal</button></div>
   </div>
   <div class="card"><h3>Procedures</h3>${(r.procs || []).map((p) => crProcHtml(r, p)).join('') || '<div class="hint">No procedures yet.</div>'}
     <div class="cr-row"><select id="cr-addproc" aria-label="Add a procedure"><option value="">➕ Add a procedure…</option>${crTpls().map((x) => `<option value="${x.id}">${h(x.name)}${x.draft ? ' (notes only for now)' : ''}</option>`).join('')}</select></div></div>
@@ -136,7 +139,7 @@ function crWarnings(r) {
 }
 function crPatHtml(r, p) {
   const pf = crPfields(); const flds = p.level === 'animal' ? pf.animal : p.level === 'mob' ? pf.mob : [];
-  return `<div class="cr-item"><div class="cr-row"><b>${h(crPatName(r, p.id))}</b>${p.level === 'herd' ? crSel('species', p.species, [['cattle', 'Cattle'], ['sheep', 'Sheep']], `data-crpt="${p.id}" aria-label="Species"`) : ''}<span style="flex:1"></span><button class="btn small" data-act="cr-ptdel" data-id="${p.id}" aria-label="Remove">✕</button></div>
+  return `<div class="cr-item"><div class="cr-row"><b>${h(crPatName(r, p.id))}</b><span style="flex:1"></span><button class="btn small" data-act="cr-ptdel" data-id="${p.id}" aria-label="Remove">✕</button></div>
     ${flds.length ? `<div class="grid2">${flds.map((x) => `<div class="f"><label>${h(x.l)}${x.inv ? ' <span class="hint">· on invoice</span>' : ''}</label><input data-crpt="${p.id}" data-k="${x.k}" value="${h(p[x.k] || '')}" ${/size|weight/.test(x.k) ? 'type="number" min="0"' : ''}></div>`).join('')}</div>` : ''}</div>`;
 }
 function crStaffChoices(r) { const ppl = Bk.people(); const ids = new Set(r.staff || []); return [...ppl.filter((s) => ids.has(s.id)), ...ppl.filter((s) => !ids.has(s.id))]; } // who went first, then everyone else
@@ -453,7 +456,9 @@ document.addEventListener('click', async (e) => {
     case 'cr-bradd': if (!r) return; r.breaks = [...(r.breaks || []), { mins: 30 }]; done(r); break;
     case 'cr-brdel': if (!r) return; r.breaks.splice(+d.i, 1); done(r); break;
     case 'cr-stopdel': if (!r) return; r.stops.splice(+d.i, 1); r.routeOk = false; done(r); break;
-    case 'cr-ptadd': if (!r) return; r.patients.push({ id: uid('pt'), level: d.v, species: 'cattle' }); done(r); break;
+    case 'cr-ptadd': { if (!r) return; const b = IDX.biz.get(r.bid); const P = ((b && b.patientIds) || []).filter((p) => p.value && !p.inactive && p.species !== 'other'); if (!P.length) { toast('Add the herd or flock (with its patient ID) on the business page first'); return; } /* every mob / animal belongs to a herd or flock */
+      let p0 = P[0]; if (P.length > 1) { const ok = await askBox(d.v === 'mob' ? '➕ Mob — which herd or flock?' : '➕ Animal — which herd or flock?', `<div class="checks" style="flex-direction:column;align-items:flex-start">${P.map((p, i) => `<label style="font-size:15px"><input type="radio" name="crpt" data-ask="pid" value="${h(p.value)}" ${i ? '' : 'checked'}> ${p.species === 'sheep' || /sheep|flock/i.test(p.label || '') ? '🐑' : '🐄'} ${h(p.label || '')} — ${h(p.value)}</label>`).join('')}</div>`, 'Add', false, 'Cancel'); if (!ok) return; p0 = P.find((p) => p.value === ASK_FORM.pid) || P[0]; }
+      r.patients.push({ id: uid('pt'), level: d.v, pid: p0.value, plabel: p0.label || '', species: p0.species === 'sheep' || (!p0.species && /sheep|flock|ovine/i.test(p0.label || '')) ? 'sheep' : 'cattle' }); done(r); break; }
     case 'cr-ptdel': { if (!r) return; if (r.patients.length < 2) { toast('A record needs at least one patient'); return; } if ((r.procs || []).some((p) => p.pat === d.id) && !(await ask('A procedure is for this patient — remove it anyway? The procedure moves to the first patient.', 'Remove'))) return; r.patients = r.patients.filter((p) => p.id !== d.id); r.procs.forEach((p) => { if (p.pat === d.id) p.pat = r.patients[0].id; }); done(r); break; }
     case 'cr-patall': { if (!r) return; const pr = r.procs.find((p) => p.id === d.id); if (!pr) return; r.procs.forEach((p) => (p.pat = pr.pat)); done(r); toast('Every procedure is now for ' + crPatName(r, pr.pat).replace(/^\S+\s/, '')); break; }
     case 'cr-ptherd': { if (!r) return; const v = d.v; const b = IDX.biz.get(r.bid); const p0 = b && (b.patientIds || []).find((x) => x.value === v); if (!p0) return; r.patients.push({ id: uid('pt'), level: 'herd', pid: p0.value, plabel: p0.label || '', species: p0.species === 'sheep' || (!p0.species && /sheep|flock|ovine/i.test(p0.label || '')) ? 'sheep' : 'cattle' }); done(r); break; }

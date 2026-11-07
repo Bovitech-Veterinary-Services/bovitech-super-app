@@ -1,0 +1,26 @@
+/* Bovitech Super App — v2.33: what each phone number and email is for.
+   Each number: ✉️ General · ⏰ Reminders · 🧾 Financials. Each email also has 📣 Promotional, which replaces the old "Unsubscribed" list —
+   anyone on that list has Promotional unticked on their emails (done once, automatically).
+   "Unsubscribe" on a business page unticks Promotional on the business's emails and the emails of contacts who are only with that business. */
+const prEmails = (bid) => { const b = IDX.biz.get(bid); if (!b) return []; const cs = D.contacts.filter((c) => !c.gone && (typeof bizOf === 'function' ? bizOf(c) : []).some((x) => x.id === bid) && (typeof bizOf === 'function' ? bizOf(c) : []).length === 1); return [{ o: b, L: b.emails || [] }, ...cs.map((c) => ({ o: c, L: c.emails || [] }))]; };
+function promoSet(bid, on) { prEmails(bid).forEach(({ o, L }) => { let ch = false; L.forEach((e) => { const u = emailUse(e); const has = u.includes('promo'); if (has === on) return; e.use = on ? [...u, 'promo'] : u.filter((x) => x !== 'promo'); e.uv = 2; ch = true; }); if (ch) touch(o); }); }
+const promoOff = (bid) => { const b = IDX.biz.get(bid); return !!b && (b.emails || []).length > 0 && !(b.emails || []).some((e) => emailUse(e).includes('promo')); };
+/* the old list: businesses on it get Promotional unticked, then the list is emptied */
+function promoMigrate() { if (typeof emlRec !== 'function' || typeof D === 'undefined' || !D.businesses || !D.businesses.length) return; const r = emlRec(); if (!r || !(r.unsub || []).length) return; const L = r.unsub.slice(); L.forEach((bid) => promoSet(bid, false)); emlSave((x) => { x.unsub = []; x.unsubMoved = [...new Set([...(x.unsubMoved || []), ...L])]; }); }
+if (typeof renderAll === 'function') renderAll = (function (orig) { return function () { try { promoMigrate(); } catch (x) { console.warn(x); } return orig.apply(this, arguments); }; })(renderAll);
+if (typeof emlUnsub === 'function') emlUnsub = function () { return new Set(D.businesses.filter((b) => !b.gone && promoOff(b.id)).map((b) => b.id)); };
+/* Communications → Emails: who doesn't get promotional emails (every name is a link) */
+if (typeof emlPageHtml === 'function') emlPageHtml = (function (orig) { return function () { let html = orig.apply(this, arguments); const a = html.indexOf('<div class="card"><h3>Unsubscribed from promotional emails'); const z = a >= 0 ? html.indexOf('<div class="card"><h3>Sent', a) : -1; if (a < 0 || z < 0) return html;
+  const rows = []; D.businesses.filter((b) => !b.gone).forEach((b) => (b.emails || []).forEach((e) => { if (!emailUse(e).includes('promo')) rows.push({ k: 'business', o: b, nm: b.name, e }); }));
+  D.contacts.filter((c) => !c.gone).forEach((c) => (c.emails || []).forEach((e) => { if (!emailUse(e).includes('promo')) rows.push({ k: 'contact', o: c, nm: fullName(c), e }); }));
+  rows.sort((x, y) => x.nm.localeCompare(y.nm));
+  const card = `<div class="card"><h3>Not getting promotional emails</h3><div class="hint" style="margin-bottom:6px">Emails with 📣 Promotional unticked — bulk promotional emails skip them. To unsubscribe someone, untick Promotional on their email (Edit), or add their business here.</div>
+    ${rows.map((x) => `<div class="kv" style="align-items:center"><div class="v"><span class="lnk" data-act="open" data-kind="${x.k}" data-id="${x.o.id}">${h(x.nm)}</span><br><span class="hint">${h(x.e.value || '')}</span></div>${x.k === 'business' ? `<button class="btn small" data-act="eml-unsub-rm" data-bid="${x.o.id}">Tick Promotional again</button>` : ''}</div>`).join('') || '<div class="hint">Everyone gets them.</div>'}
+    <div class="bk-hrow" style="margin-top:6px"><input id="eml-unsub-q" list="eml-bizlist" autocomplete="off" aria-label="Client" style="flex:1;padding:8px;border:1px solid var(--line);border-radius:8px"><datalist id="eml-bizlist">${D.businesses.filter((b) => !b.gone && isClientBiz(b)).map((b) => `<option value="${h(b.name)}">`).join('')}</datalist><button class="btn small" data-act="eml-unsub-add">➕ Unsubscribe a client</button></div></div>`;
+  return html.slice(0, a) + card + html.slice(z); }; })(emlPageHtml);
+document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act=eml-unsub-rm], [data-act=eml-unsub-add], [data-act=unsub-tog]'); if (!el) return; e.stopImmediatePropagation(); e.preventDefault(); const a = el.dataset.act;
+  let bid = el.dataset.bid; if (a === 'eml-unsub-add') { const nm = ((document.getElementById('eml-unsub-q') || {}).value || '').trim().toLowerCase(); const b = D.businesses.find((x) => !x.gone && (x.name || '').toLowerCase() === nm); if (!b) { toast('Choose the client from the list'); return; } bid = b.id; }
+  const b = IDX.biz.get(bid); if (!b) return; const on = a === 'eml-unsub-rm' || (a === 'unsub-tog' && promoOff(bid));
+  if (!(b.emails || []).length && !on && !prEmails(bid).some((x) => x.L.length)) { toast(`${b.name} has no emails`); return; }
+  promoSet(bid, on); NEXT_LOG_LABEL = `${b.name}: promotional emails ${on ? 'on' : 'off'}`; S.skipConfirm = true; await changed(); toast(on ? `${b.name} gets promotional emails again` : `${b.name} unsubscribed from promotional emails`); }, true);
+window.promoSet = promoSet; window.promoOff = promoOff; window.promoMigrate = promoMigrate;

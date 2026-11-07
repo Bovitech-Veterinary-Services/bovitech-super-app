@@ -13,7 +13,7 @@ function stkCfgSave(f) { let r = crCfg('stkcfg'); if (!r) { r = stkCfg(); delete
 const stkVehicles = () => (stkCfg().vehicles || []).filter((v) => !v.gone);
 const stkLocName = (l) => (l === 'office' ? '🏢 Office' : '🚗 ' + ((stkVehicles().find((v) => v.id === l) || (stkCfg().vehicles || []).find((v) => v.id === l) || {}).name || 'Vehicle'));
 const stkLocs = () => ['office', ...stkVehicles().map((v) => v.id)];
-const stkTracked = (p) => p && !p.items && ['med', 'consumable', 'merch'].includes(p.cat) && p.active !== false;
+const stkTracked = (p) => p && !p.items && (p.track != null ? !!p.track : ['med', 'consumable', 'merch'].includes(p.cat)) && p.active !== false; /* "Tracked in inventory" on the item (stock2.js) */
 const stkLots = (prod, loc) => stkL('stk').filter((x) => !x.gone && x.prod === prod && (!loc || x.loc === loc));
 const stkQty = (prod, loc) => crR4(stkLots(prod, loc).reduce((s, x) => s + (+x.qty || 0), 0));
 const stkUnit = (p) => (p && p.unit && p.unit !== 'each' ? p.unit : '');

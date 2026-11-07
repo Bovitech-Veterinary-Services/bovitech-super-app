@@ -120,7 +120,8 @@ function crNewRec(o) { // o: { bk (appointment), bid, cid, date }
 }
 function crTplForSvc(svcId) { const sv = svcId && Bk.get(svcId); if (!sv) return null; const n = (sv.name || '').toLowerCase(); return crTpls().find((t) => t.svc === svcId) || (/preg/.test(n) ? crTpl('tpl:pd') : /bull|bbse/.test(n) ? crTpl('tpl:bbse') : /consult|treat/.test(n) ? crTpl('tpl:consult') : /\bai\b|insemin/.test(n) ? crTpl('tpl:ai') : null); }
 const crWho = (r) => Bk.who(r);
-const crPatName = (r, pid) => { const p = (r.patients || []).find((x) => x.id === pid); if (!p) return ''; if (p.level === 'animal') return '🐄 ' + ([p.vtag, p.nlis, p.brand].filter(Boolean).join(' / ') || 'Animal'); if (p.level === 'mob') return '👥 ' + (p.name || 'Mob') + (p.size ? ` (${p.size} head)` : ''); return p.species === 'sheep' ? '🐑 Sheep flock' + (p.pid ? ' ' + p.pid : '') : '🐄 Cattle herd' + (p.pid ? ' ' + p.pid : ''); };
+const crPatName = (r, pid) => { const p = (r.patients || []).find((x) => x.id === pid); if (!p) return ''; const herd = (p.plabel || (p.species === 'sheep' ? 'Sheep flock' : 'Cattle herd')) + (p.pid ? ' — ' + p.pid : ''); const ic = p.species === 'sheep' ? '🐑' : '🐄';
+  if (p.level === 'animal') return ic + ' ' + ([p.vtag, p.nlis, p.brand].filter(Boolean).join(' / ') || 'Animal') + (p.pid ? ` · ${herd}` : ''); if (p.level === 'mob') return '👥 ' + (p.name || 'Mob') + (p.size ? ` (${p.size} head)` : '') + (p.pid ? ` · ${herd}` : ''); return ic + ' ' + herd; };
 function crWorkedMins(r) { const s = crMins(r.start), e = crMins(r.end); if (s == null || e == null) return 0; const tot = (e >= s ? e - s : e + 1440 - s); return Math.max(0, tot - (r.breaks || []).reduce((a, x) => a + (+x.mins || 0), 0)); }
 function crPdSummary(pr) { // counts from quick entry
   const a = pr.animals || []; const c = { n: a.length, P: 0, NDP: 0, R: 0, H: 0, early: 0, late: 0 }; const cut = +(pr.answers && pr.answers.cut) || 0;
@@ -135,7 +136,7 @@ function crProcText(r, pr) { // the written record for one procedure, from the t
   if (pr.notes) L.push('Notes: ' + pr.notes);
   return L.join('\n');
 }
-const crShown = (pr, inp) => { if (!inp.show) return true; const t = crTpl(pr.tpl); const src = t && t.sections.flatMap((s) => s.inputs).find((x) => x.k === inp.show.k); return src && (pr.answers || {})[inp.show.k] === src.opts[inp.show.i]; };
+const crShown = (pr, inp) => { if (inp.once) return false; /* charged once for the whole appointment instead (billing2.js) */ if (!inp.show) return true; const t = crTpl(pr.tpl); const src = t && t.sections.flatMap((s) => s.inputs).find((x) => x.k === inp.show.k); return src && (pr.answers || {})[inp.show.k] === src.opts[inp.show.i]; };
 
 /* ---------------- after hours: suggested from the date and times ---------------- */
 function crAhSuggest(r) { // null, 'early' or 'late'

@@ -4,16 +4,19 @@
 const NAV_MAIN = { settings: 'settings', scheduling: 'book', records: 'rec', jobs: 'jobs', contacts: 'contacts', texts: 'texts', patients: 'pat', 'clinical records': 'rec' };
 function navGo(path) { const seg = String(path).split(/\s*→\s*/).map((x) => x.replace(/^[^\p{L}]+/u, '').trim()).filter(Boolean); if (!seg.length) return false;
   const main = NAV_MAIN[seg[0].toLowerCase()]; if (!main) return false; let rest = seg.slice(1); const low = (t) => t.toLowerCase();
-  if (typeof SHEET !== 'undefined' && SHEET) closeSheet(); S.sel = null; S.tab = main;
+  if (typeof SHEET !== 'undefined' && SHEET) closeSheet(); document.querySelectorAll('#askbox').forEach((x) => x.remove()); S.sel = null; S.tab = main; document.body.classList.remove('show-detail'); window.scrollTo(0, 0);
   if (main === 'book' && rest.length) { const sub = (typeof BK_SUBS !== 'undefined' ? BK_SUBS : []).find((x) => low(x[1]) === low(rest[0]) || low(x[1]).startsWith(low(rest[0])) || low(rest[0]).startsWith(low(x[1]))); if (sub) { BK.page = sub[0]; rest = rest.slice(1); } else BK.page = 'cal'; }
   if (main === 'rec' && rest.length) { const sub = (typeof CR_SUBS !== 'undefined' ? CR_SUBS : []).find((x) => low(x[1]) === low(rest[0]) || low(rest[0]).startsWith(low(x[1]))); if (sub) { CR.page = sub[0]; rest = rest.slice(1); } }
   if (main === 'settings') { const sub = (typeof SET_SUBS !== 'undefined' ? SET_SUBS : []).find(([k]) => { const n = low(typeof setSubName === 'function' ? setSubName(k) : k); return n === low(rest[0] || '') || (rest[0] && (n.startsWith(low(rest[0])) || low(rest[0]).startsWith(n))); }); S.setSub = sub ? sub[0] : 'allset'; if (sub) rest = rest.slice(1); S.setQ = ''; }
   renderAll(); const want = rest.length ? low(rest[0]).replace(/[^\p{L}\p{N} ]/gu, '').trim() : '';
-  setTimeout(() => { if (!want) { const l = document.getElementById('list'); if (l) l.scrollTop = 0; return; }
-    const cands = [...document.querySelectorAll('#list h2, #list h3, #list summary, #list .lbl, #list b')]; const el = cands.find((x) => low(x.textContent).replace(/[^\p{L}\p{N} ]/gu, '').trim().includes(want));
-    if (!el) { toast('Opened ' + seg.slice(0, 2).join(' → ') + ' — look for "' + rest[0] + '"'); return; }
+  const look = (again) => { if (!want) { const l = document.getElementById('list'); if (l) l.scrollTop = 0; return; }
+    const nrm = (x) => low(x.textContent).replace(/[^\p{L}\p{N} ]/gu, '').replace(/\s+/g, ' ').trim(); const heads = [...document.querySelectorAll('#list h2, #list h3, #list summary, #list .lbl, #list .sp')].filter((x) => !x.closest('.guidestep')); const bold = [...document.querySelectorAll('#list b')].filter((x) => !x.closest('.guidestep'));
+    /* the heading that is exactly it, then one that starts with it, then one that has it, then bold words */
+    const el = heads.find((x) => nrm(x) === want) || heads.find((x) => nrm(x).startsWith(want)) || heads.find((x) => nrm(x).includes(want)) || bold.find((x) => nrm(x).includes(want));
+    if (!el) { if (!again) toast('Opened ' + seg.slice(0, 2).join(' → ') + ' — look for "' + rest[0] + '"'); return; }
     for (let d = el.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true; if (el.tagName === 'SUMMARY' && el.parentElement) el.parentElement.open = true;
-    const box = el.closest('.card, details') || el; navPoint(box); }, 120);
+    const box = el.closest('.card, details') || el; navPoint(box); if (!again) setTimeout(() => { if (!document.body.contains(box)) look(true); }, 500); }; /* the page may be drawn again just after (phones) — look again */
+  setTimeout(() => look(false), 120);
   return true; }
 /* show where it is: open it, scroll to it, pulse it a few times and point at it with a bouncing arrow */
 function navPoint(box) { if (!box) return; for (let d = box.closest('details'); d; d = d.parentElement && d.parentElement.closest('details')) d.open = true; if (box.tagName === 'DETAILS') box.open = true;

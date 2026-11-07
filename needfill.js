@@ -26,3 +26,6 @@ document.addEventListener('click', async (e) => { const b = e.target.closest && 
   if (b.classList.contains('tb-top')) box.insertBefore(row, box.querySelector(':scope > .dragrow')); else box.appendChild(row);
   if (typeof dndEnd === 'function') { DND = { row, box, y0: 0, moved: true, pid: 0 }; await dndEnd(); } }, true);
 (function () { let tm = null; const go = () => new MutationObserver(() => { if (!tm) tm = setTimeout(() => { tm = null; nfTopBottom(); }, 150); }).observe(document.body, { childList: true, subtree: true }); if (document.body) go(); else document.addEventListener('DOMContentLoaded', go); })();
+/* only ask "leave without saving?" when you've actually changed something on the screen */
+if (typeof sheetDirty === 'function') sheetDirty = (function (orig) { return function () { return !!(typeof SHEET !== 'undefined' && SHEET && SHEET._userEdit) && orig.apply(this, arguments); }; })(sheetDirty);
+['input', 'change'].forEach((ev) => document.addEventListener(ev, (e) => { if (!e.isTrusted || typeof SHEET === 'undefined' || !SHEET) return; const sh = document.getElementById('sheet'); if (sh && sh.contains(e.target)) SHEET._userEdit = true; }, true));
