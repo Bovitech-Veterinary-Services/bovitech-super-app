@@ -67,3 +67,7 @@ async function blMerge2() { const T = Bk.cfg('blocktype'); const opt = (sel) => 
   NEXT_LOG_LABEL = `Block types merged: ${f.name} → ${t.name}`; S.skipConfirm = true; await changed(); }
 document.addEventListener('click', (e) => { const el = e.target.closest && e.target.closest('[data-act=bl-merge2]'); if (!el) return; e.stopPropagation(); if (!Bk.need('settings')) return; blMerge2(); }, true);
 window.blLeaveDays = blLeaveDays; window.blExtraGroups = blExtraGroups;
+/* "Enter leave in Xero" lives on the admin job list (Settings → Admin jobs), not the everyday Jobs list */
+if (typeof setupCard === 'function') setupCard = (function (orig) { return function () { const html = orig.apply(this, arguments); if (!html) return html; let L = []; try { L = leaveJobs(); } catch (e) { L = []; }
+  const dis = (D && D.dismissed) || {}; L = L.filter((j) => !dis[j.key]); const sec = `<div class="lbl" style="margin:12px 0 4px">🧾 Enter leave in Xero${L.length ? ` (${L.length})` : ''}</div>${L.length ? L.map((j) => jobItemHtml(j, false)).join('') : '<div class="hint">All leave has been entered in Xero.</div>'}`;
+  const i = html.lastIndexOf('</div>'); return i < 0 ? html + sec : html.slice(0, i) + sec + html.slice(i); }; })(setupCard);
