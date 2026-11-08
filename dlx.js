@@ -1,0 +1,33 @@
+/* Bovitech Super App — v2.34: search boxes that suggest as you type.
+   Every box that offers a list of names (contacts, businesses, suppliers…) shows its own list of matches under the box as you type —
+   tap one to choose it. (Phones didn't show the browser's own list reliably, and its ▾ arrow didn't open anything — it's gone.) */
+const DLX = { el: null, box: null, i: -1 };
+function dlxOpts(inp) { const id = inp.dataset.dl || inp.getAttribute('list'); const dl = id && document.getElementById(id); if (!dl) return []; return [...dl.options].map((o) => ({ v: o.value, l: o.label && o.label !== o.value ? o.label : '' })).filter((o) => o.v); }
+/* take over the box: the browser's own list (and its ▾) is switched off, ours is used instead */
+function dlxTake(inp) { if (!inp || inp.dataset.dl) return; const id = inp.getAttribute('list'); if (!id) return; inp.dataset.dl = id; inp.removeAttribute('list'); inp.setAttribute('autocomplete', 'off'); inp.setAttribute('role', 'combobox'); inp.setAttribute('aria-autocomplete', 'list'); inp.setAttribute('aria-expanded', 'false'); }
+function dlxClose() { if (DLX.box) DLX.box.remove(); if (DLX.el) DLX.el.setAttribute('aria-expanded', 'false'); DLX.box = null; DLX.el = null; DLX.i = -1; }
+function dlxShow(inp) { const q = inp.value.trim().toLowerCase(); const all = dlxOpts(inp); if (!all.length) { dlxClose(); return; }
+  const words = q.split(/\s+/).filter(Boolean); const hit = (o) => { const t = (o.v + ' ' + o.l).toLowerCase(); return words.every((w) => t.includes(w)); };
+  const L = (q ? all.filter(hit).sort((a, b) => (a.v.toLowerCase().startsWith(q) ? 0 : 1) - (b.v.toLowerCase().startsWith(q) ? 0 : 1) || a.v.localeCompare(b.v)) : all).slice(0, 40);
+  if (!L.length || (L.length === 1 && L[0].v.toLowerCase() === q)) { dlxClose(); if (q && !L.length) dlxEmpty(inp); return; }
+  if (DLX.el !== inp) dlxClose(); DLX.el = inp; inp.setAttribute('aria-expanded', 'true');
+  let box = DLX.box; if (!box) { box = document.createElement('div'); box.className = 'dlx'; box.setAttribute('role', 'listbox'); box.id = 'dlx-list'; inp.setAttribute('aria-controls', 'dlx-list'); document.body.appendChild(box); DLX.box = box; }
+  box.innerHTML = L.map((o, i) => `<div class="dlx-o${i === DLX.i ? ' on' : ''}" role="option" data-i="${i}" data-v="${h(o.v)}">${h(o.v)}${o.l ? ` <span class="hint">${h(o.l)}</span>` : ''}</div>`).join(''); dlxPlace(); }
+function dlxEmpty(inp) { const box = document.createElement('div'); box.className = 'dlx'; box.innerHTML = '<div class="dlx-o dlx-none">No match</div>'; document.body.appendChild(box); DLX.box = box; DLX.el = inp; dlxPlace(); }
+function dlxPlace() { const inp = DLX.el, box = DLX.box; if (!inp || !box) return; const r = inp.getBoundingClientRect(); const below = window.innerHeight - r.bottom; const vv = window.visualViewport; const vh = vv ? vv.height : window.innerHeight;
+  box.style.left = Math.max(4, r.left) + 'px'; box.style.width = Math.max(r.width, Math.min(320, window.innerWidth - 8)) + 'px'; const room = Math.max(below, r.top) - 12; box.style.maxHeight = Math.min(300, Math.max(120, (vh - r.bottom) > 160 ? vh - r.bottom - 8 : room)) + 'px';
+  if ((vh - r.bottom) < 160 && r.top > (vh - r.bottom)) { box.style.top = ''; box.style.bottom = (window.innerHeight - r.top + 2) + 'px'; } else { box.style.bottom = ''; box.style.top = (r.bottom + 2) + 'px'; }
+  if (parseFloat(box.style.left) + box.offsetWidth > window.innerWidth - 4) box.style.left = Math.max(4, window.innerWidth - 4 - box.offsetWidth) + 'px'; }
+function dlxPick(v) { const inp = DLX.el; if (!inp) return; inp.value = v; dlxClose(); inp.dispatchEvent(new Event('input', { bubbles: true })); inp.dispatchEvent(new Event('change', { bubbles: true })); inp.focus(); }
+document.addEventListener('focusin', (e) => { const t = e.target; if (t && t.tagName === 'INPUT' && (t.getAttribute('list') || t.dataset.dl)) { dlxTake(t); if (t.value.trim()) dlxShow(t); } });
+document.addEventListener('input', (e) => { const t = e.target; if (t && t.tagName === 'INPUT' && t.dataset.dl && e.isTrusted !== false && t === document.activeElement) { DLX.i = -1; dlxShow(t); } });
+document.addEventListener('keydown', (e) => { if (!DLX.box || e.target !== DLX.el) return; const n = DLX.box.querySelectorAll('.dlx-o[data-v]').length; if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); DLX.i = (DLX.i + (e.key === 'ArrowDown' ? 1 : -1) + n) % n; DLX.box.querySelectorAll('.dlx-o').forEach((o, i) => o.classList.toggle('on', i === DLX.i)); const on = DLX.box.querySelector('.on'); if (on) on.scrollIntoView({ block: 'nearest' }); }
+  else if (e.key === 'Enter' && DLX.i >= 0) { e.preventDefault(); const o = DLX.box.querySelectorAll('.dlx-o[data-v]')[DLX.i]; if (o) dlxPick(o.dataset.v); } else if (e.key === 'Escape') dlxClose(); }, true);
+/* tap a match (pointerdown so the box doesn't lose it first) */
+document.addEventListener('pointerdown', (e) => { if (!DLX.box) return; const o = e.target.closest && e.target.closest('.dlx-o[data-v]'); if (o) { e.preventDefault(); dlxPick(o.dataset.v); return; } if (!e.target.closest('.dlx') && e.target !== DLX.el) dlxClose(); }, true);
+document.addEventListener('focusout', (e) => { if (e.target === DLX.el) setTimeout(() => { if (DLX.el && document.activeElement !== DLX.el) dlxClose(); }, 150); });
+window.addEventListener('scroll', () => dlxPlace(), true); window.addEventListener('resize', () => dlxPlace()); if (window.visualViewport) window.visualViewport.addEventListener('resize', () => dlxPlace());
+/* boxes drawn later are taken over as they appear, so the ▾ never shows */
+(function () { const go = () => { const run = () => document.querySelectorAll('input[list]').forEach(dlxTake); run(); new MutationObserver(() => { if (DLX.box && DLX.el && !document.body.contains(DLX.el)) dlxClose(); run(); }).observe(document.body, { childList: true, subtree: true }); }; if (document.body) go(); else document.addEventListener('DOMContentLoaded', go);
+  const st = document.createElement('style'); st.textContent = 'input::-webkit-calendar-picker-indicator{display:none!important}.dlx{position:fixed;z-index:10050;background:var(--card,#fff);color:inherit;border:1px solid var(--line);border-radius:10px;box-shadow:0 6px 20px rgba(0,0,0,.25);overflow:auto;-webkit-overflow-scrolling:touch}.dlx-o{padding:10px 12px;cursor:pointer;border-bottom:1px solid var(--line);font-size:15px;line-height:1.3}.dlx-o:last-child{border-bottom:0}.dlx-o.on,.dlx-o:hover{background:color-mix(in srgb,var(--accent,#2563eb) 14%,transparent)}.dlx-none{color:var(--muted,#888);cursor:default}'; document.head.appendChild(st); })();
+window.dlxShow = dlxShow; window.dlxTake = dlxTake; window.dlxClose = dlxClose;
