@@ -224,13 +224,14 @@ async function bkSaveForm(skipRead) { // skipRead: the caller has already read t
   if (!f.bid && !f.cid) { toast('Choose the client'); return false; }
   if (!skipRead && !bkClientOk(bkWhoOf(t), f.bid, f.cid)) { toast(`${t.name} appointments can only be booked ${bkWhoText(bkWhoOf(t))}`); return false; }
   if (!f.svcs.some((x) => x.svc) && !t.fixedMins) { toast('Choose the procedure'); return false; }
+  if (t.vmaint && !f.vmVeh) { toast('Choose which vehicle'); return false; } /* 🔧 vehicle maintenance (vmaint.js) */
   const nobody = f.svcs.find((x) => x.svc && !(x.staff || []).length); if (nobody) { toast(`Choose who's doing ${Bk.svc(nobody.svc).name}`); return false; }
   if (!f.staff.length) { toast('Choose who'); return false; }
   if (!f.date || !f.start) { toast('Choose the date and start time'); return false; }
   if (bkMin(f.start) % 15) f.start = bkRound15(f.start);
   if (!skipRead && bkPidsOf(f.bid).length && !f.pids.length) { toast('Choose which herd or flock this is for'); return false; }
   if (!skipRead && t.where === 'farm') {
-    if (!f.stops.length) { toast('Choose the farm and yards'); return false; }
+    if (!f.stops.length && !t.vmaint) { toast('Choose the farm and yards'); return false; }
     const noY = f.stops.find((s) => !bkYardsOf(IDX.farms.get(s.fid)).length); if (noY) { toast(`${(IDX.farms.get(noY.fid) || {}).name || 'That farm'} has no yards pin yet — add one first`); return false; }
     const noPick = f.stops.find((s) => !s.yid); if (noPick) { toast(`Choose which yards at ${(IDX.farms.get(noPick.fid) || {}).name || 'the farm'}`); return false; }
   }
@@ -411,6 +412,7 @@ function bkCfgOpen(x, cfgType) {
   if (t === 'type' || t === 'blocktype') body += bkColourField(x.colour || '#3a6ea5', x.id, 'bc') + bkPatternField(x.pattern || 'light', x.colour || '#3a6ea5', 'bc');
   if (t === 'type') body += `<div class="f"><label for="bc-where">Where</label><select id="bc-where">${[['farm', 'On a farm'], ['base', 'At homebase'], ['phone', 'Phone']].map(([v, l]) => `<option value="${v}" ${x.where === v ? 'selected' : ''}>${l}</option>`).join('')}</select></div><div class="f"><label for="bc-fixed">Default length for appointment type (minutes)</label><input id="bc-fixed" type="number" min="0" step="5" value="${x.fixedMins || ''}"><div class="hint">Set a default time for this appointment type (it can be changed when booking or editing an appointment). Leave empty to work it out from the procedures.</div></div>${bkWhoField(x.who || BK_WHO_DEF, 'Can be booked for')}`;
   if (t === 'blocktype') body += `<div class="f"><label for="bc-bwhere">Where</label><select id="bc-bwhere"><option value="base" ${x.where !== 'anywhere' ? 'selected' : ''}>At homebase (travel worked out)</option><option value="anywhere" ${x.where === 'anywhere' ? 'selected' : ''}>Anywhere (no travel)</option></select></div>${bkWhoField(x.who || {}, 'Can be linked to a client (leave all unticked for none)')}`;
+  if (t === 'service') body += `<div class="f"><label>Is a vehicle needed?</label><div class="cr-chks"><label class="bk-radio"><input type="radio" name="bc-veh" value="yes" ${x.noVeh ? '' : 'checked'}> Yes — a vehicle goes</label><label class="bk-radio"><input type="radio" name="bc-veh" value="no" ${x.noVeh ? 'checked' : ''}> No vehicle needed (phone, office, in-house)</label></div><div class="hint">An appointment with only "no vehicle" procedures isn't given a vehicle.</div></div>`;
   if (t === 'service') body += `<div class="f"><label for="bc-triage">Triage (default for this procedure)</label><select id="bc-triage">${BK_TRIAGE.map(([v, l, d]) => `<option value="${v}" ${(x.triage || 'non') === v ? 'selected' : ''}>${l} — ${h(d)}</option>`).join('')}</select><div class="hint">Each appointment starts with the most urgent of its procedures — it can be changed on the appointment.</div></div>`;
   if (t === 'service') { const per = x.mode === 'perhead';
     body += `<div class="f"><label for="bc-mode">How long</label><select id="bc-mode"><option value="fixed" ${per ? '' : 'selected'}>Set time</option><option value="perhead" ${per ? 'selected' : ''}>Calculate time based on per head rate</option></select></div>
@@ -435,7 +437,7 @@ function bkCfgOpen(x, cfgType) {
       x.who = {}; document.querySelectorAll('[data-bcwho]').forEach((el) => { if (el.checked) x.who[el.dataset.bcwho] = true; }); }
     if (t === 'type') { x.where = g('bc-where'); x.fixedMins = +g('bc-fixed') || null; if (!Object.values(x.who).some(Boolean)) { toast('Tick who this appointment type can be booked for'); return false; } }
     if (t === 'blocktype') x.where = g('bc-bwhere');
-    if (t === 'service') { x.triage = (g('bc-triage') || 'non'); }
+    if (t === 'service') { x.triage = (g('bc-triage') || 'non'); if ((document.querySelector('input[name=bc-veh]:checked') || {}).value === 'no') x.noVeh = true; else delete x.noVeh; }
     if (t === 'service') { x.mode = g('bc-mode'); x.rateFrom = x.mode === 'perhead' ? ((document.querySelector('input[name=bc-rate]:checked') || {}).value || 'service') : null; x.mins = +g('bc-mins') || null; x.hph = +g('bc-hph') || null; x.setup = +g('bc-setup') || 0;
       if (x.mode === 'perhead' && x.rateFrom !== 'farm' && !x.hph) { toast('Enter the head per hour'); return false; } if (x.mode === 'fixed' && !x.mins) { toast('Enter the set time'); return false; }
       x.askLabour = document.getElementById('bc-asklab').checked; x.yard = g('bc-yard') || null;

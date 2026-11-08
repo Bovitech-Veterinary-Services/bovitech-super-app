@@ -151,6 +151,6 @@ function vcAutoStart() { if (!VC_SR || VC.on || !window.APP_READY || document.ge
 document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') setTimeout(vcAutoStart, 700); else vcStop(); });
 (function vcBoot() { let n = 0; const t = setInterval(() => { if (window.APP_READY || ++n > 60) { clearInterval(t); setTimeout(vcAutoStart, 900); } }, 500); })();
 // the 🎤 button at the top of the app
-(function vcBtn() { const hdr = document.querySelector('header.top'); if (!hdr || document.getElementById('hdr-mic')) return; const b = document.createElement('button'); b.className = 'hbtn'; b.id = 'hdr-mic'; b.dataset.act = 'vc-mic'; b.title = 'Voice command'; b.setAttribute('aria-label', 'Voice command'); b.textContent = '🎤'; const me = document.getElementById('hdr-me'); hdr.insertBefore(b, document.getElementById('fipbtn') || me || null); })();
+(function vcBtn() { const hdr = document.querySelector('header.top'); if (!hdr || document.getElementById('hdr-mic')) return; const b = document.createElement('button'); b.className = 'hbtn'; b.id = 'hdr-mic'; b.dataset.act = 'vc-mic'; b.title = 'Voice command'; b.setAttribute('aria-label', 'Voice command'); b.innerHTML = `🎤<span class="hlab">Ask<br>${h(vcName() === 'Shazza' ? 'Shaz' : vcName())}</span>`; const me = document.getElementById('hdr-me'); hdr.insertBefore(b, document.getElementById('fipbtn') || me || null); })();
 window.voiceCard = voiceCard; window.VC_IDEAS_START = VC_IDEAS_START;
 if (typeof module !== 'undefined') module.exports = { vcDate, vcSplitWhen, vcN };
