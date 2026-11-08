@@ -3633,7 +3633,8 @@ const GUIDE_MANUAL = [
 <p><b>Phone numbers and emails</b>: nothing extra shows when one is used for everything; otherwise a small grey line says what it's not for (e.g. "Not for promotional").</p>
 <p><b>Texts</b>: the two buttons now say <b>💬 from (this phone's number)</b> and <b>💬 from office</b>.</p>
 <p><b>Herd and flock breeds</b>: as many breeds as needed, each with a <b>Cross-bred</b> tick and an optional second breed ("Angus X Murray Grey", or just "Angus X").</p>
-<p><b>Herd numbers job</b>: with no bull testing numbers, bulls are estimated from the females (1 bull per 40).</p>
+<p><b>Herd numbers job</b>: with no bull testing numbers, bulls are estimated from the females. <b>Settings → Contacts → 🐄 Herd estimates</b> sets how many females per bull (40) and ewes per ram (50).</p>
+<p><b>More lists you can edit</b>: Temperament (in herd and flock details) has ➕ Add a new one… and ✏️ Edit this list… like Frequency; Relationships and Reasons for inactivating have ✏️ Edit this list…, which opens their list in Settings.</p>
 <p><b>Settings → Symbols → Every symbol in the app</b>: change any emoji used anywhere in the app (search by symbol or where it's used).</p>`],
   ['What changed in 2.37', `<p><b>Every change is confirmed</b>: a button that changes something straight away now shows the Confirm box first (unless you've just said yes in a box for that change).</p>
 <p><b>Phones</b>: on contact and business pages each number and email keeps the full width, its General / Reminders / Financials / Promotional tag wraps neatly under it, and the 📞 💬 buttons sit underneath. Rows with several buttons (Settings lists, categories, location types) wrap the buttons onto the next line instead of squeezing the words. On narrow phones the top bar shows "‹" for Back so everything fits. The whole app is checked at phone widths after every change.</p>
