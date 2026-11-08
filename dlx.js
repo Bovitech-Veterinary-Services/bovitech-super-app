@@ -2,13 +2,14 @@
    Every box that offers a list of names (contacts, businesses, suppliers…) shows its own list of matches under the box as you type —
    tap one to choose it. (Phones didn't show the browser's own list reliably, and its ▾ arrow didn't open anything — it's gone.) */
 const DLX = { el: null, box: null, i: -1 };
+const dlxMax = () => { const n = +((typeof D !== 'undefined' && D.settings) || {}).dlxMax; return n >= 3 && n <= 200 ? n : 20; }; /* Settings → General → 🔎 Search box suggestions */
 function dlxOpts(inp) { const id = inp.dataset.dl || inp.getAttribute('list'); const dl = id && document.getElementById(id); if (!dl) return []; return [...dl.options].map((o) => ({ v: o.value, l: o.label && o.label !== o.value ? o.label : '' })).filter((o) => o.v); }
 /* take over the box: the browser's own list (and its ▾) is switched off, ours is used instead */
 function dlxTake(inp) { if (!inp || inp.dataset.dl) return; const id = inp.getAttribute('list'); if (!id) return; inp.dataset.dl = id; inp.removeAttribute('list'); inp.setAttribute('autocomplete', 'off'); inp.setAttribute('role', 'combobox'); inp.setAttribute('aria-autocomplete', 'list'); inp.setAttribute('aria-expanded', 'false'); }
 function dlxClose() { if (DLX.box) DLX.box.remove(); if (DLX.el) DLX.el.setAttribute('aria-expanded', 'false'); DLX.box = null; DLX.el = null; DLX.i = -1; }
 function dlxShow(inp) { const q = inp.value.trim().toLowerCase(); const all = dlxOpts(inp); if (!all.length) { dlxClose(); return; }
   const words = q.split(/\s+/).filter(Boolean); const hit = (o) => { const t = (o.v + ' ' + o.l).toLowerCase(); return words.every((w) => t.includes(w)); };
-  const L = (q ? all.filter(hit).sort((a, b) => (a.v.toLowerCase().startsWith(q) ? 0 : 1) - (b.v.toLowerCase().startsWith(q) ? 0 : 1) || a.v.localeCompare(b.v)) : all).slice(0, 40);
+  const L = (q ? all.filter(hit).sort((a, b) => (a.v.toLowerCase().startsWith(q) ? 0 : 1) - (b.v.toLowerCase().startsWith(q) ? 0 : 1) || a.v.localeCompare(b.v)) : all).slice(0, dlxMax());
   if (!L.length || (L.length === 1 && L[0].v.toLowerCase() === q)) { dlxClose(); if (q && !L.length) dlxEmpty(inp); return; }
   if (DLX.el !== inp) dlxClose(); DLX.el = inp; inp.setAttribute('aria-expanded', 'true');
   let box = DLX.box; if (!box) { box = document.createElement('div'); box.className = 'dlx'; box.setAttribute('role', 'listbox'); box.id = 'dlx-list'; inp.setAttribute('aria-controls', 'dlx-list'); document.body.appendChild(box); DLX.box = box; }
