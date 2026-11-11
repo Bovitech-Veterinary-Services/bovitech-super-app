@@ -28,10 +28,10 @@ async function hfAsk() { if (!HF.on) return; while (HF.i < HF.q.length && !hfSho
   if (cur) say += '. At the moment it says ' + hfShort(cur).slice(0, 60); await hfSpeak(say); if (!HF.on || HF.q[HF.i] !== q) return; hfShow(true);
   hfListen(q, 0); }
 /* v2.39: nothing heard → it keeps listening (up to about a minute) so you can just say it — no need to tap 🔁 Repeat */
-const HF_TRIES = 6;
+const HF_TRIES = 6; const hfTries = () => Math.max(1, Math.round(((D.settings && D.settings.hfListenSecs) || 60) / 10)); // each listen lasts about 10 seconds
 function hfListen(q, n) { if (!HF.on || HF.q[HF.i] !== q) return; let got = false;
   HF.listener = crListen((t) => { got = true; HF.heard = t; try { HF.listener && HF.listener.stop(); } catch (e) { } hfHeard(q, t); }, { onEnd: () => { if (got || !HF.on || HF.q[HF.i] !== q) return;
-    if (n + 1 < HF_TRIES) { const hd = document.getElementById('hf-heard'); if (hd) hd.textContent = '🎤 Still listening — say it now (or "repeat")'; setTimeout(() => hfListen(q, n + 1), 250); return; }
+    if (n + 1 < hfTries()) { const hd = document.getElementById('hf-heard'); if (hd) hd.textContent = '🎤 Still listening — say it now (or "repeat")'; setTimeout(() => hfListen(q, n + 1), 250); return; }
     HF.heard = ''; hfShow(false); const hd = document.getElementById('hf-heard'); if (hd) hd.textContent = 'Nothing heard — tap 🔁 Repeat to hear the question again.'; } }); }
 function hfLast(q) { const r = HF.rec; const L = crList('crrec').filter((x) => !x.gone && x.id !== r.id && x.bid === r.bid && (x.date || '') <= (r.date || '9')).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   for (const x of L) { const p = (x.procs || []).find((y) => y.tpl === q.pr.tpl); if (!p) continue; if (q.kind === 'opt' || q.kind === 'text') { const v = (p.answers || {})[q.inp.k]; if (v) return v; } if (q.kind === 'head' && p.head) return p.head; if (q.kind === 'prnotes' && p.notes) return p.notes; } return null; }

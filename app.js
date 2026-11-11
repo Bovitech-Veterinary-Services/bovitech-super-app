@@ -365,7 +365,7 @@ function toast(msg, kind) {
   t.innerHTML = k === 'info' ? '<span class="tmsg"></span>' : '<span class="tmsg"></span><span class="tbtns"><button type="button" class="tcopy">Copy message</button><button type="button" class="tx" aria-label="Close">✕</button></span>'; t.querySelector('.tmsg').textContent = msg;
   t.addEventListener('click', async (e) => { if (e.target.closest('.tcopy')) { try { await navigator.clipboard.writeText(String(msg)); e.target.textContent = '✓ Copied'; } catch (x) { e.target.textContent = "Couldn't copy"; } return; } t.remove(); });
   document.body.appendChild(t);
-  if (k === 'info') { setTimeout(() => { t.classList.add('t-fade'); setTimeout(() => t.remove(), 400); }, 2000); } }
+  if (k === 'info') { const sec = +((typeof D !== 'undefined' && D && D.settings && D.settings.toastSecs) || 2); setTimeout(() => { t.classList.add('t-fade'); setTimeout(() => t.remove(), 400); }, sec * 1000); } }
 /* ---------------- tap feedback: every button flashes when pressed; ⟳ buttons spin ---------------- */
 function pressFx(btn) {
   if (!btn || btn.disabled) return;
@@ -3636,7 +3636,7 @@ const GUIDE_MANUAL = [
 <p><b>Breaks</b>: ➕ Break starts at 0 minutes — type how long it was. (A lunch booked into the appointment is still filled in for you.)</p>
 <p><b>Shared travel</b>: 25% off travel (Settings → Clinical records → Fees) when the appointment straight before or straight after is <b>another client</b> close by. Seeing more than one farm for the same client is not shared travel. If you went back to homebase in between, there's no discount — the record shows the appointment before / after with a <b>We went back to homebase in between</b> tick, already ticked when there was time to go back (untick it if you didn't). Two clients at the same farm still get the same-farm discount.</p>
 <p><b>vControl export</b>: step 4 now says to tick <b>Remove all existing schedule dates</b> before clicking UPLOAD AND REPLACE SCHEDULE DATES. The old step of deleting days in vControl by hand is gone.</p>
-<p><b>Pop-up messages</b>: general messages (like "Saved") fade away after 2 seconds. Warnings and errors stay until you tap ✕, with Copy message.</p>
+<p><b>Pop-up messages</b>: general messages (like "Saved") fade away after 2 seconds. Warnings and errors stay until you tap ✕, with Copy message. Settings → ⏱️ Messages and listening changes how long general messages stay, and how long hands-free keeps listening (1 minute to start).</p>
 <p><b>Procedure checklists</b> (Settings → Scheduling → a procedure): each item is its own box with ➕ (add a line under it), 🗑️, ↑ ↓ and ⠿ to drag. Enter adds a new line.</p>
 <p><b>Her voice</b> (Settings → 🎤 Voice commands → 🗣️ Her voice): choose from this device's voices (Australian ones first), with speed and pitch, and ▶ Hear it. <b>Hands-free</b> keeps listening when it doesn't hear an answer, so you can just say it — no need to tap 🔁 Repeat. Ask Shaz listens again too.</p>`],
   ['What changed in 2.38', `<p><b>Booking info job</b>: what you type or choose is kept while the Jobs list redraws (it was being reset).</p>
