@@ -24,7 +24,15 @@ const VC_BUILT = [
   ['help', 'What can I say', 'Shows this list.'],
 ];
 const vcPref = (k) => !!(typeof PREF !== 'undefined' && PREF[k]);
-const vcSay = (t) => { try { if (!window.speechSynthesis) return; speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'en-AU'; speechSynthesis.speak(u); } catch (e) { } };
+/* v2.39: her voice (this device) — the phone or computer's own voices; Australian ones listed first. Saved per device because each
+   device has different voices. */
+const VC_VKEY = 'bvp-voice';
+const vcVoicePref = () => { try { return JSON.parse(localStorage.getItem(VC_VKEY) || '{}') || {}; } catch (e) { return {}; } };
+const vcVoices = () => { try { const L = (window.speechSynthesis && speechSynthesis.getVoices()) || []; const rk = (v) => (/en[-_]AU/i.test(v.lang) ? 0 : /^en/i.test(v.lang) ? 1 : 2); return L.filter((v) => rk(v) < 2).sort((a, b) => rk(a) - rk(b) || a.name.localeCompare(b.name)); } catch (e) { return []; } };
+function vcUtt(t) { const u = new SpeechSynthesisUtterance(t); const p = vcVoicePref(); const V = vcVoices(); const v = (p.name && V.find((x) => x.name === p.name)) || V.find((x) => /en[-_]AU/i.test(x.lang)) || null;
+  if (v) { u.voice = v; u.lang = v.lang; } else u.lang = 'en-AU'; u.rate = +p.rate || 1.05; u.pitch = +p.pitch || 1; return u; }
+try { if (window.speechSynthesis) speechSynthesis.addEventListener('voiceschanged', () => { if (document.getElementById('vc-voice') && typeof renderAll === 'function') renderAll(); }); } catch (e) { }
+const vcSay = (t) => { try { if (!window.speechSynthesis) return; speechSynthesis.cancel(); speechSynthesis.speak(vcUtt(t)); } catch (e) { } };
 const vcN = (s) => (s || '').toLowerCase().replace(/[’']/g, '').replace(/&/g, ' and ').replace(/[^a-z0-9 ]/g, ' ').replace(/\s+/g, ' ').trim();
 
 /* ---------- the little listening panel ---------- */
@@ -42,7 +50,7 @@ function vcListen(opts) { opts = opts || {}; if (!VC_SR) { vcBox('<b>Voice comma
     const hd = document.getElementById('vc-heard'); if (hd && (tmp || fin) && (!VC.keep || VC.wake.test((tmp || fin).trim()))) hd.textContent = '“' + (fin || tmp) + '”';
     if (fin) { let t = fin.trim(); if (VC.keep) { if (!VC.wake.test(t)) return; t = t.replace(VC.wake, ''); if (!t) { vcBox('<div class="vc-mic">🎤</div><b>Yes?</b>', true); return; } } VC.last = t; vcDo(t, [...ev.results[ev.results.length - 1]].map((a) => a.transcript)); } };
   r.onerror = (ev) => { if (ev.error === 'no-speech' || ev.error === 'aborted') return; VC.on = false; vcBox(ev.error === 'not-allowed' ? '<b>The microphone is blocked</b><p class="hint">Allow the microphone for the app (tap the 🔒 or ⓘ next to the web address → Permissions → Microphone), then try again.</p>' : `<b>Didn't catch that</b><p class="hint">${h(ev.error)}</p>`, true); };
-  r.onend = () => { if (VC.keep && document.visibilityState === 'visible' && vcPref('voiceKeep')) { setTimeout(() => { if (VC.keep) vcListen({ keep: true, quiet: true }); }, 400); return; } VC.on = false; const hd = document.getElementById('vc-heard'); if (hd && /^Say a command/.test(hd.textContent)) vcBox('<b>Nothing heard</b><p class="hint">Tap 🎤 Again and say a command.</p>'); };
+  r.onend = () => { if (VC.keep && document.visibilityState === 'visible' && vcPref('voiceKeep')) { setTimeout(() => { if (VC.keep) vcListen({ keep: true, quiet: true }); }, 400); return; } VC.on = false; const hd = document.getElementById('vc-heard'); if (hd && /^Say a command/.test(hd.textContent)) { const n = (opts.tries || 0) + 1; if (n < 3) { setTimeout(() => vcListen({ ...opts, tries: n }), 250); return; } vcBox('<b>Nothing heard</b><p class="hint">Tap 🎤 Again and say a command.</p>'); } };
   try { r.start(); } catch (e) { VC.on = false; } }
 function vcStop() { VC.keep = false; VC.on = false; try { VC.rec && VC.rec.abort(); } catch (e) { } }
 
@@ -116,17 +124,23 @@ function vcChoose(title, opts) { return new Promise((res) => { VC._pick = (x) =>
 function vcHelp() { vcBox(`<b>🎤 Things you can say</b>${VC_BUILT.map(([, ex, what]) => `<div style="margin-top:6px"><b>“${h(ex)}”</b><br><span class="hint">${h(what)}</span></div>`).join('')}${((D.settings || {}).voiceAlias || []).length ? `<div class="lbl" style="margin-top:8px">Your shortcuts</div>${D.settings.voiceAlias.map((a) => `<div>“${h(a.say)}” → ${h(a.cmd)}</div>`).join('')}` : ''}`, true); }
 
 /* ---------- Settings → 🎤 Voice commands ---------- */
+function vcVoiceHtml() { const p = vcVoicePref(); const V = vcVoices();
+  return `<div class="lbl" style="margin-top:10px">🗣️ Her voice <span class="hint">(this device)</span></div><div class="hint">The voices are the ones this phone or computer has — Australian ones are listed first. Each device can choose its own.</div>
+    <div class="f"><label for="vc-voice">Voice</label><select id="vc-voice"><option value="">${V.length ? 'Standard Australian voice' : 'Standard voice'}</option>${V.map((v) => `<option value="${h(v.name)}" ${v.name === p.name ? 'selected' : ''}>${h(v.name)} (${h(v.lang)})</option>`).join('')}</select></div>
+    <div class="grid2"><div class="f"><label for="vc-rate">Speed</label><input id="vc-rate" type="range" min="0.6" max="1.6" step="0.05" value="${+p.rate || 1.05}"></div><div class="f"><label for="vc-pitch">Pitch (lower or higher)</label><input id="vc-pitch" type="range" min="0.5" max="1.6" step="0.05" value="${+p.pitch || 1}"></div></div>
+    <div class="actions"><button class="btn small" data-act="vc-vtest">▶ Hear it</button><button class="btn small primary" data-act="vc-vsave">Save</button><button class="btn small" data-act="vc-vreset">↺ Standard</button></div>`; }
 function voiceCard() { const st = D.settings || {}; const al = st.voiceAlias || []; const ideas = vcIdeas();
   return `<div class="card"><h3>🎤 Voice commands</h3><div class="hint" style="margin-bottom:6px">Tap <b>🎤</b> at the top of the app and say a command. Phones only let their own assistant listen all the time, so "Hey Google, open Bovitech Super App" opens the app — with <b>Hands-free</b> on, it then starts listening straight away.</div>
     <div class="f"><label for="vc-name">Her name (say it first: "${h(vcName())}, call Cody Shilling")</label><div class="cr-row"><input id="vc-name" value="${h(vcName())}" style="flex:1"><button class="btn small" data-act="vc-name">Save</button></div></div>
     <label class="bk-radio" style="display:flex"><input type="checkbox" data-act="vc-auto" ${vcPref('voiceAuto') ? 'checked' : ''}> <span><b>Hands-free</b> (this device): start listening when the app opens or comes back on screen</span></label>
     <label class="bk-radio" style="display:flex"><input type="checkbox" data-act="vc-keep" ${vcPref('voiceKeep') ? 'checked' : ''}> <span><b>Keep listening</b> (this device) while the app is on screen — say <b>"${h(vcName())}"</b> first, then the command (uses more battery; some phones beep each time it starts listening again)</span></label>
+    ${vcVoiceHtml()}
     <div class="lbl" style="margin-top:10px">What you can say</div>${VC_BUILT.map(([, ex, what]) => `<div class="kv"><div class="k">“${h(ex)}”</div><div class="v hint">${h(what)}</div></div>`).join('')}
     <div class="lbl" style="margin-top:10px">Your shortcuts <span class="hint">(for everyone)</span></div><div class="hint">Words you say → the command they mean. For example "ring the office" → "call Bovitech office", or "Cody" → "call Cody Shilling".</div>
-    ${al.map((a, i) => `<div class="kv" style="align-items:center"><div class="v">“${h(a.say)}” → <b>${h(a.cmd)}</b></div><button class="btn small" data-act="vc-aldel" data-i="${i}" aria-label="Delete this shortcut">🗑</button></div>`).join('') || '<div class="hint">None yet.</div>'}
+    ${al.map((a, i) => `<div class="kv" style="align-items:center"><div class="v">“${h(a.say)}” → <b>${h(a.cmd)}</b></div><button class="btn small" data-act="vc-aldel" data-i="${i}" aria-label="Delete this shortcut">🗑️</button></div>`).join('') || '<div class="hint">None yet.</div>'}
     <div class="actions"><button class="btn small" data-act="vc-aladd">➕ Add a shortcut</button></div>
     <div class="lbl" style="margin-top:10px">Commands we'd like added later</div><div class="hint">Write down anything you find yourselves wanting to say on farm — send this list to Claude to build them.</div>
-    ${ideas.map((x, i) => `<div class="kv" style="align-items:center"><div class="v">“${h(x.t)}”${x.by ? ` <span class="hint">— ${h(x.by)}</span>` : ''}</div><button class="btn small" data-act="vc-ideadel" data-i="${i}" aria-label="Delete">🗑</button></div>`).join('') || '<div class="hint">None yet.</div>'}
+    ${ideas.map((x, i) => `<div class="kv" style="align-items:center"><div class="v">“${h(x.t)}”${x.by ? ` <span class="hint">— ${h(x.by)}</span>` : ''}</div><button class="btn small" data-act="vc-ideadel" data-i="${i}" aria-label="Delete">🗑️</button></div>`).join('') || '<div class="hint">None yet.</div>'}
     <div class="actions"><button class="btn small" data-act="vc-ideaadd">➕ Add a command idea</button>${ideas.length ? '<button class="btn small" data-act="vc-ideacopy">📋 Copy the list for Claude</button>' : ''}</div></div>`; }
 const vcIdeas = () => (D.settings.voiceIdeas || VC_IDEAS_START.map((t) => ({ t }))); // starts with the common ones, to add later
 const VC_IDEAS_START = ['Read me the warnings for Wallacup', 'Add a note to Wallacup: gate code changed', 'Start PD for Wallacup — 40 head', 'Record 5 mL Excede for cow 123', 'Add 50 head preg tested, 3 empty', 'Mark this appointment done', 'Running late for my next appointment — text them 20 minutes', 'Who is my next appointment', "What's the withholding period for Excede", "How far is it to my next farm"];
@@ -134,6 +148,10 @@ const VC_IDEAS_START = ['Read me the warnings for Wallacup', 'Add a note to Wall
 /* ---------- events ---------- */
 document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act]'); if (!el) return; const a = el.dataset.act; if (!/^vc-/.test(a)) return; const d = el.dataset; const st = D.settings;
   if (a === 'vc-mic' || a === 'vc-again') { vcStop(); vcListen(); }
+  if (a === 'vc-vtest' || a === 'vc-vsave') { const g = (id) => (document.getElementById(id) || {}).value; const pv = { name: g('vc-voice') || '', rate: +g('vc-rate') || 1.05, pitch: +g('vc-pitch') || 1 };
+    if (a === 'vc-vtest') { const old = localStorage.getItem(VC_VKEY); try { localStorage.setItem(VC_VKEY, JSON.stringify(pv)); vcSay(`G'day, ${vcName()} here. Ready when you are.`); } finally { try { if (old == null) localStorage.removeItem(VC_VKEY); else localStorage.setItem(VC_VKEY, old); } catch (x) { } } }
+    else { if (!(await askBox('Change her voice?', `<p>Use <b>${h(pv.name || 'the standard Australian voice')}</b> on this device, speed ${pv.rate}, pitch ${pv.pitch}?</p>`, 'Save'))) return; try { localStorage.setItem(VC_VKEY, JSON.stringify(pv)); } catch (x) { } toast('Voice saved for this device'); } }
+  if (a === 'vc-vreset') { if (!(await askBox('Standard voice?', '<p>Go back to the standard Australian voice on this device?</p>', 'Yes'))) return; try { localStorage.removeItem(VC_VKEY); } catch (x) { } toast('Standard voice'); renderAll(); }
   if (a === 'vc-close') { vcStop(); vcClose(); if (vcPref('voiceKeep')) setTimeout(() => vcListen({ keep: true, quiet: true }), 600); }
   if (a === 'vc-help') vcHelp();
   if (a === 'vc-name') { const v = ((document.getElementById('vc-name') || {}).value || '').trim(); if (!v) return; st.voiceName = v; touch(st); save(); if (window.Sync) Sync.soon(); renderAll(); toast(`Her name is ${v} now — say "${v}, call …"`); vcSay(`Hi, I'm ${v}`); }

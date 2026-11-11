@@ -22,11 +22,17 @@ function hfShow(listening) { const q = HF.q[HF.i]; const el = hfBox(); el.hidden
     ${cur ? `<div class="hint">Now: ${h(hfShort(cur))}</div>` : ''}<div class="vc-heard" id="hf-heard">${listening ? '🎤 Listening…' : HF.heard ? '“' + h(HF.heard) + '”' : ''}</div>
     <div class="hint">Say ${q.opts ? 'the number or the words' : q.kind === 'head' ? 'the number' : 'it'} · "next" · "back" · "repeat" · "same as last time" · "stop"</div>
     <div class="actions"><button class="btn small" data-act="hf-back">‹ Back</button><button class="btn small" data-act="hf-next">Skip ›</button><button class="btn small" data-act="hf-again">🔁 Repeat</button><button class="btn small" data-act="hf-stop">■ Stop</button></div></div>`; }
-function hfSpeak(t) { return new Promise((res) => { try { if (!window.speechSynthesis) return res(); speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(t); u.lang = 'en-AU'; u.rate = 1.05; u.onend = () => res(); u.onerror = () => res(); speechSynthesis.speak(u); setTimeout(res, Math.min(15000, 1500 + t.length * 70)); } catch (e) { res(); } }); }
+function hfSpeak(t) { return new Promise((res) => { try { if (!window.speechSynthesis) return res(); speechSynthesis.cancel(); const u = typeof vcUtt === 'function' ? vcUtt(t) : new SpeechSynthesisUtterance(t); if (!u.voice) u.lang = 'en-AU'; if (typeof vcUtt !== 'function') u.rate = 1.05; u.onend = () => res(); u.onerror = () => res(); speechSynthesis.speak(u); setTimeout(res, Math.min(15000, 1500 + t.length * 70)); } catch (e) { res(); } }); }
 async function hfAsk() { if (!HF.on) return; while (HF.i < HF.q.length && !hfShownNow(HF.q[HF.i])) HF.i++; const q = HF.q[HF.i]; if (!q) return hfEnd(true);
   HF.heard = ''; hfShow(false); const cur = hfCur(q); let say = q.l; if (q.opts) say += '. ' + q.opts.slice(0, 6).map((o, i) => `${i + 1}: ${o.split(/[,(]/)[0].split(' ').slice(0, 6).join(' ')}`).join('. ');
   if (cur) say += '. At the moment it says ' + hfShort(cur).slice(0, 60); await hfSpeak(say); if (!HF.on || HF.q[HF.i] !== q) return; hfShow(true);
-  let got = false; HF.listener = crListen((t) => { got = true; HF.heard = t; try { HF.listener && HF.listener.stop(); } catch (e) { } hfHeard(q, t); }, { onEnd: () => { if (!got && HF.on && HF.q[HF.i] === q) { HF.heard = ''; hfShow(false); const hd = document.getElementById('hf-heard'); if (hd) hd.textContent = 'Nothing heard — tap 🔁 Repeat, or say it after the question.'; } } }); }
+  hfListen(q, 0); }
+/* v2.39: nothing heard → it keeps listening (up to about a minute) so you can just say it — no need to tap 🔁 Repeat */
+const HF_TRIES = 6;
+function hfListen(q, n) { if (!HF.on || HF.q[HF.i] !== q) return; let got = false;
+  HF.listener = crListen((t) => { got = true; HF.heard = t; try { HF.listener && HF.listener.stop(); } catch (e) { } hfHeard(q, t); }, { onEnd: () => { if (got || !HF.on || HF.q[HF.i] !== q) return;
+    if (n + 1 < HF_TRIES) { const hd = document.getElementById('hf-heard'); if (hd) hd.textContent = '🎤 Still listening — say it now (or "repeat")'; setTimeout(() => hfListen(q, n + 1), 250); return; }
+    HF.heard = ''; hfShow(false); const hd = document.getElementById('hf-heard'); if (hd) hd.textContent = 'Nothing heard — tap 🔁 Repeat to hear the question again.'; } }); }
 function hfLast(q) { const r = HF.rec; const L = crList('crrec').filter((x) => !x.gone && x.id !== r.id && x.bid === r.bid && (x.date || '') <= (r.date || '9')).sort((a, b) => (b.date || '').localeCompare(a.date || ''));
   for (const x of L) { const p = (x.procs || []).find((y) => y.tpl === q.pr.tpl); if (!p) continue; if (q.kind === 'opt' || q.kind === 'text') { const v = (p.answers || {})[q.inp.k]; if (v) return v; } if (q.kind === 'head' && p.head) return p.head; if (q.kind === 'prnotes' && p.notes) return p.notes; } return null; }
 async function hfHeard(q, t) { const s = t.toLowerCase().trim();

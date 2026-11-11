@@ -149,12 +149,29 @@ function crAhSuggest(r) { // null, 'early' or 'late'
 const crAhEff = (r) => (r.ah == null ? crAhSuggest(r) : r.ah === 'none' ? null : r.ah); // empty = automatic
 
 /* ---------------- travel: the route taken, with the practice's discounts ---------------- */
+/* shared travel (v2.39): 25% (Settings) off when the appointment straight before or straight after — a different client — is close by,
+   as long as we didn't go back to homebase in between. More than one farm for the same client is not shared. */
+function crNeighbours(r) { // → { prev, next } — each { who, bid, s, e, base, stops, close: [fids], viaBase, guess }
+  const out = { prev: null, next: null }; const staff = r.staff || []; if (!r.date || !staff.length) return out;
+  const bk0 = r.bkId && Bk.list('bookings').find((x) => x.id === r.bkId); let s = crMins(r.start), e = crMins(r.end); if (s == null && bk0 && bk0.start) { s = bkMin(bk0.start); e = s + (bk0.mins || 60); } if (s == null) return out; if (e == null) e = s + 60;
+  const V = []; const recs = crList('crrec').filter((o) => !o.gone && o.id !== r.id && o.date === r.date && (o.staff || []).some((x) => staff.includes(x)) && o.start); const used = new Set(recs.map((o) => o.bkId).filter(Boolean)); if (r.bkId) used.add(r.bkId);
+  recs.forEach((o) => { const w = Bk.type(o.type).where; if (w === 'phone') return; const os = crMins(o.start); V.push({ who: crBizName(o.bid), bid: o.bid, s: os, e: crMins(o.end) != null ? crMins(o.end) : os + 60, base: w === 'base', stops: o.stops || [] }); });
+  staff.forEach((sid) => { (Bk.bookingsFor ? Bk.bookingsFor(r.date, sid) : []).forEach((b) => { if (used.has(b.id) || !b.start) return; used.add(b.id); const w = Bk.type(b.type).where; if (w === 'phone') return; const bs = bkMin(b.start); V.push({ who: Bk.who(b), bid: b.bid, s: bs, e: bs + (b.mins || 60), base: w === 'base', stops: Bk.stops(b) }); });
+    (Bk.blocksFor ? Bk.blocksFor(r.date, sid) : []).forEach((b) => { if (b.allDay || typeof bkBlockLoc !== 'function' || !bkBlockLoc(b)) return; if (bkIsMeet(b) && Bk.meetAtt(r.date, sid) !== 'in') return; V.push({ who: 'homebase', base: true, s: bkMin(b.start), e: bkMin(b.end), stops: [] }); }); });
+  const pt = (st) => Travel.stopPt(st); const mine = (r.stops || []).filter((x) => x.fid); const home = Travel.home(); const fz = crFees();
+  const look = (dir) => { const c = dir === 'prev' ? V.filter((v) => v.e <= s + 5).sort((a, b) => b.e - a.e)[0] : V.filter((v) => v.s >= e - 5).sort((a, b) => a.s - b.s)[0]; if (!c) return null;
+    const n = { ...c }; if (c.base || !c.bid || c.bid === r.bid) { n.close = []; return n; }
+    n.close = [...new Set(mine.filter((m) => c.stops.some((o) => pt(m) && pt(o) && Travel.km(pt(m), pt(o)) <= fz.nearKm)).map((m) => m.fid))];
+    // enough time between them to have gone back to homebase? (a guess — the tick on the record decides)
+    const a = dir === 'prev' ? pt(c.stops[c.stops.length - 1]) : pt(mine[mine.length - 1]), b = dir === 'prev' ? pt(mine[0]) : pt(c.stops[0]); const gap = dir === 'prev' ? s - c.e : c.s - e;
+    n.guess = !!(home && a && b && gap >= Travel.mins(a, home) + Travel.mins(home, b) && gap >= 30); const ov = r.viaBase && r.viaBase[dir]; n.viaBase = ov != null ? !!ov : n.guess; return n; };
+  out.prev = look('prev'); out.next = look('next'); return out;
+}
 function crTravel(r) { // → [{ fid, name, km, pct, why }]
   const fz = crFees(); const fids = [...new Set((r.stops || []).map((x) => x.fid).filter(Boolean))]; const out = [];
-  if (Bk.type(r.type).where !== 'farm') return out;
-  const pt = (fid) => { const f = IDX.farms.get(fid); return f && f.turn && f.turn.lat != null ? { lat: +f.turn.lat, lng: +f.turn.lng } : f && f.lat != null ? { lat: +f.lat, lng: +f.lng } : null; };
+  if (Bk.type(r.type).where !== 'farm') return out; const nb = crNeighbours(r);
   fids.forEach((fid) => { const f = IDX.farms.get(fid); if (!f) return; let pct = 0; const why = [];
-    const near = fids.some((o) => o !== fid && pt(o) && pt(fid) && Travel.km(pt(o), pt(fid)) <= fz.nearKm); if (near) { pct = fz.nearPct; why.push(`${fz.nearPct}% off — farms close together`); }
+    ['prev', 'next'].forEach((d) => { const n = nb[d]; if (n && !n.viaBase && (n.close || []).includes(fid)) { pct = Math.max(pct, fz.nearPct); why.push(`${fz.nearPct}% off — shared travel with ${n.who} (${d === 'prev' ? 'appointment before' : 'appointment after'})`); } });
     const shared = crList('crrec').some((o) => !o.gone && o.id !== r.id && o.date === r.date && o.bid && o.bid !== r.bid && (o.stops || []).some((x) => x.fid === fid)); if (shared) { pct = Math.max(pct, fz.sharedPct); why.push(`${fz.sharedPct}% off — another client seen at the same farm`); }
     out.push({ fid, name: f.name || 'Farm', km: f.kmReturn != null ? +f.kmReturn : null, pct, why: why.join('; ') }); });
   return out;

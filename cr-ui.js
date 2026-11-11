@@ -75,7 +75,10 @@ async function crPickBiz() { // choose the client for a new record — search on
 
 /* ---------------- one record ---------------- */
 function crSel(k, val, opts, attrs) { return `<select ${attrs || ''} data-k="${k}">${opts.map(([v, l]) => `<option value="${h(v)}" ${String(v) === String(val ?? '') ? 'selected' : ''}>${h(l)}</option>`).join('')}</select>`; }
-function crTimeIn(k, v) { return `<input type="time" data-crf="${k}" value="${h(v || '')}" step="300">`; }
+function crBkTimes(r) { const b = r && r.bkId && Bk.list('bookings').find((x) => x.id === r.bkId); return b && b.start ? { start: b.start, end: bkHHMM(bkMin(b.start) + (b.mins || 60)) } : null; }
+function crTimeIn(k, v, r) { const bt = crBkTimes(r); const bv = bt && bt[k]; return `<input type="time" data-crf="${k}" value="${h(v || '')}" step="300" ${bv ? `data-booked="${bv}"` : ''} aria-label="${k === 'start' ? 'Start on farm' : 'Finish on farm'}">${bv ? `<button type="button" class="btn small cr-bkt" data-act="cr-bktime" data-k="${k}" data-v="${bv}">📅 ${k === 'start' ? 'Booked start' : 'Booked finish'} (${h(bkTime(bkMin(bv)))})</button>` : ''}`; }
+function crShareHtml(r) { const nb = crNeighbours(r); return ['prev', 'next'].map((d) => { const n = nb[d]; if (!n || n.base || !(n.close || []).length) return ''; const L = d === 'prev' ? 'Appointment before' : 'Appointment after';
+  return `<div class="cr-share" style="margin-top:4px">🤝 <b>${L}:</b> ${n.bid ? `<a href="#" class="golink" data-act="cr-biz" data-id="${h(n.bid)}">${h(n.who)}</a>` : h(n.who)} (${bkTime(n.s)}–${bkTime(n.e)}) is close by — ${n.viaBase ? '<b>no shared travel</b>' : `<b>${crFees().nearPct}% off travel</b>`}<label class="bk-radio" style="display:flex;margin:2px 0 0 22px"><input type="checkbox" data-crf="viaBase.${d}" ${n.viaBase ? 'checked' : ''}> We went back to homebase in between${n.guess ? ' <span class="hint">(likely — there was time)</span>' : ''}</label></div>`; }).join(''); }
 function crEditHtml(r) {
   const fin = r.status === 'final'; const inv = crInvFor(r); const t = Bk.type(r.type); const b = IDX.biz.get(r.bid);
   const farms = b ? (b.farms || []).filter((f) => !f.gone) : []; const worked = crWorkedMins(r); const ahS = crAhSuggest(r), ahE = crAhEff(r); const tr = crTravel(r);
@@ -89,7 +92,7 @@ function crEditHtml(r) {
   <div class="card"><h3>Visit</h3>
     <div class="grid2"><div class="f"><label>Date</label><input type="date" data-crf="date" value="${h(r.date)}"></div><div class="f"><label>Appointment type</label><select data-crf="type">${Bk.cfg('type').map((x) => `<option value="${x.id}" ${x.id === r.type ? 'selected' : ''}>${h(x.name)}</option>`).join('')}</select></div></div>
     <div class="f"><label>Vets and techs</label><div class="cr-chks">${ppl.map((s) => `<label class="bk-radio"><input type="checkbox" data-crstaff="${s.id}" ${(r.staff || []).includes(s.id) ? 'checked' : ''}> ${h(s.preferred_name || s.full_name)}</label>`).join('')}</div></div>
-    <div class="grid2"><div class="f"><label>Start on farm</label>${crTimeIn('start', r.start)}</div><div class="f"><label>Finish on farm</label>${crTimeIn('end', r.end)}</div></div>
+    <div class="grid2"><div class="f"><label>Start on farm</label>${crTimeIn('start', r.start, r)}</div><div class="f"><label>Finish on farm</label>${crTimeIn('end', r.end, r)}</div></div>
     <div class="f"><label>Breaks (not charged)</label>${(r.breaks || []).map((x, i) => `<div class="cr-row"><input type="number" min="0" step="5" data-crbr="${i}" value="${+x.mins || 0}" style="width:90px" aria-label="Break minutes"> min${x.lunch ? ' (lunch)' : ''} <button class="btn small" data-act="cr-brdel" data-i="${i}" aria-label="Remove break">🗑️</button></div>`).join('')}<button class="btn small" data-act="cr-bradd">➕ Break</button></div>
     <div class="hint">Time worked: <b>${worked ? bkDur(worked) : '—'}</b>${(r.breaks || []).length ? ' (breaks taken off)' : ''}</div>
   </div>
@@ -99,6 +102,7 @@ function crEditHtml(r) {
     <label class="bk-radio cr-must" style="display:flex;margin-top:6px"><input type="checkbox" data-crf="routeOk" ${r.routeOk ? 'checked' : ''}> <b>This is the route we actually took</b></label>
     <div class="f"><label>Travel charged at</label>${crSel('subsidy', r.subsidy || '', [['', 'Normal rate'], ['TSE', 'Subsidised — TSE (DPIRD)'], ['SDI', 'Subsidised — SDI (DPIRD)']], 'data-crf="subsidy"')}</div>
     ${tr.map((x) => `<div class="hint">🚗 ${h(x.name)}: ${x.km == null ? '<b style="color:var(--red)">no return km saved for this farm</b>' : x.km + ' km return'}${x.pct ? ' — ' + h(x.why) : ''}</div>`).join('')}
+    ${crShareHtml(r)}
   </div>` : ''}
   <div class="card"><h3>After hours and additional labour</h3>
     <div class="f"><label>After-hours fee</label>${crSel('ah', r.ah == null ? '' : r.ah, [['', `Automatic — ${ahS === 'late' ? 'late fee' : ahS === 'early' ? 'early fee' : 'none'}`], ['none', 'None'], ['early', 'Early fee'], ['late', 'Late fee']], 'data-crf="ah"')}
@@ -375,7 +379,7 @@ function crSettingsHtml() {
   const rec = `<div class="cr-setwrap" data-tab="records">
   <div class="card"><h3>Clinical records (testing) (this device)</h3><label style="display:flex;gap:8px;align-items:flex-start"><input type="checkbox" data-act="cr-toggle" ${crOn() ? 'checked' : ''}> <span>Show the Records tab on this device<br><span class="hint">Records, invoices, overdue, follow-ups and the price list. Keep using ezyVet for real records until you switch over.</span></span></label></div>
   <div class="card"><h3>Fees, travel discounts and payment</h3><div class="cr-gst">Prices are in the price list (Inventory → Price lists) and exclude GST.</div>
-    <div class="grid2"><div class="f"><label>Farms count as close together within (km)</label><input type="number" min="0" data-crset="fees" data-k="nearKm" value="${fz.nearKm}"></div><div class="f"><label>Discount on each farm's travel when close together (%)</label><input type="number" min="0" max="100" data-crset="fees" data-k="nearPct" value="${fz.nearPct}"></div></div>
+    <div class="grid2"><div class="f"><label>Shared travel: the appointment before or after (another client) counts as close by within (km)</label><input type="number" min="0" data-crset="fees" data-k="nearKm" value="${fz.nearKm}"></div><div class="f"><label>Shared travel discount (%) — not if we went back to homebase in between, and not for more than one farm of the same client</label><input type="number" min="0" max="100" data-crset="fees" data-k="nearPct" value="${fz.nearPct}"></div></div>
     <div class="grid2"><div class="f"><label>Two clients at the same farm — each pays (% off appointment fee and travel)</label><input type="number" min="0" max="100" data-crset="fees" data-k="sharedPct" value="${fz.sharedPct}"></div><div class="f"><label>Preg testing: charge by the hour when under (head an hour)</label><input type="number" min="0" data-crset="fees" data-k="pdMinHph" value="${fz.pdMinHph}"></div></div>
     <div class="grid2"><div class="f"><label>Days to pay (then it shows as overdue)</label><input type="number" min="0" data-crset="fees" data-k="payDays" value="${fz.payDays}"></div><div class="f"><label>GST</label><div class="hint" style="padding-top:8px">10% on items marked "GST" in the price list (set on each item there).</div></div></div>
     <div class="grid2"><div class="f"><label>Invoice number starts with</label><input data-crset="fees" data-k="invPrefix" value="${h(fz.invPrefix || 'INV-')}"></div><div class="f"><label>Next invoice number (continue from Xero)</label><input type="number" min="1" data-crset="fees" data-k="invNext" value="${fz.invNext || ''}"></div></div></div>
@@ -453,7 +457,8 @@ document.addEventListener('click', async (e) => {
     case 'cr-invpdf': crPrint(crInvoiceDoc(crGet('crinv', d.id))); break;
     case 'cr-invopen': CR.page = 'inv'; CR.id = d.id; S.tab = 'rec'; renderAll(); window.scrollTo(0, 0); { const l = document.getElementById('list'); if (l) l.scrollTop = 0; } break;
     // the record
-    case 'cr-bradd': if (!r) return; r.breaks = [...(r.breaks || []), { mins: 30 }]; done(r); break;
+    case 'cr-bradd': if (!r) return; r.breaks = [...(r.breaks || []), { mins: 0 }]; done(r); setTimeout(() => { const L = document.querySelectorAll('[data-crbr]'); const x = L[L.length - 1]; if (x) { x.focus(); x.select(); } }, 60); break;
+    case 'cr-bktime': { if (!r) return; const L = d.k === 'start' ? 'Start on farm' : 'Finish on farm'; if (!(await askBox(`${L}: booked time?`, `<p>Set <b>${L}</b> to <b>${h(bkTime(bkMin(d.v)))}</b> — the time the appointment was booked for?</p>`, 'Yes'))) return; r[d.k] = d.v; done(r); toast(`${L}: ${bkTime(bkMin(d.v))}`); break; }
     case 'cr-brdel': if (!r) return; r.breaks.splice(+d.i, 1); done(r); break;
     case 'cr-stopdel': if (!r) return; r.stops.splice(+d.i, 1); r.routeOk = false; done(r); break;
     case 'cr-ptadd': { if (!r) return; const b = IDX.biz.get(r.bid); const P = ((b && b.patientIds) || []).filter((p) => p.value && !p.inactive && p.species !== 'other'); if (!P.length) { toast('Add the herd or flock (with its patient ID) on the business page first'); return; } /* every mob / animal belongs to a herd or flock */
