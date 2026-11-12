@@ -167,10 +167,18 @@ function crNeighbours(r) { // → { prev, next } — each { who, bid, s, e, base
     n.guess = !!(home && a && b && gap >= Travel.mins(a, home) + Travel.mins(home, b) && gap >= 30); const ov = r.viaBase && r.viaBase[dir]; n.viaBase = ov != null ? !!ov : n.guess; return n; };
   out.prev = look('prev'); out.next = look('next'); return out;
 }
+/* v2.41: an appointment type can share travel by default (e.g. "Shared farm appointment" → 50%); SDI / TSE work is subsidised
+   travel by default. Both can be changed on the record. */
+function crTypeTravelPct(r) { const t = Bk.type(r.type) || {}; if (t.travelPct != null && t.travelPct !== '') return +t.travelPct || 0; return /shar(e|ed)\b.*farm|farm.*shar/i.test(t.name || '') ? 50 : 0; }
+function crSubsidyAuto(r) { const txt = [...(r.procs || []).map((p) => (crTpl(p.tpl) || {}).name || ''), ...(r.items || []).map((i) => (crProd(i.prod) || {}).name || '')].join(' | '); const m = txt.match(/\b(SDI|TSE)\b/i); return m ? m[1].toUpperCase() : ''; }
+function crSubsidy(r) { const p = r.subsidyPick; if (p === 'none') return ''; if (p === 'TSE' || p === 'SDI') return p; if (r.subsidy) return r.subsidy; return crSubsidyAuto(r); }
 function crTravel(r) { // → [{ fid, name, km, pct, why }]
   const fz = crFees(); const fids = [...new Set((r.stops || []).map((x) => x.fid).filter(Boolean))]; const out = [];
   if (Bk.type(r.type).where !== 'farm') return out; const nb = crNeighbours(r);
+  const tpd = crTypeTravelPct(r);
   fids.forEach((fid) => { const f = IDX.farms.get(fid); if (!f) return; let pct = 0; const why = [];
+    if (r.travelPct != null && r.travelPct !== '') { out.push({ fid, name: f.name || 'Farm', km: f.kmReturn != null ? +f.kmReturn : null, pct: +r.travelPct || 0, why: `${+r.travelPct || 0}% off — set on this record` }); return; }
+    if (tpd) { pct = tpd; why.push(`${tpd}% off — ${Bk.type(r.type).name || 'this appointment type'}`); }
     ['prev', 'next'].forEach((d) => { const n = nb[d]; if (n && !n.viaBase && (n.close || []).includes(fid)) { pct = Math.max(pct, fz.nearPct); why.push(`${fz.nearPct}% off — shared travel with ${n.who} (${d === 'prev' ? 'appointment before' : 'appointment after'})`); } });
     const shared = crList('crrec').some((o) => !o.gone && o.id !== r.id && o.date === r.date && o.bid && o.bid !== r.bid && (o.stops || []).some((x) => x.fid === fid)); if (shared) { pct = Math.max(pct, fz.sharedPct); why.push(`${fz.sharedPct}% off — another client seen at the same farm`); }
     out.push({ fid, name: f.name || 'Farm', km: f.kmReturn != null ? +f.kmReturn : null, pct, why: why.join('; ') }); });
@@ -179,22 +187,23 @@ function crTravel(r) { // → [{ fid, name, km, pct, why }]
 
 /* ---------------- the invoice, built from the record ---------------- */
 function crBuildLines(r) { // → [{ prod, desc, qty, price, auto: true }]
-  const L = []; const add = (p, qty, desc, price, extra) => { if (!p || !(+qty)) return; L.push({ id: uid('il'), prod: p.id, desc: desc || p.name, qty: crR2(qty), price: price != null ? price : +p.price || 0, gst: p.gst !== false, auto: true, ...(extra || {}) }); };
+  const L = []; let curTpl = null; const add = (p, qty, desc, price, extra) => { if (!p || !(+qty)) return; L.push({ id: uid('il'), prod: p.id, desc: desc || p.name, qty: crR2(qty), price: price != null ? price : +p.price || 0, gst: p.gst !== false, auto: true, ...(curTpl ? { tpl: curTpl } : {}), ...(extra || {}) }); };
   const fz = crFees(); const hrs0 = crWorkedMins(r) / 60; const hrs = hrs0; const tr = crTravel(r); const sharedFarm = tr.some((x) => /same farm/.test(x.why));
   // appointment fee
   const ap = crList('crprod').find((p) => !p.gone && p.role === 'appt' && (p.types || []).includes(r.type)) || crRole('appt');
   if (ap) add(ap, 1, ap.name + (sharedFarm ? ` (${fz.sharedPct}% shared)` : ''), crR2((+ap.price || 0) * (sharedFarm ? 1 - fz.sharedPct / 100 : 1)));
   // procedures (an hourly procedure done by more than one vet, billed separately, charges each vet's time)
-  (r.procs || []).forEach((pr) => { const t = crTpl(pr.tpl); if (!t || !t.charge) return; const c = t.charge; const nv = pr.bill === 'each' ? Math.max(1, crProcVets(r, pr)) : 1; const hrs = hrs0 * nv; const xv = nv > 1 ? ` (${nv} vets, billed separately)` : '';
+  (r.procs || []).forEach((pr) => { const t = crTpl(pr.tpl); curTpl = pr.tpl; if (!t || !t.charge) return; const c = t.charge; const nv = pr.bill === 'each' ? Math.max(1, crProcVets(r, pr)) : 1; const hrs = hrs0 * nv; const xv = nv > 1 ? ` (${nv} vets, billed separately)` : '';
     if (c.rule === 'pd') { const n = crPdSummary(pr).n || +pr.head || 0; const hph = hrs0 ? n / hrs0 : Infinity; if (n && hph >= fz.pdMinHph && c.head) add(crProd(c.head), n, `${t.name} — ${n} head`); else if (c.hour) add(crProd(c.hour), crR2(hrs), `${t.name} — ${crR2(hrs)} hours${n ? ` (${n} head, under ${fz.pdMinHph} an hour)` : ''}${xv}`); }
     else if (c.head) add(crProd(c.head), +pr.head || (pr.animals || []).length || 1, `${t.name}`);
-    else if (c.hour) add(crProd(c.hour), crR2(hrs), `${t.name} — ${crR2(hrs)} hours${xv}`); });
+    else if (c.hour) add(crProd(c.hour), crR2(hrs), `${t.name} — ${crR2(hrs)} hours${xv}`); }); curTpl = null;
   // after hours, additional labour
   const ah = crAhEff(r); if (ah === 'early') add(crRole('ahEarly'), 1); if (ah === 'late') add(crRole('ahLate'), 1);
   if (r.labour && +r.labour.people && +r.labour.hours) add(crRole('labour'), (+r.labour.people) * (+r.labour.hours), `Additional labour — ${r.labour.people} × ${r.labour.hours} hours`);
   // travel
+  const subs = crSubsidy(r); let capLeft = (() => { const sp = crRole('subsidy'); return sp && sp.cap ? +sp.cap : 200; })();
   tr.forEach((x) => { if (x.km == null) return; const mult = 1 - x.pct / 100;
-    if (r.subsidy) { const sp = crRole('subsidy'); const cap = sp && sp.cap ? +sp.cap : 200; const ks = Math.min(x.km, cap); add(sp, ks, `Subsidised travel (${r.subsidy}) — ${x.name}, ${ks} km`, crR4((+sp.price || 0) * mult)); if (x.km > ks) add(crRole('travel'), x.km - ks, `Travel — ${x.name}, ${x.km - ks} km over the subsidy`, crR4((+crRole('travel').price || 0) * mult)); }
+    if (subs && crRole('subsidy')) { const sp = crRole('subsidy'); const ks = Math.max(0, Math.min(x.km, capLeft)); capLeft -= ks; if (ks) add(sp, ks, `Subsidised travel (${subs}) — ${x.name}, ${ks} km${x.pct ? ` (${x.why})` : ''}`, crR4((+sp.price || 0) * mult)); if (x.km > ks) add(crRole('travel'), x.km - ks, `Travel — ${x.name}, ${x.km - ks} km over the ${sp.cap || 200} km subsidy`, crR4((+crRole('travel').price || 0) * mult)); }
     else add(crRole('travel'), x.km, `Travel — ${x.name}, ${x.km} km return${x.pct ? ` (${x.why})` : ''}`, crR4((+(crRole('travel') || {}).price || 0) * mult));
     const fu = crRole('fuel'); if (fu) add(fu, x.km, `Fuel surcharge — ${x.name}, ${x.km} km${x.pct ? ` (${x.pct}% off)` : ''}`, crR4((+fu.price || 0) * mult)); });
   // certificates, items, lab tests

@@ -18,7 +18,10 @@ document.addEventListener('click', async (e) => { const el = e.target.closest &&
   await p; });
 window.locPlaces = locPlaces;
 /* Edit contact: "Role / position" only while they have no business — once linked, the role goes on the link ("Role here") */
-(function () { const upd = () => { const w = document.getElementById('e-rolewrap'); const L = document.getElementById('e-links'); if (!w || !L) return; const has = !!L.querySelector('[data-bid]'); if (w.hidden !== has) w.hidden = has; };
+(function () { const upd = () => { const w = document.getElementById('e-rolewrap'); const L = document.getElementById('e-links'); if (!w || !L) return; const has = !!L.querySelector('[data-bid],[data-newbiz]'); if (w.hidden !== has) w.hidden = has;
+    /* v2.41: a role typed before the business was added moves onto the business link, so it isn't asked for twice */
+    const ri = document.getElementById('e-role'); const v = ri && ri.value.trim(); if (has && v) { const row = L.querySelector('[data-bid],[data-newbiz]'); const sel = row && row.querySelector('.lk-rolesel'), inp = row && row.querySelector('.lk-role');
+      if (sel && inp && !inp.value) { const opt = [...sel.options].find((o) => o.value.toLowerCase() === v.toLowerCase()); if (opt) { sel.value = opt.value; inp.value = opt.value; inp.hidden = true; } else { sel.value = '__custom'; inp.hidden = false; inp.value = v; } ri.value = ''; } } };
   const go = () => new MutationObserver(upd).observe(document.body, { childList: true, subtree: true }); if (document.body) go(); else document.addEventListener('DOMContentLoaded', go); })();
 /* non-client businesses: every "farm" on their page (headings, buttons, hints, edit mode) says "location" */
 const locFarmWords = (t) => t.replace(/\bFARMS\b/g, 'LOCATIONS').replace(/\bFARM\b/g, 'LOCATION').replace(/\bFarms \/ locations\b/g, 'Locations').replace(/\bbusiness locations\b/g, 'locations').replace(/\bFarms\b/g, 'Locations').replace(/\bfarms\b/g, 'locations').replace(/\bFarm\b/g, 'Location').replace(/\bfarm\b/g, 'location').replace(/\blocations or yards\b/g, 'locations').replace(/\blocation or yards\b/g, 'location');

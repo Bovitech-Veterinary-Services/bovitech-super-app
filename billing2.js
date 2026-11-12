@@ -22,7 +22,7 @@ crBuildLines = (function (orig) { return function (r) { const lab = r.labour || 
     let L = orig.call(this, r2); const fz = (r.procs || []).map((pr) => crTpl(pr.tpl)).filter(b2Billed);
     if (fz.length) L = L.filter((l) => !fz.some((t) => t.charge && l.prod === t.charge.hour && String(l.desc).startsWith(t.name + ' — ')));
     const lb = L.find((l) => l.prod === (crRole('labour') || {}).id); if (lb && lab.for) lb.desc = `Additional labour — ${lab.people} × ${r2.labour.hours} hours, ${lab.for === 'all' ? 'the whole appointment' : 'for ' + (lab.procs || []).map((id) => { const pr = (r.procs || []).find((x) => x.id === id); return pr ? (crTpl(pr.tpl) || {}).name : ''; }).filter(Boolean).join(', ')}`;
-    (r.procs || []).forEach((pr) => b2Lines(r, pr).forEach(({ p, q, why }) => L.push({ id: uid('il'), prod: p.id, desc: p.name, qty: crR2(q), price: +p.price || 0, gst: p.gst !== false, auto: true, why })));
+    (r.procs || []).forEach((pr) => b2Lines(r, pr).forEach(({ p, q, why }) => L.push({ id: uid('il'), prod: p.id, desc: p.name, qty: crR2(q), price: +p.price || 0, gst: p.gst !== false, auto: true, why, tpl: pr.tpl })));
     return L; }; })(crBuildLines);
 /* the record: "Additional labour" — used for the whole appointment, or some procedures */
 crEditHtml = (function (orig) { return function (r) { let html = orig.apply(this, arguments); const lab = r.labour || {}; const fin = r.status === 'final';
