@@ -317,8 +317,14 @@ document.addEventListener('click', (e) => { const el = e.target.closest && e.tar
 /* ---------------- day sheets for the 8am text: kept up to date whenever anything changes (the server sends them) ---------------- */
 let BK_SHEET_T = null;
 function bkSheetSoon() { if (BK_SHEET_T) clearTimeout(BK_SHEET_T); BK_SHEET_T = setTimeout(() => { BK_SHEET_T = null; try { if (bkSheetSync()) { save(); Sync.soon(); } } catch (e) { console.warn('day sheets', e); } }, 4000); }
-function bkSheetSync() { // today and the next 2 weeks, for everyone; only writes when a sheet's text has changed
-  if (!Bk.on() || !Bk.people().length) return 0; Bk.list('bksheet'); const t = bkToday(); let n = 0; const hs = (x) => { let v = 5381; for (let i = 0; i < x.length; i++) v = ((v << 5) + v + x.charCodeAt(i)) >>> 0; return v.toString(36); };
+const bkVerN = (v) => String(v || '0').split(/[ .]/).slice(0, 3).reduce((n, x) => n * 1000 + (parseInt(x, 10) || 0), 0);
+function bkSheetMaker() { // the one device that makes day sheets, so devices don't race each other: of the devices open in the last 12 minutes on 2.42 or later, the one with the lowest id (any device takes over within ~12 minutes if it closes)
+  const now = Date.now(), min = bkVerN('2.42.0'); const ids = Object.entries(D.devices || {}).filter(([k, v]) => k !== DEVICE && v && now - (v.last || 0) < 12 * 60000 && bkVerN(v.ver) >= min).map(([k]) => k);
+  ids.push(DEVICE); return ids.sort()[0];
+}
+function bkSheetMakerName() { const id = bkSheetMaker(); if (id === DEVICE) return 'this device'; const v = (D.devices || {})[id] || {}; return v.name || v.nick || 'another device'; }
+function bkSheetSync() { // today and the next 2 weeks, for everyone; only writes when a sheet's text has changed — and only on the one device that makes them
+  if (!Bk.on() || !Bk.people().length) return 0; if (bkSheetMaker() !== DEVICE) return 0; Bk.list('bksheet'); const t = bkToday(); let n = 0; const hs = (x) => { let v = 5381; for (let i = 0; i < x.length; i++) v = ((v << 5) + v + x.charCodeAt(i)) >>> 0; return v.toString(36); };
   for (let i = 0; i <= 14; i++) { const d = bkAdd(t, i);
     for (const p of Bk.people()) { const on = Bk.hours(p, d) || Bk.bookingsFor(d, p.id).length; const sh = on && Bk.bookingsFor(d, p.id).length ? bkSheetBuild(p.id, d) : { text: '', html: '' }; const text = sh.text, html = sh.html;
       const pp = on && typeof prepBuild === 'function' ? prepBuild(p.id, d) : { text: '', html: '' }; // the day prep list goes to Google Calendar too

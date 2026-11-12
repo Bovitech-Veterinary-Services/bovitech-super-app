@@ -419,7 +419,7 @@ const SupaSync = {
     if (r.deleted) {
       if (!D.deleted.some((x) => x.id === r.id)) D.deleted.push({ id: r.id, kind: k, at: Date.parse(r.updated_at), synced: true });
       if (!l) return 0;
-      if (l._dirty) D.conflicts.push({ key: k + ':' + r.id, kind: k, id: r.id, who: who(l), mine: strip(l), mineAt: l._u, deletedElsewhere: true });
+      if (l._dirty && !(typeof AUTO_KINDS !== 'undefined' && AUTO_KINDS.has(k))) D.conflicts.push({ key: k + ':' + r.id, kind: k, id: r.id, who: who(l), mine: strip(l), mineAt: l._u, deletedElsewhere: true });
       list.splice(i, 1); return 1;
     }
     if (D.deleted.some((x) => x.id === r.id && !x.synced)) return 0; // deleted on this device — that goes up next
@@ -427,6 +427,13 @@ const SupaSync = {
     if (!l) { list.push(s); return 1; }
     if (!l._dirty) { if ((l._rev || 0) === r.rev) return 0; adopt(l, s); return 1; } // update in place so open screens keep the same record
     if ((l._rev || 0) === r.rev) return 0; // our change is based on this version — it will upload
+    const dropCf = () => { for (let q = D.conflicts.length - 1; q >= 0; q--) if (D.conflicts[q].key === k + ':' + r.id) D.conflicts.splice(q, 1); };
+    if (typeof AUTO_KINDS !== 'undefined' && AUTO_KINDS.has(k)) { // made by the app itself (day sheets, change log): never a clash
+      if (k === 'bklog' && (l._u || 0) > (s._u || 0)) { const g = l.gone || s.gone; l._rev = r.rev; if (g) l.gone = true; dropCf(); return 1; } // ours is newer: it goes up on top of theirs
+      const g = k === 'bklog' && (l.gone || s.gone); adopt(l, s); if (g && !l.gone) { l.gone = true; l._dirty = true; } dropCf();
+      if (k === 'bksheet' && typeof bkSheetSoon === 'function') bkSheetSoon(); // take theirs; the device that makes day sheets rebuilds it if it's out of date
+      return 1;
+    }
     if (stable({ ...strip(l), _rev: 0, _u: 0, _dev: 0 }) === stable({ ...s, _rev: 0, _u: 0, _dev: 0 })) { adopt(l, s); return 1; } // same edit both sides (field order doesn't matter — the database stores fields in its own order)
     // changed here and somewhere else → keep theirs, never lose a link added here, and park the rest as a conflict to choose
     const mine0 = JSON.parse(JSON.stringify(strip(l))), mineAt0 = l._u;
@@ -437,7 +444,11 @@ const SupaSync = {
       if (add.length) { adopt(l, merged); l._dirty = true; } else adopt(l, s);
       if (same) return 1;
     } else adopt(l, s);
-    for (let q = D.conflicts.length - 1; q >= 0; q--) if (D.conflicts[q].key === k + ':' + r.id) D.conflicts.splice(q, 1);
+    dropCf();
+    if (window.conflictRows && !conflictRows(k, mine0, l).length) { // nothing a person could see is different → keep the newest without asking
+      if ((mineAt0 || 0) > (s._u || 0)) { adopt(l, { ...mine0, _rev: r.rev }); l._dirty = true; }
+      return 1;
+    }
     D.conflicts.push({ key: k + ':' + r.id, kind: k, id: r.id, who: who(s), mine: mine0, mineAt: mineAt0, theirsAt: s._u, theirsDev: s._dev });
     return 1;
   },
@@ -455,7 +466,7 @@ const SupaSync = {
     flag('_trashDirty', 'meta', 'trash', (D.trash || []).filter((t) => Date.now() - t.at < 90 * 864e5));
     flag('_logDirty', 'meta', 'changelog', (D.changelog || []).slice(0, 400));
     flag('_infoDirty', 'meta', 'info', { importedAt: D.importedAt || null });
-    if (D._devDirty || Date.now() - (D.sync.devAt || 0) > 15 * 60000) {
+    if (D._devDirty || Date.now() - (D.sync.devAt || 0) > 5 * 60000) { // every 5 min while open — also decides which device makes the day sheets
       const me = SBAuth.staff || {};
       const dv = { name: deviceName(), nick: devInfo().nick || null, model: devInfo().dev || null, phone: devInfo().phone || null, last: Date.now(), ver: APP_VERSION.split(' ')[0], staff: me.initials || null };
       D.devices = D.devices || {}; D.devices[DEVICE] = dv; delete D._devDirty;
