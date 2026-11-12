@@ -11,6 +11,7 @@
   if (typeof GContacts === 'undefined') return;
   const G = GContacts; const PEOPLE = 'https://people.googleapis.com/v1/';
   G.st.gids = G.st.gids || {}; G.srvTok = null;
+  G.OLDFN = 'the gcal server function needs updating first — Admin jobs → "Update the gcal server function (keeps Google Contacts up to date…)", then Settings → Scheduling → Connect Google Calendar again and tick every box';
   const gset = () => D.settings.gpush || {};
   const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
   /* Google access: from the server first (never runs out), otherwise this device's own Google sign-in */
@@ -19,13 +20,13 @@
     if (typeof sbFetch === 'function' && window.SBAuth && SBAuth.staff && navigator.onLine && !(this.failAt && Date.now() - this.failAt < 10 * 60000 && !interactive)) {
       try { const r = await sbFetch('/functions/v1/gcal', { method: 'POST', body: JSON.stringify({ task: 'ctoken', k: Dev.k() }) }); const js = await r.json().catch(() => ({}));
         if (r.ok && js.t) { this.failAt = 0; this.srvTok = { t: js.t, exp: Date.now() + (js.exp || 3600) * 1000 }; this.st.srvErr = ''; this.persist(); return js.t; }
-        this.failAt = Date.now(); this.st.srvErr = js.error || `The server said ${r.status}`; this.persist(); } catch (e) { this.failAt = Date.now(); this.st.srvErr = e.message; }
+        this.failAt = Date.now(); this.st.srvErr = js.error || (r.status === 405 || r.status === 404 ? G.OLDFN : `The server said ${r.status}`); this.persist(); } catch (e) { this.failAt = Date.now(); this.st.srvErr = /reach|fetch|network/i.test(e.message) ? G.OLDFN : e.message; }
     }
     if (GAuth.valid() || interactive) return GAuth.get(interactive);
     throw Object.assign(new Error('signin'), { signin: true });
   };
   G.api = async function (url, opt) {
-    const t = await this.token(false); const r = await fetch(url, { ...opt, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t } });
+    const t = (this.srvTok && Date.now() < this.srvTok.exp - 60000) ? this.srvTok.t : GAuth.valid() ? GAuth.tok.t : await this.token(false); const r = await fetch(url, { ...opt, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t } });
     if (r.status === 401) { this.srvTok = null; throw Object.assign(new Error('signin'), { signin: true }); }
     if (r.status === 429) throw Object.assign(new Error('rate'), { rate: true });
     return r;
@@ -84,7 +85,7 @@
   G.backup = async function () { const L = await this.listAll(); dl(`google-contacts-backup-${bkToday()}.vcf`, this.vcard(L), 'text/vcard'); return L; };
   G.startAgain = async function () {
     if (this.running) { toast('Google Contacts is updating right now — try again when it says Up to date or Paused'); return; }
-    let L; toast('Reading Google Contacts…', 'info'); try { L = await this.listAll(); } catch (e) { toast(e.signin ? `Google isn't connected for Google Contacts: ${this.st.srvErr || 'connect Google Calendar again in Settings → Scheduling'}` : e.message, 'warn'); return; }
+    let L; toast('Reading Google Contacts…', 'info'); try { this.failAt = 0; await this.token(true); L = await this.listAll(); } catch (e) { toast(e.signin ? `Google isn't connected for Google Contacts: ${this.st.srvErr || 'connect Google Calendar again in Settings → Scheduling'}` : e.message, 'warn'); return; }
     const appG = new Set([...D.contacts.map((c) => c.gid), ...D.businesses.map((b) => b.gid)].filter(Boolean)); const fromApp = L.filter((p) => appG.has(p.resourceName)).length; const mode0 = gset().wipe === 'app' ? 'app' : 'all';
     G._mode = mode0; const r = await askBox('🧹 Start Google Contacts again', `<p>Google Contacts (${h(practiceAccount())}) has <b>${L.length}</b> contacts — <b>${fromApp}</b> of them came from the app.</p>
       <p>First a backup file of all ${L.length} is downloaded (<b>google-contacts-backup-${bkToday()}.vcf</b> — Google Contacts → Import can put them back). Then:</p>
@@ -112,7 +113,7 @@
     G.failAt = 0; try { await G.token(true); toast('Updating Google Contacts in the background — keep the app open on this device', 'info'); G.run(); } catch (x) { toast(x.signin ? `Google isn't connected for Google Contacts: ${G.st.srvErr || ''}` : x.message, 'warn'); } renderAll(); }, true);
   document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act^="gc2-"]'); if (!el) return; e.preventDefault(); e.stopPropagation();
     if (!S.admin) { needAdmin(); return; }
-    if (el.dataset.act === 'gc2-backup') { toast('Reading Google Contacts…', 'info'); try { const L = await G.backup(); toast(`Backup of ${L.length} Google contacts downloaded`, 'info'); } catch (x) { toast(x.signin ? `Google isn't connected for Google Contacts: ${G.st.srvErr || 'connect Google Calendar again in Settings → Scheduling'}` : x.message, 'warn'); } }
+    if (el.dataset.act === 'gc2-backup') { toast('Reading Google Contacts…', 'info'); try { G.failAt = 0; await G.token(true); const L = await G.backup(); toast(`Backup of ${L.length} Google contacts downloaded`, 'info'); } catch (x) { toast(x.signin ? `Google isn't connected for Google Contacts: ${G.st.srvErr || 'connect Google Calendar again in Settings → Scheduling'}` : x.message, 'warn'); } }
     if (el.dataset.act === 'gc2-again') G.startAgain(); }, true);
   document.addEventListener('change', (e) => { if (e.target && e.target.name === 'gw') G._mode = e.target.value; }, true);
   setTimeout(() => G.maybeRun(), 8000);
