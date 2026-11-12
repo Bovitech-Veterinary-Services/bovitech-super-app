@@ -7,6 +7,8 @@
 // In Google Cloud, add this function's address as an "Authorized redirect URI" on that OAuth client:
 //   https://<project>.supabase.co/functions/v1/gcal
 // "Verify JWT" must be OFF for this function — it checks its own secret, and Google's sign-in comes back to it.
+// v2.40: also hands the admin's device a short-lived Google token for updating Google Contacts (task "ctoken"), so that device
+//   never has to sign in to Google again. Needs the Google connection to include Contacts (tap Connect again once to add it).
 
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SB_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? Deno.env.get("SERVICE_KEY") ?? "";
@@ -17,7 +19,23 @@ const REDIRECT = SB_URL + "/functions/v1/gcal";
 const GAPI = "https://www.googleapis.com/calendar/v3";
 const ONCALL_NAME = "Bovitech On Call";
 
-const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json" } });
+const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, apikey, content-type, x-client-info, x-job-secret", "Access-Control-Allow-Methods": "GET, POST, OPTIONS" };
+const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { "Content-Type": "application/json", ...CORS } });
+const CONTACTS = "https://www.googleapis.com/auth/contacts";
+/* the admin's device asks for a Google token for Google Contacts: it must be signed in as the admin on a trusted device */
+async function contactsToken(req: Request, k: string) {
+  const hd = { apikey: req.headers.get("apikey") ?? "", Authorization: req.headers.get("authorization") ?? "", "Content-Type": "application/json" };
+  const chk = await fetch(SB_URL + "/rest/v1/rpc/pull_records", { method: "POST", headers: hd, body: JSON.stringify({ k, since: "2100-01-01T00:00:00Z", after_seq: 0, lim: 1 }) });
+  if (!chk.ok) return json({ error: "Not signed in on a trusted device" }, 403);
+  const adm = await fetch(SB_URL + "/rest/v1/rpc/is_admin", { method: "POST", headers: hd, body: "{}" }); if (!adm.ok || (await adm.json()) !== true) return json({ error: "Only the admin's device updates Google Contacts" }, 403);
+  const g = await rpc("gcal_get"); if (!g || !g.refresh_token) return json({ error: "Google isn't connected — Settings → Scheduling → Connect Google Calendar", reconnect: true }, 409);
+  if (!CSEC) return json({ error: "GOOGLE_CLIENT_SECRET is missing (Edge Functions → Secrets)" }, 500);
+  const r = await fetch("https://oauth2.googleapis.com/token", { method: "POST", headers: { "Content-Type": "application/x-www-form-urlencoded" }, body: new URLSearchParams({ client_id: CID, client_secret: CSEC, refresh_token: g.refresh_token, grant_type: "refresh_token" }) });
+  const js = await r.json().catch(() => ({}));
+  if (!r.ok) return json({ error: js.error === "invalid_grant" ? "Google's sign-in has expired — Settings → Scheduling → Connect Google Calendar again" : "Google sign-in: " + (js.error_description || js.error || r.status), reconnect: js.error === "invalid_grant" }, 409);
+  if (!String(js.scope || "").split(" ").includes(CONTACTS)) return json({ error: "Google Contacts isn't allowed yet — Settings → Scheduling → tap Connect Google Calendar again and tick every box", reconnect: true }, 409);
+  return json({ t: js.access_token, exp: js.expires_in || 3600, account: g.account || "" });
+}
 async function sb(path: string, init: RequestInit = {}) {
   const r = await fetch(SB_URL + path, { ...init, headers: { apikey: SB_KEY, Authorization: "Bearer " + SB_KEY, "Content-Type": "application/json", ...(init.headers ?? {}) } });
   if (!r.ok) throw new Error(`Supabase ${path.split("?")[0]}: ${r.status} ${await r.text()}`);
@@ -170,7 +188,10 @@ Deno.serve(async (req) => {
       const s = await sync(true);
       return page("Google Calendar connected", `Connected to ${account || "Google"}. ${s.ok ? `The calendars are up to date (${(s as any).n || 0} changes).` : "The first sync didn't finish: " + ((s as any).msg || "") + " — it tries again every 5 minutes."} From now on the server keeps them up to date — no phone or computer needed.`, true);
     }
+    if (req.method === "OPTIONS") return new Response("ok", { headers: CORS });
     if (req.method !== "POST") return json({ error: "POST only" }, 405);
+    const body = await req.clone().json().catch(() => ({}));
+    if (body && body.task === "ctoken") return await contactsToken(req, String(body.k || ""));
     const ok = await rpc("check_job_secret", { s: req.headers.get("x-job-secret") ?? "" }); if (ok !== true) return json({ error: "Not allowed" }, 403);
     const { task, force } = await req.json().catch(() => ({}));
     if (task === "sync") return json(await sync(!!force));

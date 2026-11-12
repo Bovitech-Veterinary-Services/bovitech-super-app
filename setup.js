@@ -112,6 +112,14 @@ const SETUP = [
     'Click <b>Deploy updates</b> and wait for it to finish. (Leave "Verify JWT" off.)',
     'Nothing else to do — Google Calendar is already connected. Next time you connect, Google sends you straight back to the app instead of showing a page of code.',
     'Tick <b>✓ Done</b>.'] },
+  { id: 'gcal3', t: 'Update the "gcal" server function (keeps Google Contacts up to date without signing in)', after: 'gcal', steps: [
+    `Open <a href="${SETUP_SUPA}/functions/gcal/code" target="_blank" rel="noopener">Supabase → Edge Functions → gcal → Code</a>.`,
+    `Come back here and tap ${setupCopy('gcal', 'Copy the gcal code')}.`,
+    'In Supabase, click in the code box, press <b>Ctrl + A</b> then <b>Ctrl + V</b> to replace all of it.',
+    'Click <b>Deploy updates</b> and wait for it to finish. (Leave "Verify JWT" off.)',
+    'In the app, go to <b>Settings → Scheduling → Google Calendar</b> and tap <b>Connect</b> again, signed in as the practice Google account. Tick <b>every box</b> on Google\'s screen — it now also asks for Google Contacts.',
+    'On the office computer (the device that updates caller photos), open <b>Settings → Sync & sign-in → Caller photos</b> and tap <b>Update Google Contacts now</b>. The status should change to "Updating…".',
+    'Tick <b>✓ Done</b>.'] },
   { id: 'sql08', t: 'Run database update 8 (makes "🔑 New QR code" always work)', steps: [
     `Open <a href="${SETUP_SUPA}/sql/new" target="_blank" rel="noopener">Supabase → SQL Editor → New query</a>.`,
     `Tap ${setupCopy('sql08', 'Copy update 8')}.`,
