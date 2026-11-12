@@ -59,8 +59,8 @@
       try { if (navigator.wakeLock && todo.length > 20) wake = await navigator.wakeLock.request('screen'); } catch (e) { }
       for (const c of todo) {
         if (!this.st.on || !navigator.onLine) break;
-        try { await this.push(c); this.st.done[c.id] = this.hash(c); if (c.gid) this.st.gids[c.id] = c.gid; if (c._biz && c.gid && c._biz.gid !== c.gid) { c._biz.gid = c.gid; touch(c._biz); save(); } n++; }
-        catch (e) { if (e.signin) { why = this.st.srvErr || 'Google needs connecting'; break; } if (e.rate) { await sleep(30000); continue; } fails++; why = why || `${fullName(c) || 'a contact'}: ${e.message}`; console.warn('Google Contacts', fullName(c), e); }
+        try { await this.push(c); this.st.done[c.id] = this.hash(c); if (this.st.errs) delete this.st.errs[c.id]; if (c.gid) this.st.gids[c.id] = c.gid; if (c._biz && c.gid && c._biz.gid !== c.gid) { c._biz.gid = c.gid; touch(c._biz); save(); } n++; }
+        catch (e) { if (e.signin) { why = this.st.srvErr || 'Google needs connecting'; break; } if (e.rate) { await sleep(30000); continue; } fails++; this.st.errs = this.st.errs || {}; this.st.errs[c.id] = e.message; why = why || `${fullName(c) || 'a contact'}: ${e.message}`; console.warn('Google Contacts', fullName(c), e); }
         if (n % 10 === 0) msg(`Updating… ${n} of ${todo.length}`);
         await sleep(900); // stay under Google's per-minute limit
       }
@@ -106,7 +106,8 @@
     return `<div class="lbl" style="margin-top:14px">Caller photos (Google Contacts)</div>
     <label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" data-act="gpush-toggle" ${gp.on ? 'checked' : ''} ${S.admin ? '' : 'disabled title="Only the admin can change this"'}> <span>This device keeps Google Contacts up to date <span class="setlock fixed" style="font-size:11px;padding:1px 7px">🔒 Admin only</span><br><span class="hint">It updates whenever the app is open on this device. Google access comes from the practice's Google connection (Settings → Scheduling), so there's no Google sign-in to keep doing.</span></span></label>
     ${gp.on ? `<div class="kv"><div class="k">Status</div><div class="v">${h(gp.msg || 'Waiting')}${G.running ? ' <span class="hint">(working…)</span>' : ''}</div></div>${gp.srvErr && !ok ? `<div class="kv"><div class="k">Google connection</div><div class="v" style="color:var(--red)">${h(gp.srvErr)}</div></div>` : ''}<div class="actions"><button class="btn small" data-act="gpush-now">Update Google Contacts now</button></div>` : ''}
-    ${S.admin ? `<div class="actions"><button class="btn small" data-act="gc2-backup">⬇️ Download a backup of Google Contacts</button><button class="btn small danger" data-act="gc2-again">🧹 Start Google Contacts again</button></div><div class="hint">Options (what's sent, removing deleted contacts): Settings → Contacts → Google Contacts (caller ID) options.</div>` : ''}`; };
+    ${S.admin ? `<div class="actions"><button class="btn small" data-act="gc2-backup">⬇️ Download a backup of Google Contacts</button><button class="btn small danger" data-act="gc2-again">🧹 Start Google Contacts again</button></div><div class="hint">Options (what's sent, removing deleted contacts): Settings → Contacts → Google Contacts (caller ID) options.</div>` : ''}
+    <div class="f" style="margin-top:8px"><label for="gc2-q">Why isn't someone in Google Contacts?</label><div class="kv" style="align-items:center"><input id="gc2-q" type="search" placeholder="Type a name" style="flex:1 1 160px;min-width:0"><button class="btn small" data-act="gc2-why">Check</button></div><div id="gc2-res"></div></div>`; };
   document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act="gpush-now"], [data-act="gpush-toggle"]'); if (!el) return; if (el.dataset.act === 'gpush-toggle' && !el.checked) return; e.stopPropagation(); if (el.dataset.act === 'gpush-now') e.preventDefault();
     if (!S.admin) { if (el.type === 'checkbox') el.checked = false; needAdmin(); return; }
     if (el.dataset.act === 'gpush-toggle') { G.st.on = true; G.persist(); }
@@ -115,6 +116,18 @@
     if (!S.admin) { needAdmin(); return; }
     if (el.dataset.act === 'gc2-backup') { toast('Reading Google Contacts…', 'info'); try { G.failAt = 0; await G.token(true); const L = await G.backup(); toast(`Backup of ${L.length} Google contacts downloaded`, 'info'); } catch (x) { toast(x.signin ? `Google isn't connected for Google Contacts: ${G.st.srvErr || 'connect Google Calendar again in Settings → Scheduling'}` : x.message, 'warn'); } }
     if (el.dataset.act === 'gc2-again') G.startAgain(); }, true);
+  /* "Why isn't … in Google Contacts?" — type a name, it says why */
+  G.why = function (q) { q = String(q || '').trim().toLowerCase(); if (!q) return [];
+    const C = D.contacts.filter((c) => fullName(c).toLowerCase().includes(q)).slice(0, 5); const B = D.businesses.filter((b) => (b.name || '').toLowerCase().includes(q)).slice(0, 3); const want = new Map(this.wanted().map((c) => [c.id, c])); const skip = new Set(gset().skip || []);
+    const st = (c) => { if (c.gone) return '🗑️ Deleted in the app, so it\'s not sent.'; if (!c._biz && noDet(c)) return '❌ Not sent: no phone number, email or address in the app.';
+      let cat = ''; try { cat = catOf(c); } catch (e) { } if (cat && skip.has(cat)) return `❌ Not sent: the category "${tagName(cat)}" is unticked in Settings → Contacts → Google Contacts (caller ID) options.`;
+      if (!this.st.on) return 'ℹ️ This device doesn\'t update Google Contacts — check on the office computer.';
+      const err = (this.st.errs || {})[c.id]; if (err) return `⚠ Google refused it last time: ${err}`;
+      let ok = false; try { ok = this.st.done[c.id] === this.hash(c); } catch (e) { return '⚠ Problem preparing it: ' + e.message; }
+      return ok ? `✓ Sent to Google Contacts${c.gid ? '' : ''}. If it's not on a phone yet, the phone may not have synced Google Contacts — open Google Contacts on that phone and pull down to refresh.` : this.running ? `⏳ Waiting to be sent — Google Contacts is updating now (${h(this.st.msg || '')}).` : '⏳ Not sent yet — tap Update Google Contacts now.'; };
+    return [...C.map((c) => ({ n: fullName(c), t: st(c) })), ...B.map((b) => { const ps = bizPseudo(b); if (want.has(ps.id)) return { n: b.name + ' (business)', t: st(ps) }; const hasC = (IDX.bizContacts.get(b.id) || []).length; return { n: b.name + ' (business)', t: !bizHasDetails(b) ? 'ℹ️ The business has no phone or email of its own, so only its people are sent.' : hasC && isClientBiz(b) ? 'ℹ️ Client business: its people are sent (with the business name on them), not the business on its own.' : st(ps) }; })]; };
+  document.addEventListener('click', (e) => { const el = e.target.closest && e.target.closest('[data-act="gc2-why"]'); if (!el) return; e.preventDefault(); const q = (document.getElementById('gc2-q') || {}).value; const box = document.getElementById('gc2-res'); if (!box) return; const L = G.why(q); box.innerHTML = L.length ? L.map((x) => `<div style="margin:4px 0"><b>${h(x.n)}</b> — ${x.t}</div>`).join('') : '<div class="hint">No contact or business with that name in the app.</div>'; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Enter' && e.target && e.target.id === 'gc2-q') { e.preventDefault(); const b = document.querySelector('[data-act="gc2-why"]'); if (b) b.click(); } });
   document.addEventListener('change', (e) => { if (e.target && e.target.name === 'gw') G._mode = e.target.value; }, true);
   setTimeout(() => G.maybeRun(), 8000);
 })();
