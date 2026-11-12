@@ -59,3 +59,8 @@ function offCard() { const st = offSet(); return `<div class="card"><h3><span cl
   <div class="actions"><button class="btn small primary" data-act="off-save">Save</button>${OFFMODE.on ? '<button class="btn small" data-act="off-go">Go online</button>' : '<button class="btn small" data-act="off-start">📴 Work offline now</button>'}</div></div>`; }
 if (typeof renderSettings === 'function') renderSettings = (function (orig) { return function () { const html = orig.apply(this, arguments); const i = html.lastIndexOf('</div>'); return i < 0 ? html : html.slice(0, i) + offCard() + html.slice(i); }; })(renderSettings);
 window.offStart = offStart; window.offGoOnline = offGoOnline; window.offCheck = offCheck;
+
+/* ---------- Check pins: the first farm's pin map opens by itself (on the Jobs page) — never a plain Google map ---------- */
+function pcqAuto2() { if (typeof PCQ_JOBS === 'undefined') return; if (S.pcq && document.querySelector('#pm-' + S.pcq.fid + ' .pcqmap')) return; if (document.getElementById('askbox') || SHEET) return;
+  const b = [...document.querySelectorAll('[data-act=pcq-start]')].find((x) => x.offsetParent !== null && !x.closest('details:not([open])')); if (b) b.click(); }
+if (typeof renderAll === 'function') renderAll = (function (orig) { return function () { const r = orig.apply(this, arguments); if (S.tab === 'jobs') setTimeout(pcqAuto2, 60); return r; }; })(renderAll);
