@@ -5,16 +5,18 @@
      or in every template that asks the same question. */
 /* outline what still needs completing (kept through re-draws until the record is finalised) */
 function crReqMark(M) { document.querySelectorAll('.need-fill').forEach((x) => x.classList.remove('need-fill', 'need-req')); let first = null;
-  M.forEach((m) => { const n = m.lab ? document.querySelector('.b2-lab input') : m.pat ? document.querySelector('[data-act=cr-ptherd], [data-act=cr-ptadd]') : document.querySelector(`[data-crpr="${m.pr.id}"][data-k="answers.${m.inp.k}"]`); const box = n && (n.closest('.b2-lab') || n.closest('.f') || n.closest('.actions') || n.parentElement); if (box) { box.classList.add('need-fill', 'need-req'); first = first || box; } }); return first; }
+  M.forEach((m) => { const n = m.lab ? document.querySelector('[data-sec=labour] input') : m.pat ? document.querySelector('[data-crpat1], [data-crpatm], [data-act=cr-ptnew]') : document.querySelector(`[data-crpr="${m.pr.id}"][data-k="answers.${m.inp.k}"]`); const box = n && (n.closest('.f') || n.closest('.actions') || n.parentElement); if (box) { box.classList.add('need-fill', 'need-req'); first = first || box; } }); return first; }
 if (typeof renderAll === 'function') renderAll = (function (orig) { return function () { const res = orig.apply(this, arguments); try { const q = window.CR_REQ; if (q && typeof CR !== 'undefined' && S.tab === 'rec' && CR.page === 'edit' && CR.id === q.id) { const r = crGet('crrec', q.id); if (!r || r.status === 'final') window.CR_REQ = null; else crReqMark(crMissing(r)); } } catch (e) { } return res; }; })(renderAll);
 function crMissing(r) { const out = []; (r.procs || []).forEach((pr) => { const t = crTpl(pr.tpl); if (!t) return; const a = pr.answers || {};
   (t.sections || []).forEach((sec) => (sec.inputs || []).forEach((inp) => { if (inp.fixed || inp.optional || (typeof crShown === 'function' && !crShown(pr, inp))) return; const v = a[inp.k]; if (v == null || String(v).trim() === '' || v === '__other') out.push({ pr, t, sec, inp }); })); });
-  if (!(r.patients || []).length) out.push({ pat: true }); return out; }
+  if (!(r.patients || []).some((p) => typeof crPatReal === 'function' ? crPatReal(r, p) : true)) out.push({ pat: true });
+  else if (typeof crPatMode === 'function' && crPatMode(r) === 'multi') (r.procs || []).forEach((pr) => { if (!pr.pat || !(r.patients || []).some((p) => p.id === pr.pat)) out.push({ pr, t: crTpl(pr.tpl) || { name: 'Procedure' }, sec: {}, inp: { k: '__pat', l: 'Which patient it was for' } }); });
+  return out; }
 document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act=cr-final]'); if (!el) return; const r = typeof CR !== 'undefined' && crGet && crGet('crrec', CR.id); if (!r) return;
   if (typeof crCanFinalise === 'function' && !crCanFinalise(r)) return; /* someone who can't finalise is told that first */
   const M = crMissing(r); if (!M.length) return; e.preventDefault(); e.stopImmediatePropagation();
   const first = crReqMark(M); window.CR_REQ = { id: r.id };
-  const by = {}; M.forEach((m) => { const k = m.lab ? 'Additional labour' : m.pat ? 'Patients' : m.t.name; (by[k] = by[k] || []).push(m.lab ? 'What it was used for — the whole appointment, or which procedures' : m.pat ? 'Choose the herd / flock, mob or animal' : (m.inp.l || m.sec.title || 'An answer')); });
+  const by = {}; M.forEach((m) => { const k = m.lab ? 'Additional labour' : m.pat ? 'Patients' : m.t.name; (by[k] = by[k] || []).push(m.lab ? 'How many people, and whether it was the whole appointment (or how long)' : m.pat ? 'Choose the patient (a real patient of this business)' : (m.inp.l || m.sec.title || 'An answer')); });
   await askBox(`⚠ ${M.length} thing${M.length === 1 ? '' : 's'} still to complete`, `<p>Every section needs completing before the record can be finalised. They're outlined in orange:</p>${Object.entries(by).map(([k, L]) => `<p><b>${h(k)}</b><br>${L.map((x) => '• ' + h(x)).join('<br>')}</p>`).join('')}`, 'Show me', false, '');
   if (first) { if (typeof navPoint === 'function') navPoint(first); else first.scrollIntoView({ block: 'center' }); } }, true);
 /* clear the orange as each one is answered */

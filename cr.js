@@ -114,8 +114,9 @@ function crNewRec(o) { // o: { bk (appointment), bid, cid, date }
   if (!r.bid && r.cid && typeof soleTraderFor === 'function') { const ct = D.contacts.find((x) => x.id === r.cid); if (ct) { const sb = bizOf(ct).length === 1 ? bizOf(ct)[0] : soleTraderFor(ct); r.bid = sb.id; } } // records and invoices are always on a business — a person on their own gets their sole-trader business
   const pids = (r.bid && IDX.biz.get(r.bid) && (IDX.biz.get(r.bid).patientIds || []).filter((p) => !p.inactive && p.species !== 'other')) || []; // the herd / flock to start with (active cattle and sheep only)
   (b && b.pids && b.pids.length ? b.pids : pids.slice(0, 1)).forEach((p) => r.patients.push({ id: uid('pt'), level: 'herd', pid: p.value, plabel: p.label || '', species: p.species === 'sheep' || (!p.species && /sheep|flock|ovine/i.test(p.label || '')) ? 'sheep' : 'cattle' }));
-  if (!r.patients.length) r.patients.push({ id: uid('pt'), level: 'herd', species: 'cattle' });
-  if (b) (b.svcs || []).forEach((x) => { const t = crTplForSvc(x.svc); if (t && !r.procs.some((p) => p.tpl === t.id)) r.procs.push({ id: uid('pr'), tpl: t.id, pat: r.patients[0].id, answers: {}, head: x.head || 0, animals: [] }); });
+  /* v2.43: no made-up herd — a record's patients must be real patients of the business (➕ Create new patient on the record) */
+  r.patMode = r.patients.length > 1 ? 'multi' : 'one';
+  if (b) (b.svcs || []).forEach((x) => { const t = crTplForSvc(x.svc); if (t && !r.procs.some((p) => p.tpl === t.id)) r.procs.push({ id: uid('pr'), tpl: t.id, pat: (r.patients[0] || {}).id || null, answers: {}, head: x.head || 0, animals: [] }); });
   return r;
 }
 function crTplForSvc(svcId) { const sv = svcId && Bk.get(svcId); if (!sv) return null; const n = (sv.name || '').toLowerCase(); return crTpls().find((t) => t.svc === svcId) || (/preg/.test(n) ? crTpl('tpl:pd') : /bull|bbse/.test(n) ? crTpl('tpl:bbse') : /consult|treat/.test(n) ? crTpl('tpl:consult') : /\bai\b|insemin/.test(n) ? crTpl('tpl:ai') : null); }
@@ -169,12 +170,12 @@ function crNeighbours(r) { // → { prev, next } — each { who, bid, s, e, base
 }
 /* v2.41: an appointment type can share travel by default (e.g. "Shared farm appointment" → 50%); SDI / TSE work is subsidised
    travel by default. Both can be changed on the record. */
-function crTypeTravelPct(r) { const t = Bk.type(r.type) || {}; if (t.travelPct != null && t.travelPct !== '') return +t.travelPct || 0; return /shar(e|ed)\b.*farm|farm.*shar/i.test(t.name || '') ? 50 : 0; }
+function crTypeTravelPct(r) { const t = Bk.type(r.type) || {}; if (t.travelPct != null && t.travelPct !== '') return +t.travelPct || 0; if (t.where && t.where !== 'farm') return 100; /* in-house and phone: no travel unless changed on the record */ return /shar(e|ed)\b.*farm|farm.*shar/i.test(t.name || '') ? 50 : 0; }
 function crSubsidyAuto(r) { const txt = [...(r.procs || []).map((p) => (crTpl(p.tpl) || {}).name || ''), ...(r.items || []).map((i) => (crProd(i.prod) || {}).name || '')].join(' | '); const m = txt.match(/\b(SDI|TSE)\b/i); return m ? m[1].toUpperCase() : ''; }
 function crSubsidy(r) { const p = r.subsidyPick; if (p === 'none') return ''; if (p === 'TSE' || p === 'SDI') return p; if (r.subsidy) return r.subsidy; return crSubsidyAuto(r); }
 function crTravel(r) { // → [{ fid, name, km, pct, why }]
   const fz = crFees(); const fids = [...new Set((r.stops || []).map((x) => x.fid).filter(Boolean))]; const out = [];
-  if (Bk.type(r.type).where !== 'farm') return out; const nb = crNeighbours(r);
+  const nb = Bk.type(r.type).where === 'farm' ? crNeighbours(r) : {};
   const tpd = crTypeTravelPct(r);
   fids.forEach((fid) => { const f = IDX.farms.get(fid); if (!f) return; let pct = 0; const why = [];
     if (r.travelPct != null && r.travelPct !== '') { out.push({ fid, name: f.name || 'Farm', km: f.kmReturn != null ? +f.kmReturn : null, pct: +r.travelPct || 0, why: `${+r.travelPct || 0}% off — set on this record` }); return; }
@@ -202,7 +203,7 @@ function crBuildLines(r) { // → [{ prod, desc, qty, price, auto: true }]
   if (r.labour && +r.labour.people && +r.labour.hours) add(crRole('labour'), (+r.labour.people) * (+r.labour.hours), `Additional labour — ${r.labour.people} × ${r.labour.hours} hours`);
   // travel
   const subs = crSubsidy(r); let capLeft = (() => { const sp = crRole('subsidy'); return sp && sp.cap ? +sp.cap : 200; })();
-  tr.forEach((x) => { if (x.km == null) return; const mult = 1 - x.pct / 100;
+  tr.forEach((x) => { if (x.km == null || x.pct >= 100) return; const mult = 1 - x.pct / 100;
     if (subs && crRole('subsidy')) { const sp = crRole('subsidy'); const ks = Math.max(0, Math.min(x.km, capLeft)); capLeft -= ks; if (ks) add(sp, ks, `Subsidised travel (${subs}) — ${x.name}, ${ks} km${x.pct ? ` (${x.why})` : ''}`, crR4((+sp.price || 0) * mult)); if (x.km > ks) add(crRole('travel'), x.km - ks, `Travel — ${x.name}, ${x.km - ks} km over the ${sp.cap || 200} km subsidy`, crR4((+crRole('travel').price || 0) * mult)); }
     else add(crRole('travel'), x.km, `Travel — ${x.name}, ${x.km} km return${x.pct ? ` (${x.why})` : ''}`, crR4((+(crRole('travel') || {}).price || 0) * mult));
     const fu = crRole('fuel'); if (fu) add(fu, x.km, `Fuel surcharge — ${x.name}, ${x.km} km${x.pct ? ` (${x.pct}% off)` : ''}`, crR4((+fu.price || 0) * mult)); });

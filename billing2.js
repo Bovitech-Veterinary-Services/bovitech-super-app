@@ -18,17 +18,18 @@ function b2Lines(r, pr) { const t = crTpl(pr.tpl); if (!t) return []; const a = 
     L.forEach(([code, n]) => { const p = b2Prod(code); const q = n === 99999 ? +a['_q_' + inp.k] || 0 : n; if (p && q) out.push({ p, q, why: `${t.name}: ${inp.l}` }); }); });
   return out; }
 crBuildLines = (function (orig) { return function (r) { const lab = r.labour || {}; let r2 = r;
-    if (+lab.people && lab.for === 'all' && !(+lab.hours)) r2 = { ...r, labour: { ...lab, hours: crR2(crWorkedMins(r) / 60) } };
+    if (lab.used === 'no' || (lab.used !== 'yes' && lab.used != null)) r2 = { ...r, labour: { ...lab, people: 0, hours: 0 } };
+    else if (+lab.people && lab.for === 'all') r2 = { ...r, labour: { ...lab, hours: crR2(crWorkedMins(r) / 60) } };
     let L = orig.call(this, r2); const fz = (r.procs || []).map((pr) => crTpl(pr.tpl)).filter(b2Billed);
     if (fz.length) L = L.filter((l) => !fz.some((t) => t.charge && l.prod === t.charge.hour && String(l.desc).startsWith(t.name + ' — ')));
-    const lb = L.find((l) => l.prod === (crRole('labour') || {}).id); if (lb && lab.for) lb.desc = `Additional labour — ${lab.people} × ${r2.labour.hours} hours, ${lab.for === 'all' ? 'the whole appointment' : 'for ' + (lab.procs || []).map((id) => { const pr = (r.procs || []).find((x) => x.id === id); return pr ? (crTpl(pr.tpl) || {}).name : ''; }).filter(Boolean).join(', ')}`;
+    const lb = L.find((l) => l.prod === (crRole('labour') || {}).id); if (lb && lab.for) lb.desc = `Additional labour — ${lab.people} × ${r2.labour.hours} hours, ${lab.for === 'all' ? 'the whole appointment' : !(lab.procs || []).length ? 'part of the appointment' : 'for ' + (lab.procs || []).map((id) => { const pr = (r.procs || []).find((x) => x.id === id); return pr ? (crTpl(pr.tpl) || {}).name : ''; }).filter(Boolean).join(', ')}`;
     (r.procs || []).forEach((pr) => b2Lines(r, pr).forEach(({ p, q, why }) => L.push({ id: uid('il'), prod: p.id, desc: p.name, qty: crR2(q), price: +p.price || 0, gst: p.gst !== false, auto: true, why, tpl: pr.tpl })));
     return L; }; })(crBuildLines);
 /* the record: "Additional labour" — used for the whole appointment, or some procedures */
 crEditHtml = (function (orig) { return function (r) { let html = orig.apply(this, arguments); const lab = r.labour || {}; const fin = r.status === 'final';
     const box = `<div class="f b2-lab" ${+lab.people ? '' : 'hidden'}><label>Additional labour was used for</label><div class="cr-chks"><label class="bk-radio"><input type="radio" name="b2lab" data-crf="labour.for" value="all" ${lab.for === 'all' ? 'checked' : ''} ${fin ? 'disabled' : ''}> the whole appointment${lab.for === 'all' && !(+lab.hours) ? ` (${crR2(crWorkedMins(r) / 60)} hours)` : ''}</label><label class="bk-radio"><input type="radio" name="b2lab" data-crf="labour.for" value="part" ${lab.for === 'part' ? 'checked' : ''} ${fin ? 'disabled' : ''}> only some of the procedures</label></div>
       ${lab.for === 'part' ? `<div class="cr-chks" style="margin-top:4px">${(r.procs || []).map((pr) => `<label class="bk-radio"><input type="checkbox" data-b2lab="${pr.id}" ${(lab.procs || []).includes(pr.id) ? 'checked' : ''} ${fin ? 'disabled' : ''}> ${h((crTpl(pr.tpl) || {}).name || 'Procedure')}</label>`).join('') || '<span class="hint">Add the procedures first.</span>'}</div><div class="hint">Put the hours they helped in "Hours each".</div>` : lab.for === 'all' ? '<div class="hint">Leave "Hours each" at 0 to charge the whole appointment time.</div>' : ''}</div>`;
-    html = html.replace(/(<div class="grid2"><div class="f"><label>Additional labour — people<\/label>[\s\S]*?<\/div><\/div>)/, '$1' + box);
+    void box; /* v2.43: the labour questions are asked in the record itself now (crLabourHtml) */
     /* ezyVet shortcut buttons on typed boxes that used them */
     if (!fin && typeof shFind === 'function') (r.procs || []).forEach((pr) => { const t = crTpl(pr.tpl); if (!t) return; b2Inputs(t).forEach((inp) => { if (!inp.ezy || !inp.ezy.length) return; const codes = inp.ezy.map((c) => shFind('-' + c) || shFind(c)).filter(Boolean); if (!codes.length) return;
       const rx = new RegExp(`(<textarea data-crpr="${pr.id}" data-k="answers.${inp.k}"[^>]*>[\\s\\S]*?</textarea>)`); html = html.replace(rx, `$1<div class="cr-chks b2-sh">${codes.map((c) => `<button type="button" class="btn small" data-act="b2-sh" data-pr="${pr.id}" data-k="${h(inp.k)}" data-c="${h(c)}" title="${h(typeof shPreview === 'function' ? shPreview(c) : '')}">⌨️ ${h(c)}</button>`).join('')}</div>`); }); });
@@ -37,7 +38,7 @@ document.addEventListener('change', (e) => { const el = e.target; if (!el.datase
 /* show the "used for" question as soon as people is filled in */
 document.addEventListener('input', (e) => { if (e.target.dataset && e.target.dataset.crf === 'labour.people') { const b = document.querySelector('.b2-lab'); if (b) b.hidden = !(+e.target.value); } });
 /* finalising: the labour question has to be answered too */
-if (typeof crMissing === 'function') crMissing = (function (orig) { return function (r) { const M = orig.apply(this, arguments); const lab = r.labour || {}; if (+lab.people && (!lab.for || (lab.for === 'part' && !(lab.procs || []).length))) M.push({ lab: true }); return M; }; })(crMissing);
+if (typeof crMissing === 'function') crMissing = (function (orig) { return function (r) { const M = orig.apply(this, arguments); const lab = r.labour || {}; if (+lab.people && lab.used !== 'no' && (!lab.for || (lab.for === 'part' && !(+lab.hours)))) M.push({ lab: true }); return M; }; })(crMissing);
 /* answers: charged by the amount → how many?  a shortcut choice → its wording */
 document.addEventListener('change', async (e) => { const el = e.target; if (el.tagName !== 'SELECT' || !el.dataset.crpr || !/^answers\./.test(el.dataset.k || '')) return; const r = crGet('crrec', CR.id); const pr = r && (r.procs || []).find((p) => p.id === el.dataset.crpr); const t = pr && crTpl(pr.tpl); if (!t) return; const k = el.dataset.k.slice(8); const inp = b2Inputs(t).find((i) => i.k === k); if (!inp) return;
   const i = (inp.opts || []).indexOf(el.value); const L = i >= 0 && inp.bill ? inp.bill[String(i)] : null;

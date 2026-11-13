@@ -587,7 +587,7 @@ html[data-theme=dark] [style*="background:var(--ink)"]{color:var(--bg)!important
 </head>
 <body>
 <div id="splash"><img src="img/icon-512.png" alt="Bovitech Veterinary Services"><div class="txt"><h1>Bovitech Super App</h1><div class="hi" id="splash-hi"></div></div></div>
-<script>(function(){var n='';try{n=localStorage.getItem('bvp-nick')||(localStorage.getItem('bvp-devname')||'').split(/\s+[\u2013-]\s+/)[0].replace(/'s (phone|pc|laptop|computer|tablet)$/i,'');}catch(e){}document.getElementById('splash-hi').textContent=n?'Hi '+n:'';var t0=Date.now(),done=false;window.hideSplash=function(){if(done)return;done=true;setTimeout(function(){var s=document.getElementById('splash');if(!s)return;s.classList.add('gone');setTimeout(function(){s.remove();},400);},Math.max(0,1200-(Date.now()-t0)));};setTimeout(window.hideSplash,5000);})();</script>
+<script>(function(){var n='';try{n=localStorage.getItem('bvp-hi')||localStorage.getItem('bvp-nick')||(localStorage.getItem('bvp-devname')||'').split(/\s+[\u2013-]\s+/)[0].replace(/'s (phone|pc|laptop|computer|tablet)$/i,'');}catch(e){}document.getElementById('splash-hi').textContent=n?'Hi '+n:'';var t0=Date.now(),done=false;window.hideSplash=function(){if(done)return;done=true;setTimeout(function(){var s=document.getElementById('splash');if(!s)return;s.classList.add('gone');setTimeout(function(){s.remove();},400);},Math.max(0,1200-(Date.now()-t0)));};setTimeout(window.hideSplash,5000);})();</script>
 <script>(function(){function show(msg){if(window.APP_READY||document.getElementById('crashbox'))return;var d=document.createElement('div');d.id='crashbox';d.style.cssText='position:fixed;left:12px;right:12px;bottom:16px;z-index:300;background:#fff;border:2px solid #d71f2b;border-radius:12px;padding:12px 14px;font:15px system-ui;box-shadow:0 6px 20px rgba(0,0,0,.25);color:#141414';d.innerHTML='<b>The app hit a problem while opening.</b><div style="font-size:13px;color:#666;margin:4px 0 8px;word-break:break-word">'+String(msg).replace(/</g,'&lt;').slice(0,300)+'</div><button onclick="location.reload()" style="padding:8px 12px;margin-right:6px">Try again</button><button onclick="(async function(){try{var r=await navigator.serviceWorker.getRegistrations();for(var i of r)await i.unregister();var k=await caches.keys();for(var j of k)await caches.delete(j);}catch(e){}location.reload();})()" style="padding:8px 12px">Reload the latest version</button><div style="font-size:12px;color:#666;margin-top:6px">Your contacts are safe — they stay on this device and in Google Drive.</div>';document.body.appendChild(d);var s=document.getElementById('splash');if(s)s.remove();}
 window.addEventListener('error',function(e){show(e.message||e.error)});window.addEventListener('unhandledrejection',function(e){show((e.reason&&(e.reason.stack||e.reason.message))||e.reason)});setTimeout(function(){if(!window.APP_READY)show('Still loading after 20 seconds — check the internet connection, or tap "Reload the latest version".')},20000);})();</script>
 <div class="app">
@@ -672,6 +672,7 @@ window.addEventListener('error',function(e){show(e.message||e.error)});window.ad
 <script src="gcontacts2.js"></script>
 <script src="disc.js"></script>
 <script src="ui5.js"></script>
+<script src="ui6.js"></script>
 <script src="emojis.js"></script>
 </body>
 </html>

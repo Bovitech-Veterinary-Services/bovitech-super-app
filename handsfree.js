@@ -8,7 +8,7 @@ const hfShort = (o) => { const s = String(o || ''); return s.length > 70 ? s.sli
 function hfNumber(t) { const s = t.toLowerCase().trim(); const m = /\b(\d+(?:\.\d+)?)\b/.exec(s); if (m) return +m[1]; const w = s.replace(/^(number|option)\s+/, '').split(/\s+/)[0]; return HF_NUM[w] || null; }
 function hfQueue(r) { const Q = []; const pats = r.patients || [];
   (r.procs || []).forEach((pr) => { const t = crTpl(pr.tpl); if (!t) return;
-    if (pats.length > 1) Q.push({ kind: 'pat', pr, t, l: `${t.name}: which patient?`, opts: pats.map((p) => p.pid ? `${p.pid}${p.plabel ? ' ' + p.plabel : ''}` : (p.species === 'sheep' ? 'Sheep flock' : 'Cattle herd')) });
+    if (pats.length > 1 && (typeof crPatMode !== 'function' || crPatMode(r) === 'multi')) Q.push({ kind: 'pat', pr, t, l: `${t.name}: which patient?`, opts: pats.map((p) => p.pid ? `${p.pid}${p.plabel ? ' ' + p.plabel : ''}` : (p.species === 'sheep' ? 'Sheep flock' : 'Cattle herd')) });
     if (t.charge && (t.charge.head || t.quick === 'pd')) Q.push({ kind: 'head', pr, t, l: `${t.name}: how many head?` });
     (t.sections || []).flatMap((s) => s.inputs).filter((inp) => !inp.fixed).forEach((inp) => Q.push({ kind: inp.text ? 'text' : 'opt', pr, t, inp, l: `${t.name}: ${inp.l}`, opts: inp.text ? null : inp.opts }));
     Q.push({ kind: 'prnotes', pr, t, l: `Any notes for ${t.name}?` }); });
