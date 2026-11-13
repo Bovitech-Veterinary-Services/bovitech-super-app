@@ -23,7 +23,7 @@ const crAdmin = () => !!(window.SBAuth && SBAuth.isAdmin());
 
 /* ---------------- the price list: services, medications, consumables, merchandise, certificates, lab tests ---------------- */
 const CR_PCATS = [['service', 'Services and fees'], ['med', 'Medications (S4 and OTC)'], ['consumable', 'Consumables'], ['merch', 'Merchandise'], ['cert', 'Certificates'], ['lab', 'Lab tests'], ['bundle', 'Bundles (several items added together)']];
-const CR_ROLES = { appt: 'Appointment fee', proc: 'Procedure', ahEarly: 'After hours — early (6–7pm, 7–8am; weekends and public holidays 7am–7pm)', ahLate: 'After hours — late (7pm–7am)', labour: 'Additional labour (per person, per hour)', travel: 'Travel (per km)', fuel: 'Fuel surcharge (per km)', subsidy: 'Subsidised travel — TSE / SDI (per km)' };
+const CR_ROLES = { appt: 'Appointment fee', proc: 'Procedure', ahEarly: 'After hours — early (6–7pm, 7–8am; weekends and public holidays 7am–7pm)', ahLate: 'After hours — late (7pm–7am)', labour: 'Additional labour (per person, per hour)', travel: 'Travel (per km)', fuel: 'Fuel surcharge (per km)', subsidy: 'Subsidised travel — TSE / SDI: the subsidy taken off travel (per km)' };
 const CR_PROD_DEFAULTS = [
   { id: 'p-appt-farm', cat: 'service', role: 'appt', name: 'On-farm appointment', unit: 'each', price: 0, types: ['type-farm'] },
   { id: 'p-appt-phone', cat: 'service', role: 'appt', name: 'Phone appointment', unit: 'each', price: 0, types: ['type-phone'] },
@@ -204,7 +204,7 @@ function crBuildLines(r) { // → [{ prod, desc, qty, price, auto: true }]
   // travel
   const subs = crSubsidy(r); let capLeft = (() => { const sp = crRole('subsidy'); return sp && sp.cap ? +sp.cap : 200; })();
   tr.forEach((x) => { if (x.km == null || x.pct >= 100) return; const mult = 1 - x.pct / 100;
-    if (subs && crRole('subsidy')) { const sp = crRole('subsidy'); const ks = Math.max(0, Math.min(x.km, capLeft)); capLeft -= ks; if (ks) add(sp, ks, `Subsidised travel (${subs}) — ${x.name}, ${ks} km${x.pct ? ` (${x.why})` : ''}`, crR4((+sp.price || 0) * mult)); if (x.km > ks) add(crRole('travel'), x.km - ks, `Travel — ${x.name}, ${x.km - ks} km over the ${sp.cap || 200} km subsidy`, crR4((+crRole('travel').price || 0) * mult)); }
+    if (subs && crRole('subsidy')) { const sp = crRole('subsidy'); const ks = Math.max(0, Math.min(x.km, capLeft)); capLeft -= ks; if (ks) add(sp, ks, `Subsidised travel (${subs}) — ${x.name}, ${ks} km${x.pct ? ` (${x.why})` : ''}`, crR4(Math.max(0, (+(crRole('travel') || {}).price || 0) - (+sp.price || 0)) * mult)); /* v2.51: the travel rate less the subsidy (e.g. $1.365 − $0.85) for the first 200 km */ if (x.km > ks) add(crRole('travel'), x.km - ks, `Travel — ${x.name}, ${x.km - ks} km over the ${sp.cap || 200} km subsidy`, crR4((+crRole('travel').price || 0) * mult)); }
     else add(crRole('travel'), x.km, `Travel — ${x.name}, ${x.km} km return${x.pct ? ` (${x.why})` : ''}`, crR4((+(crRole('travel') || {}).price || 0) * mult));
     const fu = crRole('fuel'); if (fu) add(fu, x.km, `Fuel surcharge — ${x.name}, ${x.km} km${x.pct ? ` (${x.pct}% off)` : ''}`, crR4((+fu.price || 0) * mult)); });
   // certificates, items, lab tests

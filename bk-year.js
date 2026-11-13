@@ -102,7 +102,7 @@ function bkBizBulk(b) { // the business page: which bulk lists this client is on
   const bs = Bk.bsched(b.id); const bu = bs.bulk || {}; const rv = bs.reviews || {}; const cattle = bkCattleClient(b);
   const words = Object.entries(BK_BULK_KEYS).map(([k, l]) => { const v = bu[k]; return v === 'early' ? `${l}: early` : v === 'late' ? `${l}: late` : v === 'both' ? `${l}: early and late` : v === 'spring' ? `${l}: spring calvers` : v === 'other' ? `${l}: off-season` : v === 'no' ? `${l}: doesn't do it` : cattle ? `${l}: not sorted yet` : ''; }).filter(Boolean);
   const rvs = BK_REVIEWS.filter(([k]) => (rv[k] || {}).on).map(([k, l, m]) => `${l}${rv[k].last ? ' — last ' + bkDate(rv[k].last, { day: 'numeric', month: 'short', year: 'numeric' }) : ''}`);
-  return `<div class="kv bk-tap" data-act="bkb-edit" data-bid="${b.id}"><div class="k">Bulk lists</div><div class="v">${words.length ? h(words.join(' · ')) : 'Not on any'}${rvs.length ? `<br><span class="hint">${h(rvs.join(' · '))}</span>` : ''}</div></div>`;
+  return `<div class="kv bk-tap" data-act="bkb-edit" data-bid="${b.id}"><div class="k">Bulk lists</div><div class="v">${words.length ? words.map(h).join('<br>') : 'Not on any'}${rvs.length ? `<div class="bk-spnote">${rvs.map(h).join('<br>')}</div>` : ''}</div></div>`;
 }
 window.bkBizBulk = bkBizBulk;
 function bkBulkEdit(bid) {

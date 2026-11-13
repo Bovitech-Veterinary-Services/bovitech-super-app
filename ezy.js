@@ -80,8 +80,12 @@ function ezPlan(Z) {
     let person = null; if (!isBiz && pn) person = people.find((c) => ezNorm(fullName(c)) === ezNorm(pn) && (phones.some((p) => [...(c.mobiles || []), ...(c.landlines || [])].some((q) => ezDig(q.value) === ezDig(p.v))) || emails.some((p) => (c.emails || []).some((q) => (q.value || '').toLowerCase() === p.v.toLowerCase())))) || null;
     if (person && !best) { const pb = bizOf(person)[0]; if (pb) best = { b: pb, o: { n: 80, why: new Set(['same person, phone or email']) } }; }
     const sure = best && best.o.n >= 60 && !(best.o.n < 100 && [...best.o.why].every((w) => w === 'same name') && !active && false);
+    /* v2.51: a person (not a business) tied to a business only through a person there — they're a contact there, or share a phone or email with someone there — is often an employee
+       with their own stock, so it's never matched for sure: it goes on the "check this match" job instead of silently going on the employer's business */
+    const personOnly = !isBiz && best && [...best.o.why].every((w) => / is a contact there$/.test(w) || w === 'same phone number' || w === 'same email' || w === 'same person, phone or email') && ezNorm(best.b.name) !== ezNorm(pn) && !ezTok(best.b.name).has([...ptk].pop() || '\u0000');
+    const sure2 = sure && !personOnly;
     P.clients.push({ e, id, name, pn, first, last, isBiz, active, sup, cust, phones, emails, animals, notes: ezNoteOk(ezTxt(e['Contact Notes'])), important: ezYes(e['Contact Notes Important']),
-      match: best ? { b: best.b, n: best.o.n, why: [...best.o.why].join(', '), sure } : null, person });
+      match: best ? { b: best.b, n: best.o.n, why: [...best.o.why].join(', ') + (personOnly ? ' — only through a person there, so check it' : ''), sure: sure2 } : null, person });
   });
   // the price list, bundles and dispensing fees
   const live = Z.products.filter((p) => ezYes(p['Product Is Active']) && !/billing trigger|invoice message/i.test(p['Product Name']) && ezNum(p['Product Price']) < 99999);

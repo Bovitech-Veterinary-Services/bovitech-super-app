@@ -505,6 +505,7 @@ function bkRuleRow(r, i, grp) {
 function bkBzHtml() {
   const x = BZR; const unders = Bk.cfg('bookunder');
   return `<label class="bk-radio" style="margin:4px 0 10px;display:flex"><input type="checkbox" id="bz-lab" ${x.labour ? 'checked' : ''}> Always needs additional labour for non-emergency appointments (you're reminded every time they're booked)</label>
+    <label class="bk-radio" style="margin:4px 0 10px;display:flex"><input type="checkbox" id="bz-po" ${x._po ? 'checked' : ''}> Always needs a PO number for orders (an invoice can't be approved without one)</label>
     <div class="f"><label for="bz-under">Who to book under</label><select id="bz-under"><option value="">${unders.length ? 'No rule — whoever suits' : 'No choices set up yet (Settings → Scheduling)'}</option>${unders.map((u) => `<option value="${u.id}" ${x.under === u.id ? 'selected' : ''}>${h(u.name)}</option>`).join('')}</select><div class="hint">Change these choices in Settings → Scheduling → Who to book under.</div></div>
     <div class="f"><label>Absolute rules (must)</label><div class="hint" style="margin-bottom:4px">For example "cannot book Mondays". Booking against one asks permission first, and suggested times keep to them.</div>${(x.must || []).map((r, i) => bkRuleRow(r, i, 'must')).join('')}<button type="button" class="btn small" data-act="bz-add" data-g="must">➕ Absolute rule</button></div>
     <div class="f"><label>Preferred rules</label><div class="hint" style="margin-bottom:4px">For example "prefers afternoons". Booking against one gives a warning, and suggested times try to keep to them.</div>${(x.prefer || []).map((r, i) => bkRuleRow(r, i, 'prefer')).join('')}<button type="button" class="btn small" data-act="bz-add" data-g="prefer">➕ Preferred rule</button></div>
@@ -515,7 +516,7 @@ function bkBzHtml() {
     <div class="f"><label for="bz-note">Booking note</label><input id="bz-note" value="${h(x.note || '')}"><div class="hint">Shown on the business page, for example who usually helps in the yards.</div></div>`;
 }
 function bkBzRead() { const x = BZR; const g = (id) => document.getElementById(id); if (!g('bz-lab')) return;
-  x.labour = g('bz-lab').checked; x.under = g('bz-under').value || null; if (document.querySelector('[data-bzsms]')) x.smsTo = [...document.querySelectorAll('[data-bzsms]:checked')].map((el) => el.dataset.bzsms); x.note = g('bz-note').value.trim(); x._aiq = (g('bz-aiq') || {}).value || '';
+  x.labour = g('bz-lab').checked; if (g('bz-po')) x._po = g('bz-po').checked; x.under = g('bz-under').value || null; if (document.querySelector('[data-bzsms]')) x.smsTo = [...document.querySelectorAll('[data-bzsms]:checked')].map((el) => el.dataset.bzsms); x.note = g('bz-note').value.trim(); x._aiq = (g('bz-aiq') || {}).value || '';
   document.querySelectorAll('[data-bzrule]').forEach((el) => { const [grp, i] = el.dataset.bzrule.split(':'); const r = x[grp][+i]; if (!r) return; const k = el.querySelector('[data-bzkind]').value;
     r.kind = k; r.text = el.querySelector('[data-bztext]').value.trim();
     if (el.querySelector('[data-bzday]')) r.days = [...el.querySelectorAll('[data-bzday]:checked')].map((c) => +c.dataset.bzday);
@@ -530,10 +531,11 @@ function bkBzAiText(b, req) {
     'Any rule can also have "text" saying why. Use quarter hours for times.'].join('\n');
 }
 function bkBschedOpen(bid) {
-  const b = IDX.biz.get(bid); if (!b || !Bk.need('book')) return; BZR = bkClone(Bk.bsched(bid)); BZR._bid = bid; BZR.must = BZR.must || []; BZR.prefer = BZR.prefer || [];
+  const b = IDX.biz.get(bid); if (!b || !Bk.need('book')) return; BZR = bkClone(Bk.bsched(bid)); BZR._bid = bid; BZR._po = !!b.poReq; BZR.must = BZR.must || []; BZR.prefer = BZR.prefer || [];
   openSheet('Scheduling — ' + b.name, `<div id="bz-body">${bkBzHtml()}</div>`, async () => {
     bkBzRead(); const x = BZR; if (document.querySelector('[data-bzsms]') && !(x.smsTo || []).length) { toast('Tick at least one mobile for the texts'); return false; } const id = 'bsched:' + bid; let r = Bk.get(id); if (!r) { r = { id, cfg: 'bsched', bid, name: b.name }; D.bkcfg.push(r); }
     const clean = (l) => l.filter((y) => (y.kind === 'note' ? y.text : ['days', 'notdays'].includes(y.kind) ? (y.days || []).length : ['months', 'notmonths'].includes(y.kind) ? (y.months || []).length : y.kind === 'time' ? y.from && y.to && y.to > y.from : false)).map((y) => { const o = { kind: y.kind }; if (y.text) o.text = y.text; if (['days', 'notdays'].includes(y.kind)) o.days = y.days; if (['months', 'notmonths'].includes(y.kind)) o.months = y.months; if (y.kind === 'time') { o.from = y.from; o.to = y.to; } return o; });
+    if (!!b.poReq !== !!x._po) { if (!(await ask(x._po ? `Always ask for a purchase order (PO) number on ${h(b.name)}'s invoices?<br><span class="hint">An invoice can't be approved without one (or you choose "Approve without one").</span>` : `Stop asking for a PO number for ${h(b.name)}?`, x._po ? 'Yes — always ask' : 'Yes — stop asking'))) return false; b.poReq = !!x._po; touch(b); }
     r.labour = x.labour; r.note = x.note; r.under = x.under || null; r.smsTo = (x.smsTo || []).filter((cid) => (IDX.bizContacts.get(bid) || []).some((c) => c.id === cid)); if (!r.smsTo.length) delete r.smsTo; r.must = clean(x.must); r.prefer = clean(x.prefer); delete r.gone; touch(r); BZR = null; save(); Sync.soon(); setTimeout(renderAll, 0); return true; });
   const sh = document.querySelector('#sheet .form');
   sh.addEventListener('change', (e) => { if (e.target.matches('[data-bzkind]')) { bkBzRead(); bkBzRefresh(); } });
