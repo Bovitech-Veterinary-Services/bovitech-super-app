@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en-AU">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<meta name="referrer" content="no-referrer">
+<title>Bovitech Veterinary Services</title>
+<style>
+  :root { --bg: #eef1ec; --card: #ffffff; --ink: #1d2a22; --muted: #5b6b60; --acc: #1f6f43; }
+  @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --bg: #1b211d; --card: #ffffff; --ink: #e8eee9; --muted: #a8b5ac; --acc: #4fb37c; } }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: Arial, Helvetica, sans-serif; }
+  header { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; justify-content: space-between; padding: 12px 16px; max-width: 900px; margin: 0 auto; }
+  header b { font-size: 17px; }
+  button { font: inherit; border: 0; border-radius: 8px; background: var(--acc); color: #fff; padding: 9px 14px; cursor: pointer; }
+  main { max-width: 900px; margin: 0 auto 24px; padding: 0 16px; }
+  iframe { display: block; width: 100%; min-height: 70vh; border: 0; border-radius: 10px; background: #fff; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  .msg { background: var(--card); color: #1d2a22; border-radius: 10px; padding: 18px; line-height: 1.5; }
+  .muted { color: var(--muted); font-size: 13px; margin-top: 10px; }
+</style>
+</head>
+<body>
+<header><b>Bovitech Veterinary Services</b><button type="button" id="pr" hidden>🖨 Print or save as PDF</button></header>
+<main><div class="msg" id="msg">Loading…</div><iframe id="doc" title="Your document" hidden sandbox="allow-same-origin allow-modals"></iframe>
+<div class="muted">Questions? Call us on 0499 489 919 or email office@bovitech.com.au.</div></main>
+<script src="config.js"></script>
+<script>
+(async function () {
+  const msg = document.getElementById('msg'), fr = document.getElementById('doc'), pr = document.getElementById('pr');
+  const t = new URLSearchParams(location.search).get('t') || '';
+  const c = window.BVT_CONFIG || {};
+  if (!/^[A-Za-z0-9_-]{20,80}$/.test(t)) { msg.textContent = "This link isn't right — please check it, or ask us to send it again."; return; }
+  try {
+    const r = await fetch(c.supabaseUrl + '/functions/v1/doc?t=' + encodeURIComponent(t), { headers: { apikey: c.supabaseKey } });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok || !j.html) { msg.textContent = j.error || "This document couldn't be opened just now — please try again later."; return; }
+    if (j.title) document.title = j.title + ' — Bovitech Veterinary Services';
+    fr.srcdoc = j.html; fr.hidden = false; msg.hidden = true; pr.hidden = false;
+    fr.addEventListener('load', () => { try { fr.style.height = (fr.contentDocument.documentElement.scrollHeight + 20) + 'px'; } catch (e) { } });
+    pr.addEventListener('click', () => { try { fr.contentWindow.focus(); fr.contentWindow.print(); } catch (e) { window.print(); } });
+  } catch (e) { msg.textContent = "This document couldn't be opened just now — please check your internet connection and try again."; }
+})();
+</script>
+</body>
+</html>

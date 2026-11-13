@@ -3,6 +3,7 @@
 // Secrets (Edge Functions → Secrets): RESEND_API_KEY (already there for backups) and
 //   MAIL_FROM = Bovitech Veterinary Services <office@bovitech.com.au>  — once bovitech.com.au is verified in Resend.
 // "Verify JWT" stays ON for this function.
+// v2.46: returns Resend's id for each email, so "opened" notices (a hint only) can be matched to it.
 const SB_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const RESEND = Deno.env.get("RESEND_API_KEY") ?? "";
 const FROM = Deno.env.get("MAIL_FROM") ?? "";
@@ -29,6 +30,7 @@ Deno.serve(async (req) => {
     const r = await fetch("https://api.resend.com/emails", { method: "POST", headers: { Authorization: "Bearer " + RESEND, "Content-Type": "application/json" },
       body: JSON.stringify({ from: FROM, to: toL, cc: ccL.length ? ccL : undefined, reply_to: REPLY, subject: String(subject ?? "").slice(0, 200), html: html ? String(html).slice(0, 200000) : undefined, text: text ? String(text).slice(0, 100000) : undefined, attachments: att.length ? att : undefined, headers }) });
     if (!r.ok) return json({ error: "Email failed: " + r.status + " " + (await r.text()).slice(0, 300) }, 502);
-    return json({ ok: true });
+    let id = ""; try { id = String(((await r.json()) as { id?: string }).id ?? ""); } catch (_) { /* no id */ }
+    return json({ ok: true, id }); // the id lets the app match "opened" notices from Resend (the "doc" function)
   } catch (e) { return json({ error: String((e as Error).message ?? e) }, 500); }
 });
