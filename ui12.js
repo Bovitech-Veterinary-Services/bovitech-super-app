@@ -114,7 +114,7 @@ function u12EzLoad() { if (U12.ez || U12.ezBusy || typeof rpc !== 'function' || 
     if (rows.length >= 3000 && chunk.length > 1) { const m = Math.ceil(chunk.length / 2); await get(chunk.slice(0, m)); await get(chunk.slice(m)); return; } rows.forEach((r) => { if (!M.has(r.contact_id)) M.set(r.contact_id, []); M.get(r.contact_id).push(r); }); };
   (async () => { try { for (let i = 0; i < ids.length; i += 40) await get(ids.slice(i, i + 40)); U12.ez = M; if (typeof HERD_PL !== 'undefined') HERD_PL.L = null; if (typeof JOBS_CACHE !== 'undefined') JOBS_CACHE = null; if (S.tab === 'jobs' && !SHEET) renderAll(); }
     catch (e) { console.warn('herd: ezyVet invoices', e); } finally { U12.ezBusy = false; } })(); }
-if (typeof herdYears === 'function') herdYears = function (bid, pval, one) { const y0 = +bkToday().slice(0, 4) - 3; const Y = {};
+if (typeof herdYears === 'function') herdYears = function (bid, pval, one) { const y0 = +bkToday().slice(0, 4) - 8; const Y = {};
   const put = (y, k, v, src) => { if (!v || y < y0) return; Y[y] = Y[y] || { f: 0, b: 0, src: {} }; const cur = Y[y].src[k]; const rn = U12_RANK[src] || 0, rc = cur ? U12_RANK[cur] || 0 : -1; if (rn > rc || (rn === rc && v > Y[y][k])) { Y[y][k] = v; Y[y].src[k] = src; } };
   const b = IDX.biz.get(bid); const pe = b && (b.patientIds || []).find((q) => String(q.value) === String(pval)); const ezAnimals = new Set(pe ? [pe.ezyId, ...(pe.ezyIds || [])].filter(Boolean).map(String) : []);
   /* 1. this app's invoices (from records) */ const inv = {};
@@ -166,6 +166,7 @@ if (typeof pidMerge === 'function') pidMerge = (function (orig) { return functio
 
 /* ---------- admin check jobs ---------- */
 const U12_CHECKS = [
+  ['chk250-herd2025', 'Check: 🐄 herd numbers use 2025', 'Jobs → "Herd numbers from preg / bull testing": the table marks the year used (← used) — 2025, or the most recent year before it when there\'s no 2025 data. Tap ✓ Make this change, then open that herd: a blue ℹ️ note says the numbers were filled in automatically. Tap ✏️, change the number of female breeders or bulls and save — the note goes. (Saving without changing the numbers keeps it.)', 'jobs'],
   ['chk250-labref', 'Check: 🧪 lab request numbers never double up', 'Records → Lab requests: every request has its own number (BV-DR…). If two devices ever give out the same number at the same time, the newer request gets the next free number and shows "(was BV-DR…)".', 'r:labreq'],
   ['chk250-formerly', 'Check: 🔎 old business names are found', 'Search a business by an old name from a joined business (⇄ Merge → Two businesses joining) with the search set to names only — it still finds the business.', 'biz'],
   ['chk249-open', 'Check: ⚡ the app opens quickly', 'Close the app completely and open it again (try somewhere with poor reception) — it should open straight away, without waiting for the internet.', 'u12:home'],
