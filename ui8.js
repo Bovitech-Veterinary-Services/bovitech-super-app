@@ -32,10 +32,10 @@ function u8LiveCard() { const v = u8LiveDay(); const live = u8Live() && v && +D.
     <div class="cr-row" style="flex-wrap:wrap;gap:6px"><input type="date" id="u8-live" value="${v || ''}" aria-label="Go-live date"><button type="button" class="btn small primary" data-act="u8-livesave">Save</button>${v ? '<button type="button" class="btn small" data-act="u8-liveclear">🗑️ Clear the date</button>' : ''}</div>
     <div class="hint" style="margin-top:4px">${live ? `✓ Live since ${bkDate(v, { day: 'numeric', month: 'long', year: 'numeric' })}.` : v ? `Goes live on ${bkDate(v, { day: 'numeric', month: 'long', year: 'numeric' })}.` : 'Not set — the app is not live yet.'}</div></div>`; }
 document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act=u8-livesave],[data-act=u8-liveclear]'); if (!el) return; e.preventDefault(); e.stopPropagation();
-  if (el.dataset.act === 'u8-liveclear') { if (!(await ask('Clear the go-live date? The app goes back to "not live yet".', 'Yes — clear it', true))) return; delete D.settings.liveAt; touch(D.settings); save(); if (window.Sync) Sync.soon(); renderAll(); toast('Go-live date cleared'); return; }
+  if (el.dataset.act === 'u8-liveclear') { if (!(await ask('Clear the go-live date? The app goes back to "not live yet".', 'Yes — clear it', true))) return; delete D.settings.liveAt; touch(D.settings); save(); if (window.SupaSync) SupaSync.soon(); renderAll(); toast('Go-live date cleared'); return; }
   const v = (document.getElementById('u8-live') || {}).value; if (!v) { toast('Choose the go-live date first'); return; }
   if (!(await ask(`Go live on ${bkDate(v, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}?<br><span class="hint">From that day appointments make records and invoices, Scheduling jobs switch on and the missing record / invoice checks start. Texts and emails to clients stay as set in "Texts and emails before go-live".</span>`, 'Yes — save the date'))) return;
-  D.settings.liveAt = new Date(v + 'T00:00').getTime(); touch(D.settings); save(); if (window.Sync) Sync.soon(); renderAll(); toast('Go-live date saved'); }, true);
+  D.settings.liveAt = new Date(v + 'T00:00').getTime(); touch(D.settings); save(); if (window.SupaSync) SupaSync.soon(); renderAll(); toast('Go-live date saved'); }, true);
 
 /* ---------- case owner ---------- */
 function u8Owner(r) { if (r.owner && crIsVet(r.owner)) return r.owner; const b = r.bkId && Bk.list('bookings').find((x) => x.id === r.bkId); const bv = b ? (b.staff || []).filter(crIsVet) : []; return bv[0] || u8Vets(r)[0] || null; }
@@ -226,7 +226,7 @@ function u8InvSetCard() { const s = D.settings.u8inv || {}; return `<div class="
   <label class="bk-radio" style="display:flex"><input type="checkbox" data-u8inv="openOn" ${s.openOn !== false ? 'checked' : ''}> Start each invoice with an opening line from the record</label>
   <div class="f"><label for="u8s-open">Opening line — {farms}, {date} and {times} are filled in from the record</label><input id="u8s-open" data-u8inv="open" value="${h(s.open || 'Attended {farms} on {date}, {times}')}"></div>
   <div class="f"><label for="u8s-foot">Message at the bottom of every invoice</label><textarea id="u8s-foot" data-u8inv="foot" rows="2">${h(s.foot || '')}</textarea></div></div>`; }
-document.addEventListener('change', (e) => { const t = e.target; const k = t.dataset && t.dataset.u8inv; if (!k) return; e.stopImmediatePropagation(); D.settings.u8inv = { ...(D.settings.u8inv || {}), [k]: t.type === 'checkbox' ? t.checked : t.value }; touch(D.settings); save(); if (window.Sync) Sync.soon(); toast('Saved'); }, true);
+document.addEventListener('change', (e) => { const t = e.target; const k = t.dataset && t.dataset.u8inv; if (!k) return; e.stopImmediatePropagation(); D.settings.u8inv = { ...(D.settings.u8inv || {}), [k]: t.type === 'checkbox' ? t.checked : t.value }; touch(D.settings); save(); if (window.SupaSync) SupaSync.soon(); toast('Saved'); }, true);
 if (typeof crSettingsHtml === 'function') crSettingsHtml = (function (orig) { return function () { let html = orig.apply(this, arguments);
   html = html.replace('Days to pay (then it shows as overdue)', 'Days to pay — counted from the day the invoice is sent (then it shows as overdue)');
   const w = '<div class="cr-setwrap" data-tab="records">'; if (html.includes(w)) html = html.replace(w, w + u8LiveCard()); else html = u8LiveCard() + html;
@@ -255,7 +255,7 @@ document.addEventListener('click', async (e) => { const el = e.target.closest &&
   days.forEach((d) => { const x = U8.md[d]; const s = x.s || src.start; const mins = x.e && s ? bkMin(x.e) - bkMin(s) : +src.mins || 60; const c = bkClone(src);
     ['id', 'proposal', 'series', 'cancelReason', 'cancelledAt', 'fromRec', 'sms', 'createdAt', '_u', '_dev', '_rev', 'rem', 'reminded'].forEach((k) => delete c[k]);
     Object.assign(c, { id: uid('bk'), date: d, start: s, mins: mins > 0 ? mins : +src.mins || 60, status: ['done', 'invoiced'].includes(src.status) ? 'confirmed' : src.status || 'confirmed', sms: { send: false, noReminder: true }, mdGroup: grp, createdAt: Date.now(), by: crMe ? crMe() : null }); touch(c); all.push(c); });
-  save(); if (window.Sync) Sync.soon(); closeSheet(); renderAll(); toast(`📆 ${days.length} more day${days.length === 1 ? '' : 's'} added — ${n} days in all`); }, true);
+  save(); if (window.SupaSync) SupaSync.soon(); closeSheet(); renderAll(); toast(`📆 ${days.length} more day${days.length === 1 ? '' : 's'} added — ${n} days in all`); }, true);
 
 /* ---------- client appointments missing a record or an invoice ---------- */
 function u8Missing() { if (!u8Live() || typeof Bk === 'undefined' || !Bk.list || typeof crList !== 'function') return []; const since = u8LiveDay(); const today = bkToday(); const out = [];
@@ -302,7 +302,7 @@ async function u8YardCalc(o) { const b = IDX.biz.get(o.bid); if (!b) return; con
   if (!(await ask(`Save <b>${res.hph} an hour</b> for ${h(sv.name || 'this procedure')} at ${h(spot.name)}?<br><span class="hint">${h(res.text)}</span>`, 'Yes — save the speed'))) return;
   giSetRate(fid, yid || null, x.svc, res.hph); b.yardCalcs = [...(b.yardCalcs || []), { at: Date.now(), by: crMe ? crMe() : null, fid, yid: yid || '', svc: x.svc, mins: +x.mins, setup: +x.setup, other: x.only ? 0 : +x.other || 0, head: +x.head, raw: Math.round(res.raw * 10) / 10, hph: res.hph }]; touch(b);
   const fs = Bk.fsched(fid); const iid = fs.ratesPerYard && yid ? `fz-r-${yid}-${x.svc}` : `fz-r-all-${x.svc}`; const inp = document.getElementById(iid); if (inp) { inp.value = res.hph; inp.disabled = false; const tb = document.querySelector(`[data-fztbc="${iid}"]`); if (tb) tb.checked = false; }
-  save(); if (window.Sync) Sync.soon(); renderAll(); toast(`🧮 ${res.hph} an hour saved`); }
+  save(); if (window.SupaSync) SupaSync.soon(); renderAll(); toast(`🧮 ${res.hph} an hour saved`); }
 function u8YcOut() { const y = U8.yc || {}; const r = u8YcCalc(y); return r.err ? r.err : r.text; }
 const u8YcRead = (t) => { const k = t.dataset && t.dataset.u8yc; if (!k || !U8.yc) return; U8.yc[k] = k === 'only' ? t.value === 'yes' : t.value; if (k === 'only') { const f = document.getElementById('u8yc-otherf'); if (f) f.hidden = t.value === 'yes'; } const out = document.getElementById('u8yc-out'); if (out) out.textContent = u8YcOut(); };
 document.addEventListener('input', (e) => u8YcRead(e.target), true); document.addEventListener('change', (e) => u8YcRead(e.target), true);
