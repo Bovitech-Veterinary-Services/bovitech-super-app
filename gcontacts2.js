@@ -34,9 +34,9 @@
   /* what's sent: farm and postal addresses can be left out */
   G.person = (function (orig) { return function (c) { const p = orig.call(this, c); const g = gset(); p.addresses = (p.addresses || []).filter((a) => (a.type === 'Postal' ? g.postal !== false : g.farmAddr !== false)); return p; }; })(G.person);
   G.maybeRun = function () { if (this.st.on && !this.running && navigator.onLine) this.run(); };
-  G.push = async function (c) {
+  G.push = async function (c, photoOnly) { /* photoOnly: just made by the batch below — only the caller photo is left to send */
     const body = this.person(c); let gid = c.gid && c.gid.startsWith('people/') ? c.gid : null;
-    for (let tries = 0; gid && tries < 2; tries++) {
+    for (let tries = 0; gid && !photoOnly && tries < 2; tries++) {
       const g = await this.api(`${PEOPLE}${gid}?personFields=metadata`); if (g.status === 404) { gid = null; break; } if (!g.ok) throw new Error(`Google said ${g.status} reading the contact`);
       const etag = (await g.json()).etag; const r = await this.api(`${PEOPLE}${gid}:updateContact?updatePersonFields=names,phoneNumbers,emailAddresses,organizations,addresses`, { method: 'PATCH', body: JSON.stringify({ ...body, etag }) });
       if (r.ok) break; if (r.status === 404) { gid = null; break; } const t = await r.text(); if (tries === 0 && /etag|failedPrecondition|FAILED_PRECONDITION/i.test(t)) continue; // changed in Google meanwhile — read it again
@@ -57,12 +57,22 @@
       const want = this.wanted(); const live = new Set(want.map((c) => c.id));
       todo = want.filter((c) => { try { return this.st.done[c.id] !== this.hash(c); } catch (e) { fails++; why = why || `${fullName(c) || c.id}: ${e.message}`; return false; } });
       try { if (navigator.wakeLock && todo.length > 20) wake = await navigator.wakeLock.request('screen'); } catch (e) { }
-      for (const c of todo) {
-        if (!this.st.on || !navigator.onLine) break;
-        try { await this.push(c); this.st.done[c.id] = this.hash(c); if (this.st.errs) delete this.st.errs[c.id]; if (c.gid) this.st.gids[c.id] = c.gid; if (c._biz && c.gid && c._biz.gid !== c.gid) { c._biz.gid = c.gid; touch(c._biz); save(); } n++; }
-        catch (e) { if (e.signin) { why = this.st.srvErr || 'Google needs connecting'; break; } if (e.rate) { await sleep(30000); continue; } fails++; this.st.errs = this.st.errs || {}; this.st.errs[c.id] = e.message; why = why || `${fullName(c) || 'a contact'}: ${e.message}`; console.warn('Google Contacts', fullName(c), e); }
-        if (n % 10 === 0) msg(`Updating… ${n} of ${todo.length}`);
-        await sleep(900); // stay under Google's per-minute limit
+      /* 1. everyone not in Google yet goes in batches of 100 (one request each) — names and numbers arrive quickly; photos follow */
+      const made = new Set(); const fresh = todo.filter((c) => !(c.gid && c.gid.startsWith('people/')));
+      for (let i = 0; i < fresh.length && this.st.on && navigator.onLine; ) { const chunk = fresh.slice(i, i + 100);
+        try { const r = await this.api(`${PEOPLE}people:batchCreateContacts`, { method: 'POST', body: JSON.stringify({ contacts: chunk.map((c) => ({ contactPerson: this.person(c) })), readMask: 'metadata' }) });
+          if (!r.ok) throw new Error(`Google said ${r.status} adding: ${(await r.text()).slice(0, 120)}`); const out = ((await r.json()).createdPeople || []);
+          chunk.forEach((c, k) => { const rn = out[k] && out[k].person && out[k].person.resourceName; if (!rn) return; c.gid = rn; this.st.gids[c.id] = rn; made.add(c.id); if (c._biz) { if (c._biz.gid !== rn) { c._biz.gid = rn; touch(c._biz); } } else touch(c); }); save();
+          i += 100; msg(`Adding to Google… ${Math.min(i, fresh.length)} of ${fresh.length} added (names and numbers) — caller photos next`); await sleep(2000); }
+        catch (e) { if (e.signin) { why = this.st.srvErr || 'Google needs connecting'; break; } if (e.rate) { msg(`Google's limit reached — waiting a minute, then carrying on (${made.size} of ${fresh.length} added)`); await sleep(60000); continue; } why = why || e.message; console.warn('Google Contacts batch', e); break; } }
+      /* 2. updates and caller photos, one at a time — on Google's limit it waits a minute and tries the SAME contact again (nobody is skipped) */
+      let waits = 0;
+      for (let i = 0; i < todo.length; i++) { const c = todo[i];
+        if (!this.st.on || !navigator.onLine || why === (this.st.srvErr || 'Google needs connecting')) break;
+        try { await this.push(c, made.has(c.id)); this.st.done[c.id] = this.hash(c); if (this.st.errs) delete this.st.errs[c.id]; if (c.gid) this.st.gids[c.id] = c.gid; if (c._biz && c.gid && c._biz.gid !== c.gid) { c._biz.gid = c.gid; touch(c._biz); save(); } n++; waits = 0; }
+        catch (e) { if (e.signin) { why = this.st.srvErr || 'Google needs connecting'; break; } if (e.rate) { if (++waits > 15) { why = "Google's limit kept being reached — it carries on next time"; break; } msg(`Google's limit reached — waiting a minute, then carrying on (${n} of ${todo.length} done)`); await sleep(60000); i--; continue; } fails++; this.st.errs = this.st.errs || {}; this.st.errs[c.id] = e.message; why = why || `${fullName(c) || 'a contact'}: ${e.message}`; console.warn('Google Contacts', fullName(c), e); }
+        msg(`Updating… ${n} of ${todo.length} done${made.size ? ` (${made.size} already added — sending their caller photos)` : ''}${fails ? ` · ${fails} couldn't be sent` : ''}`);
+        await sleep(1100); // stay under Google's per-minute limit
       }
       /* deleted or merged in the app → out of Google Contacts too */
       if (gset().removeGone !== false && this.st.on && navigator.onLine) { const inUse = new Set(want.map((c) => c.gid).filter(Boolean));
