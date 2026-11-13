@@ -166,6 +166,8 @@ if (typeof pidMerge === 'function') pidMerge = (function (orig) { return functio
 
 /* ---------- admin check jobs ---------- */
 const U12_CHECKS = [
+  ['chk250-labref', 'Check: 🧪 lab request numbers never double up', 'Records → Lab requests: every request has its own number (BV-DR…). If two devices ever give out the same number at the same time, the newer request gets the next free number and shows "(was BV-DR…)".', 'r:labreq'],
+  ['chk250-formerly', 'Check: 🔎 old business names are found', 'Search a business by an old name from a joined business (⇄ Merge → Two businesses joining) with the search set to names only — it still finds the business.', 'biz'],
   ['chk249-open', 'Check: ⚡ the app opens quickly', 'Close the app completely and open it again (try somewhere with poor reception) — it should open straight away, without waiting for the internet.', 'u12:home'],
   ['chk249-noreload', 'Check: no surprise refresh', 'Open a business or a record and leave it there for a minute after opening the app — the page should stay put (it used to refresh itself a few seconds after opening).', 'u12:home'],
   ['chk249-update', 'Check: ⟳ updating', 'Next time a new version comes out, ⟳ at the top lights up with "new version ready". Tap it — the app updates and comes back to the page you were on. If it says the version is "still reaching the server", wait a few minutes.', 'u12:version'],
@@ -176,5 +178,5 @@ const U12_CHECKS = [
 if (typeof u8Go === 'function') u8Go = (function (orig) { return function (k) { if (typeof k === 'string' && k.startsWith('u12:')) { if (typeof SHEET !== 'undefined' && SHEET) closeSheet(); const w = k.slice(4);
     if (w === 'start' || w === 'version') { S.tab = 'settings'; S.setSub = 'general'; S.setQ = ''; S.sel = null; renderAll(); setTimeout(() => { const t = [...document.querySelectorAll('details.setsec')].find((d) => (w === 'start' ? /Start-up defaults/ : /App version/).test(d.textContent || '')); if (t) { t.open = true; t.scrollIntoView({ block: 'start' }); } }, 120); return; }
     u12Go(PREF.tab || 'contacts'); return; }
-  if (k === 'pat' || k === 'jobs' || k === 'biz') { if (typeof SHEET !== 'undefined' && SHEET) closeSheet(); u12Go(k); return; } return orig.apply(this, arguments); }; })(u8Go);
+  if (k === 'pat' || k === 'jobs' || k === 'biz' || k === 'r:labreq') { if (typeof SHEET !== 'undefined' && SHEET) closeSheet(); u12Go(k); return; } return orig.apply(this, arguments); }; })(u8Go);
 if (typeof SETUP !== 'undefined' && typeof U8_TRY !== 'undefined') U12_CHECKS.forEach(([id, t, tryIt, go]) => { U8_TRY[id] = tryIt; U8_TO[id] = go; if (SETUP.some((x) => x.id === id)) return; SETUP.push({ id, t, steps: [tryIt, `<button type="button" class="btn small" data-act="u8-go" data-go="${go}">➡️ Take me there</button>`, 'If it does what you want, tick <b>✓ Done</b>. If not, tell Claude what\'s wrong.'] }); });
