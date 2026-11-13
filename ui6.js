@@ -61,10 +61,9 @@ document.addEventListener('click', (e) => { const el = e.target.closest && e.tar
   window.PT_ADDED = (b, ent) => { const r2 = crGet('crrec', CR.id); if (!r2 || r2.bid !== b.id) return; reindex && typeof reindex === 'function' && reindex(); if (crPatMode(r2) === 'multi') { r2.patients = [...(r2.patients || []), u6Herd(ent)]; } else u6SetOne(r2, ent.value); setTimeout(() => u6Fin(r2), 30); };
   const b = document.createElement('button'); b.dataset.act = 'pt-add'; b.dataset.bid = r.bid; b.hidden = true; document.body.appendChild(b); b.click(); b.remove(); }, true);
 /* the next patient ID: carries on the numbering already used (the most common style, highest number + 1) */
-function ptNextId() { const vals = []; (D.businesses || []).forEach((b) => (b.patientIds || []).forEach((p) => { if (p && p.value) vals.push(String(p.value).trim()); }));
-  const by = {}; vals.forEach((v) => { if (/^BVS_/i.test(v)) return; const m = v.match(/^(.*?)(\d+)$/); if (!m) return; const k = m[1]; const o = (by[k] = by[k] || { n: 0, max: 0, w: 0 }); o.n++; const num = +m[2]; if (num >= o.max) { o.max = num; o.w = Math.max(o.w, m[2].length); } });
-  const best = Object.entries(by).sort((a, b) => b[1].n - a[1].n || b[1].max - a[1].max)[0]; if (!best) return '1'; const [pre, o] = best; let next = o.max + 1; const used = new Set(vals.map((v) => v.toLowerCase()));
-  let id = pre + String(next).padStart(o.w, '0'); while (used.has(id.toLowerCase())) { next++; id = pre + String(next).padStart(o.w, '0'); } return id; }
+function ptNextId() { /* 6-digit patient IDs, carrying on from the highest 6-digit ID already used (e.g. 100484 → 100485) */ const vals = []; (D.businesses || []).forEach((b) => (b.patientIds || []).forEach((p) => { if (p && p.value) vals.push(String(p.value).trim()); }));
+  const six = vals.filter((v) => /^\d{6}$/.test(v)).map(Number); let next = six.length ? Math.max(...six) + 1 : 100001; const used = new Set(vals.map((v) => v.toLowerCase()));
+  while (used.has(String(next)) && next < 999999) next++; return String(next); }
 window.ptNextId = ptNextId;
 /* ---------- the formatting bar: always at the top of the record, under Find in record ---------- */
 if (typeof crRender === 'function') crRender = (function (orig) { return function () { const html = orig.apply(this, arguments); return (CR.page || 'recs') === 'edit' ? html.replace('<div class="ezy-top" style="top:0">', '<div class="ezy-top cr-topbar">') : html; }; })(crRender);
