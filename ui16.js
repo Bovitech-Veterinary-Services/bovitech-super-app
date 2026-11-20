@@ -1,0 +1,152 @@
+/* Bovitech Super App — 2.53.0
+   1. 🤝 Sharefarms as their own entry: the "Set up sharefarms" job for the old tick; records and bookings ask own herd or sharefarm
+   2. ⤒ ⤓ on every reorder (the shared top / bottom buttons also on the ✏️ Edit layout of records, the patient page and the appointment form)
+   3. ✏️ Edit layout per tab: business and person pages use one editor (the page itself), one tab at a time, with Tab / Shows / Opens choices;
+      records and the patient page get rename, Shows, Opens and Tab too. Every section has ▾ to collapse it (remembered on this device).
+   4. ⭐ Favourites — the ☆ itself is in app.js (pages and list rows); this file only adds its look */
+const U16 = { tmp: {}, layReset: false };
+const u16LS = (k, d) => { try { const v = JSON.parse(localStorage.getItem(k) || 'null'); return v == null ? d : v; } catch (e) { return d; } };
+const u16LSset = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (e) { } };
+
+/* ================= 3a. business / person: one ✏️ Edit layout (the page editor), per tab ================= */
+/* the older ✏️ editor (LAY) is now only for records, the patient page and the appointment form */
+if (typeof layPage === 'function') layPage = (function (orig) { return function () { const p = orig.apply(this, arguments); return p && (p.k === 'biz' || p.k === 'person') ? null : p; }; })(layPage);
+/* its order / hidden choices saved for business and person pages move into the page editor once (safe to run twice) */
+function u16LayMigrate() { try { const L = (D.settings || {}).layouts || {}; let ch = false;
+  [['biz', 'business'], ['person', 'contact']].forEach(([lk, kind]) => { const c = L[lk]; if (!c) return; const nrm = (v) => String(v || '').replace(/[^\p{L}\s]/gu, ' ').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 40);
+    const keys = layoutKeys(kind); const map = (tk) => keys.find((k) => { const n = nrm(layoutLabel(kind, k)); return n && (n === tk || n.startsWith(tk.slice(0, 14)) || tk.startsWith(n.slice(0, 14))); });
+    (c.hidden || []).forEach((tk) => { const k = map(tk); if (!k) return; const all = { ...(D.settings.layoutMode || {}) }; all[kind] = { ...(all[kind] || {}), [k]: 'hide' }; D.settings.layoutMode = all; });
+    const ord = (c.order || []).map(map).filter(Boolean); if (ord.length > 1) { const rest = keys.filter((k) => !ord.includes(k)); D.settings.layout = { ...(D.settings.layout || {}), [kind]: [...ord, ...rest] }; }
+    const nl = { ...L }; delete nl[lk]; D.settings.layouts = nl; ch = true; });
+  if (ch) { touch(D.settings); save(); if (window.Sync) Sync.soon(); } } catch (e) { console.warn('u16 layout move', e); } }
+/* "✏️ Edit layout" at the top of business and person pages */
+function u16EdTools() { const dt = document.querySelector('#detail .d-wrap'); if (!dt || !S.sel || !['business', 'contact'].includes(S.sel.kind) || S.editPage || document.querySelector('#detail #sheet')) return; if (dt.querySelector(':scope > .u16-edtools')) return;
+  const box = document.createElement('div'); box.className = 'lay-tools u16-edtools'; box.innerHTML = `<button type="button" class="btn small" data-act="edit-page" data-kind="${S.sel.kind}" title="Move, rename, hide and collapse the sections on this page — every device">✏️ Edit layout</button>`;
+  const top = dt.querySelector(':scope > .dtop'); if (top) top.after(box); else dt.prepend(box); }
+document.addEventListener('click', (e) => { const el = e.target.closest && e.target.closest('[data-act=edit-page]'); if (!el || S.admin) return; e.preventDefault(); e.stopImmediatePropagation(); toast('🔒 Editing the layout is for the admin — unlock first'); const b = document.createElement('button'); b.dataset.act = 'admin-unlock'; b.hidden = true; document.body.appendChild(b); b.click(); b.remove(); }, true);
+/* which tab a section is on — from the edit bar */
+function u16TabSel(kindOrPg, k, keyOverride) { const pg = kindOrPg === 'business' ? 'biz' : kindOrPg === 'contact' ? 'person' : kindOrPg; if (typeof u15Cfg !== 'function' || typeof U15_DEF === 'undefined' || !U15_DEF[pg]) return '';
+  if ((u15LS('bvp-u15', {}).open || {})[pg] === 'off') return ''; const key = keyOverride || (pg === 'biz' || pg === 'person' ? 'lk:' + k : k); const C = u15Cfg(pg); const cur = u15TabOf(pg, key, null);
+  return `<label>Tab <select class="u16-tabsel" data-pg="${pg}" data-key="${h(key)}" aria-label="Which tab this section is on"><option value="top" ${cur === 'top' ? 'selected' : ''}>Above the tabs (always shown)</option>${C.tabs.map((t) => `<option value="${h(t.id)}" ${cur === t.id ? 'selected' : ''}>${h(t.n)}</option>`).join('')}</select></label>`; }
+window.u16TabSel = u16TabSel;
+document.addEventListener('change', async (e) => { const el = e.target; if (!el.classList || !el.classList.contains('u16-tabsel')) return; if (!needAdmin()) { renderAll(); return; } const pg = el.dataset.pg, key = el.dataset.key, v = el.value;
+  const C = JSON.parse(JSON.stringify(u15Cfg(pg))); const tn = v === 'top' ? 'above the tabs (always shown)' : 'the "' + ((C.tabs.find((t) => t.id === v) || {}).n || v) + '" tab'; const nm = (el.closest('.edsec,.lay-sec') || {}).querySelector ? ((el.closest('.edsec,.lay-sec').querySelector('.edbar b, .lay-name') || {}).textContent || key) : key;
+  if (!(await ask(`Move "${h(nm.trim())}" to ${h(tn)}?<br><span class="hint">Applies on every device.</span>`, 'Move it'))) { renderAll(); if (typeof layApply === 'function') layApply(); return; }
+  C.map = { ...(C.map || {}), [key]: v }; u15SetCfg(pg, C); if (U15.cur[pg]) U15.cur[pg].t = v === 'top' ? U15.cur[pg].t : v; NEXT_LOG_LABEL = `${U15_PAGES[pg]}: "${nm.trim()}" moved to ${tn}`; S.skipConfirm = true; await changed(); if (typeof layApply === 'function') layApply(); });
+/* ↑ ↓ in the editor move a section among the ones on this tab */
+document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act=ep-mv]'); if (!el) return; const box = el.closest('[data-dnd^="eplayout:"]'); if (!box || !box.querySelector(':scope > .u15-off')) return;
+  e.preventDefault(); e.stopImmediatePropagation(); if (!needAdmin()) return; const K = el.dataset.kind, k = el.dataset.k, d = +el.dataset.d;
+  const vis = [...box.querySelectorAll(':scope > .edsec')].filter((x) => !x.classList.contains('u15-off')).map((x) => x.dataset.dk); const i = vis.indexOf(k), j = i + d; if (i < 0 || j < 0 || j >= vis.length) return;
+  const other = vis[j]; const keys = layoutKeys(K).filter((x) => x !== k); const oi = keys.indexOf(other); keys.splice(d < 0 ? oi : oi + 1, 0, k);
+  D.settings.layout = { ...(D.settings.layout || {}), [K]: keys }; touch(D.settings); NEXT_LOG_LABEL = 'Page layout changed (' + K + ' page)'; S.skipConfirm = true; await changed(); }, true);
+/* the shared ⤒ ⤓ (needfill.js) only call the usual save — the tab list in Settings saves its order on pointer-up, so give it one */
+document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('.tb-top, .tb-bot'); if (!b) return; const box = b.closest('[data-dnd]'); if (box && /^u15tabs:/.test(box.dataset.dnd)) setTimeout(() => document.dispatchEvent(new Event('pointerup')), 0); }, true);
+
+/* ================= 3b. records, patient page, appointment form: the ✏️ Edit layout bar gets ⤒ ⤓, rename, Shows, Opens and Tab ================= */
+if (typeof laySet === 'function') laySet = function (k, c) { /* keep a section's name / shows / opens when its order or hidden changes */
+  const cur = layCfg(k); const nc = U16.layReset ? { order: [], hidden: [] } : { ...cur, ...c }; U16.layReset = false;
+  D.settings.layouts = { ...(D.settings.layouts || {}), [k]: nc }; const empty = !(nc.order || []).length && !(nc.hidden || []).length && !Object.keys(nc.names || {}).length && !Object.keys(nc.vis || {}).length && !Object.keys(nc.fold || {}).length;
+  if (empty) delete D.settings.layouts[k]; touch(D.settings); save(); if (window.Sync) Sync.soon(); };
+document.addEventListener('click', (e) => { if (e.target.closest && e.target.closest('[data-act=lay-reset]')) { U16.layReset = true; setTimeout(() => { U16.layReset = false; }, 60000); } }, true);
+const U16_LPG = { rec: 'rec', patient: 'patient' };
+function u16SecEmpty(el) { const c = el.matches('.card,details') ? el : el.querySelector('.card,details') || el; if (c.querySelector('input,select,textarea,img,canvas,.kv,table,li,.lnk,[data-act]:not(.lay-bar *)')) return false;
+  const t = [...c.childNodes].filter((n) => !(n.nodeType === 1 && n.matches('h3,h2,summary,.lay-bar'))).map((n) => n.textContent || '').join(' ').replace(/\s+/g, ' ').trim(); return !t || /^(nothing (recorded|here|yet)|none( yet| recorded)?|no .{0,40} yet)\.?$/i.test(t); }
+function u16LayBars() { const pg = typeof layPage === 'function' ? layPage() : null; if (!pg || !pg.root) return; const c = layCfg(pg.k); const S2 = laySecs(pg); const on = LAY.on === pg.k;
+  S2.forEach((s) => { const hd = s.el.querySelector(':scope > h3, :scope > summary, h3'); const nm = (c.names || {})[s.key];
+    if (nm && hd && !hd.dataset.u16nm && typeof peRename === 'function') { peRename(hd, nm); hd.dataset.u16nm = '1'; }
+    if (!on) { if ((c.vis || {})[s.key] === 'empty' && u16SecEmpty(s.el)) s.el.classList.add('lay-hidden'); return; }
+    const bar = s.el.querySelector(':scope > .lay-bar'); if (!bar || bar.dataset.u16) return; bar.dataset.u16 = '1'; const k = h(s.key);
+    const up = bar.querySelector('[data-act=lay-up]'), dn = bar.querySelector('[data-act=lay-down]'), hide = bar.querySelector('[data-act=lay-hide]');
+    if (up) up.insertAdjacentHTML('beforebegin', `<button type="button" class="btn small" data-act="u16l-edge" data-e="top" data-k="${k}" title="Send to the top" aria-label="Send to the top">⤒</button>`);
+    if (dn) dn.insertAdjacentHTML('afterend', `<button type="button" class="btn small" data-act="u16l-edge" data-e="bottom" data-k="${k}" title="Send to the bottom" aria-label="Send to the bottom">⤓</button><button type="button" class="btn small" data-act="u16l-name" data-k="${k}">✏️ Rename</button>`);
+    if (hide) hide.hidden = true; const vis = c.hidden.includes(s.key) ? 'hide' : (c.vis || {})[s.key] || ''; const fold = (c.fold || {})[s.key] || '';
+    bar.insertAdjacentHTML('beforeend', `<span class="u16-lopts"><label>Shows <select class="u16l-vis" data-k="${k}" aria-label="When this section shows"><option value="" ${!vis ? 'selected' : ''}>Always show</option><option value="empty" ${vis === 'empty' ? 'selected' : ''}>Only when it has something in it</option><option value="hide" ${vis === 'hide' ? 'selected' : ''}>Hidden</option></select></label>${pg.k === 'bkform' ? '' : `<label>Opens <select class="u16l-fold" data-k="${k}" aria-label="Collapsed or expanded"><option value="" ${!fold ? 'selected' : ''}>As last left (this device)</option><option value="closed" ${fold === 'closed' ? 'selected' : ''}>Always collapsed</option><option value="open" ${fold === 'open' ? 'selected' : ''}>Always expanded</option></select></label>`}${U16_LPG[pg.k] ? u16TabSel(U16_LPG[pg.k], s.key, s.key) : ''}</span>`); }); }
+if (typeof layApply === 'function') layApply = (function (orig) { return function () { const r = orig.apply(this, arguments); try { u16LayBars(); u16Folds(); } catch (e) { console.warn('u16 layout', e); } return r; }; })(layApply);
+document.addEventListener('click', async (e) => { const el = e.target.closest && e.target.closest('[data-act=u16l-edge],[data-act=u16l-name]'); if (!el) return; e.preventDefault(); e.stopPropagation(); const pg = layPage(); if (!pg) return; const k = el.dataset.k; const c = layCfg(pg.k);
+  if (el.dataset.act === 'u16l-edge') { const keys = laySecs(pg).map((s) => s.key); const order = c.order.length ? [...c.order.filter((x) => keys.includes(x)), ...keys.filter((x) => !c.order.includes(x))] : keys; const o2 = order.filter((x) => x !== k); if (el.dataset.e === 'top') o2.unshift(k); else o2.push(k); laySet(pg.k, { order: o2 }); renderAll(); layApply(); return; }
+  const sec = laySecs(pg).find((s) => s.key === k); const cur = (c.names || {})[k] || ((sec && (sec.el.querySelector('.lay-name') || {}).textContent) || k).trim();
+  const r = await askBox('Rename the section', `<div class="f"><label for="u16-nm">Heading</label><input id="u16-nm" data-ask="nm" value="${h(cur)}" style="width:100%;font-size:16px;padding:9px;border:1px solid var(--line);border-radius:9px"></div><div class="hint">Shows on this page on every device (once you tap ✓ Done and keep the layout).</div>`, 'Save', false, 'Cancel', (c.names || {})[k] ? '↺ Back to the standard heading' : '');
+  if (!r) return; const names = { ...(c.names || {}) }; if (r === 'alt') delete names[k]; else { const v = (ASK_FORM.nm || '').trim(); if (!v) return; names[k] = v; } laySet(pg.k, { names }); renderAll(); layApply(); }, true);
+document.addEventListener('change', (e) => { const el = e.target; if (!el.classList || !(el.classList.contains('u16l-vis') || el.classList.contains('u16l-fold'))) return; const pg = layPage(); if (!pg) return; const k = el.dataset.k; const c = layCfg(pg.k);
+  if (el.classList.contains('u16l-vis')) { const hd = new Set(c.hidden || []); const vis = { ...(c.vis || {}) }; hd.delete(k); delete vis[k]; if (el.value === 'hide') hd.add(k); else if (el.value === 'empty') vis[k] = 'empty'; laySet(pg.k, { hidden: [...hd], vis }); }
+  else { const fold = { ...(c.fold || {}) }; if (el.value) fold[k] = el.value; else delete fold[k]; laySet(pg.k, { fold }); }
+  layApply(); }); /* saved for real when ✓ Done asks "Keep this layout?" */
+
+/* ================= 3c. ▾ collapse / ▸ expand on every section ================= */
+function u16FoldSets() { const out = []; const lay = typeof LAY !== 'undefined' && LAY.on;
+  const dt = document.querySelector('#detail .d-wrap'); if (dt && S.sel && ['business', 'contact'].includes(S.sel.kind) && !S.editPage && !(typeof showAllOn === 'function' && showAllOn(S.sel.id)) && !document.querySelector('#detail #sheet'))
+    out.push({ pg: S.sel.kind === 'business' ? 'biz' : 'person', kind: S.sel.kind, secs: u15Secs(dt) });
+  if (!lay && S.tab === 'pat' && typeof PT !== 'undefined' && PT.sel && !S.pageEd) { const root = document.querySelector('#list .d-wrap'); if (root && root.querySelector('[data-act=pt-back]')) out.push({ pg: 'patient', lay: 'patient', secs: u15Secs(root) }); }
+  if (!lay && S.tab === 'rec' && typeof CR !== 'undefined' && CR.page === 'edit') { const root = document.querySelector('#list .cr-edit'); if (root) out.push({ pg: 'rec', lay: 'rec', secs: [...root.querySelectorAll('.cr-sec')] }); }
+  return out; }
+function u16Folds() { try { const st = u16LS('bvp-u16fold', {});
+  u16FoldSets().forEach(({ pg, kind, lay, secs }) => secs.forEach((el) => { const card = el.matches('.card') ? el : el.querySelector(':scope > .card'); if (!card || card.tagName === 'DETAILS') return; const hd = card.querySelector(':scope > h3'); if (!hd) return;
+    const key = card.dataset.lk ? 'lk:' + card.dataset.lk : (typeof u15Key === 'function' ? u15Key(el) : ''); if (!key) return; const fk = pg + '|' + key;
+    const force = card.dataset.lk && kind ? layoutFoldOf(kind, card.dataset.lk) : lay ? ((layCfg(lay).fold || {})[typeof layKey === 'function' ? layKey(card) : key] || '') : '';
+    const closed = fk in U16.tmp ? U16.tmp[fk] : force === 'closed' ? true : force === 'open' ? false : !!st[fk];
+    card.classList.toggle('u16-closed', closed); let b = hd.querySelector(':scope > .u16-fold'); if (!b) { hd.insertAdjacentHTML('afterbegin', '<button type="button" class="u16-fold" data-act="u16-fold"></button>'); b = hd.querySelector(':scope > .u16-fold'); }
+    b.dataset.fk = fk; b.dataset.force = force; b.textContent = closed ? '▸' : '▾'; b.setAttribute('aria-expanded', String(!closed)); b.title = closed ? 'Expand this section' : 'Collapse this section'; b.setAttribute('aria-label', b.title); })); } catch (e) { console.warn('u16 folds', e); } }
+document.addEventListener('click', (e) => { const b = e.target.closest && e.target.closest('[data-act=u16-fold]'); if (!b) return; e.preventDefault(); e.stopPropagation(); const card = b.closest('.card'); const closed = !card.classList.contains('u16-closed');
+  card.classList.toggle('u16-closed', closed); b.textContent = closed ? '▸' : '▾'; b.setAttribute('aria-expanded', String(!closed)); b.title = closed ? 'Expand this section' : 'Collapse this section';
+  if (b.dataset.force) U16.tmp[b.dataset.fk] = closed; /* always collapsed / expanded: only for now */ else { const st = u16LS('bvp-u16fold', {}); if (closed) st[b.dataset.fk] = 1; else delete st[b.dataset.fk]; u16LSset('bvp-u16fold', st); } }, true);
+function u16After() { try { u16EdTools(); u16Folds(); } catch (e) { console.warn('u16', e); } }
+if (typeof renderDetail === 'function') renderDetail = (function (orig) { return function () { const r = orig.apply(this, arguments); u16After(); return r; }; })(renderDetail);
+if (typeof renderAll === 'function') renderAll = (function (orig) { return function () { if (!U16.mig && typeof D !== 'undefined' && D && D.settings && Array.isArray(D.businesses) && D.businesses.length) { U16.mig = true; u16LayMigrate(); } const r = orig.apply(this, arguments); u16After(); return r; }; })(renderAll);
+
+/* ================= 1. 🤝 sharefarms ================= */
+/* the job for businesses with the old "This is a share farm" tick */
+if (typeof JOB_TYPES !== 'undefined') JOB_TYPES.sfmig = { t: 'Set up sharefarms', manual: true };
+function u16SfJobs() { if (typeof sfLegacy !== 'function') return []; const dis = D.dismissed || {}; return (D.businesses || []).filter((b) => !b.gone && sfLegacy(b)).map((b) => { const key = 'sfmig:' + b.id; if (dis[key]) return null;
+  return { type: 'sfmig', key, kind: 'business', id: b.id, who: b.name, note: 'Has the old "This is a share farm" tick — make the sharefarm its own entry, or keep this business as the sharefarm.', herdpull: 'sfmig', sfmig: b.id }; }).filter(Boolean); }
+if (typeof herdJobs === 'function') herdJobs = (function (orig) { return function () { let L = []; try { L = orig.apply(this, arguments) || []; } catch (e) { console.warn(e); } try { L = L.concat(u16SfJobs()); } catch (e) { console.warn(e); } return L; }; })(herdJobs);
+if (typeof herdJobHtml === 'function') herdJobHtml = (function (orig) { return function (j) { if (!j || !j.sfmig) return orig.apply(this, arguments); const b = IDX.biz.get(j.sfmig); if (!b) return '';
+  const P = sfPartners(b); return `</div><div style="width:100%"><div>${typeof u13BizA === 'function' ? u13BizA(b) : h(b.name)}</div>${P.length ? `<div class="hint">Split with ${P.map((p) => `${typeof u13BizA === 'function' ? u13BizA(IDX.biz.get(p.bid)) : h(sfName(p.bid))} ${h(String(p.pct))}%`).join(', ')}</div>` : ''}
+    <div class="hint">If ${h(b.name)} also farms in its own right, the sharefarm becomes its own entry with its own herds, and its records and invoices show on every member's page.</div>
+    <div class="actions"><button class="btn small primary" data-act="sf-mig" data-bid="${h(b.id)}">🤝 Set it up…</button><button class="btn small" data-act="job-dismiss" data-key="${h(j.key)}">Not now</button></div></div><div>`; }; })(herdJobHtml);
+/* starting a record for a member: own herd, or the sharefarm? */
+const u16SfAsk = () => ((D.settings || {}).u16 || {}).sfAsk !== false;
+if (typeof crStart === 'function') crStart = (function (orig) { return async function (o) { try { const bid = o && (o.bk ? o.bk.bid : o.bid); const sfs = bid && typeof sfOfPartner === 'function' ? sfOfPartner(bid) : [];
+  if (sfs.length && u16SfAsk()) { const r = await askBox('🤝 Whose animals?', `<p>${h(sfName(bid))} is in ${sfs.length === 1 ? 'a sharefarm' : sfs.length + ' sharefarms'}. Is this record for their own herd, or the sharefarm's?</p><div class="f"><select data-ask="who" style="width:100%"><option value="${h(bid)}">${h(sfName(bid))} — their own herd</option>${sfs.map((s) => `<option value="${h(s.id)}">🤝 ${h(s.name)}</option>`).join('')}</select></div><div class="hint">The record and its invoice go to the one chosen (a sharefarm's invoice is split between its members). Turn this question off in Settings → Records.</div>`, 'Start the record', false, 'Cancel');
+    if (!r) return; const to = ASK_FORM.who || bid; if (to !== bid) { o = o.bk ? { ...o, bk: { ...o.bk, bid: to, pids: [] } } : { ...o, bid: to }; } } } catch (e) { console.warn('u16 sf record', e); }
+  return orig.call(this, o); }; })(crStart);
+/* on a record: switch between the member's own herd and the sharefarm (until it's finalised) */
+if (typeof crEditHtml === 'function') crEditHtml = (function (orig) { return function (r) { let html = orig.apply(this, arguments); try { if (!r || r.status === 'final' || typeof sfOfPartner !== 'function') return html; const b = IDX.biz.get(r.bid); if (!b) return html;
+  let own = null, sfs = []; if (sfIs(b) && r.sfFrom && IDX.biz.get(r.sfFrom)) { own = r.sfFrom; sfs = sfOfPartner(own); } else { sfs = sfOfPartner(r.bid); own = r.bid; } if (!sfs.length) return html;
+  const box = `<div class="card sfcard u16-sfwho"><h3><span class="sp">🤝 Whose animals?</span></h3><div class="f"><select class="u16-sfrec" data-id="${h(r.id)}" aria-label="Own herd or sharefarm" style="width:100%"><option value="${h(own)}" ${r.bid === own ? 'selected' : ''}>${h(sfName(own))} — their own herd</option>${sfs.map((s) => `<option value="${h(s.id)}" ${r.bid === s.id ? 'selected' : ''}>🤝 ${h(s.name)}</option>`).join('')}</select></div><div class="hint">Changing it moves the record and its invoice, and clears the patients chosen (they belong to the other one).</div></div>`;
+  const i = html.indexOf('<div class="card cr-sec'); return i < 0 ? box + html : html.slice(0, i) + box + html.slice(i); } catch (e) { console.warn('u16 sf banner', e); } return html; }; })(crEditHtml);
+document.addEventListener('change', async (e) => { const el = e.target; if (!el.classList || !el.classList.contains('u16-sfrec')) return; const r = crGet('crrec', el.dataset.id); if (!r) return; const to = el.value; if (to === r.bid) return;
+  if (!(await ask(`Move this record to ${h(sfName(to))}?<br><span class="hint">Its invoice moves too, and the patients chosen are cleared.</span>`, 'Move it'))) { renderAll(); return; }
+  const was = r.bid; r.sfFrom = sfIs(IDX.biz.get(to)) ? was : null; if (!r.sfFrom) delete r.sfFrom; r.bid = to; r.patients = []; touch(r); if (typeof crInvSync === 'function') crInvSync(r); NEXT_LOG_LABEL = `Record moved from ${sfName(was)} to ${sfName(to)}`; S.skipConfirm = true; await changed(); });
+/* booking for a member: own herd, or the sharefarm */
+if (typeof bkFormHtml === 'function') bkFormHtml = (function (orig) { return function () { let html = orig.apply(this, arguments); try { const f = BKF; if (!f || !f.bid || typeof sfOfPartner !== 'function') return html; const b = IDX.biz.get(f.bid);
+  let own = f.bid, sfs = sfOfPartner(f.bid); if (b && sfIs(b) && f.sfFrom && IDX.biz.get(f.sfFrom)) { own = f.sfFrom; sfs = sfOfPartner(own); } if (!sfs.length) return html;
+  const box = `<div class="f u16-sfbk"><label for="u16-sfbk">🤝 Whose animals?</label><select id="u16-sfbk" style="width:100%"><option value="${h(own)}" ${f.bid === own ? 'selected' : ''}>${h(sfName(own))} — their own herd</option>${sfs.map((s) => `<option value="${h(s.id)}" ${f.bid === s.id ? 'selected' : ''}>🤝 ${h(s.name)}</option>`).join('')}</select><div class="hint">${h(sfName(own))} is in a sharefarm — the appointment, its record and invoice go to the one chosen.</div></div>`;
+  const at = html.indexOf('data-act="bkf-clear">Change</button></div>'); if (at < 0) return html; const end = at + 'data-act="bkf-clear">Change</button></div>'.length; return html.slice(0, end) + box + html.slice(end); } catch (e) { console.warn('u16 sf booking', e); } return html; }; })(bkFormHtml);
+document.addEventListener('change', (e) => { const el = e.target; if (!el || el.id !== 'u16-sfbk' || !BKF) return; const to = el.value; if (to === BKF.bid) return; const b = IDX.biz.get(to);
+  if (b && sfIs(b)) BKF.sfFrom = BKF.sfFrom || BKF.bid; else delete BKF.sfFrom; BKF.bid = to; BKF.pids = []; if (typeof bkFormRefresh === 'function') bkFormRefresh(true); });
+/* Settings → Records: the "whose animals" question on or off */
+function u16SetCard() { const on = u16SfAsk(); return `<div class="card"><h3>🤝 Sharefarms</h3><label class="bk-radio"><input type="checkbox" id="u16-sfask" ${on ? 'checked' : ''}> Ask "own herd or sharefarm?" when starting a record for a business that's in a sharefarm</label><div class="hint">The record page always has the "Whose animals?" choice until it's finalised.</div></div>`; }
+if (typeof renderSettings === 'function') renderSettings = (function (orig) { return function () { let html = orig.apply(this, arguments); if (S.setSub && S.setSub !== 'records') return html; const at = html.lastIndexOf('</div>'); return at > 0 ? html.slice(0, at) + u16SetCard() + html.slice(at) : html + u16SetCard(); }; })(renderSettings);
+document.addEventListener('change', async (e) => { if (!e.target || e.target.id !== 'u16-sfask') return; const on = e.target.checked; if (!(await ask(on ? 'Ask "own herd or sharefarm?" when starting a record?' : 'Stop asking "own herd or sharefarm?" when starting a record?', 'Yes'))) { e.target.checked = !on; return; }
+  D.settings.u16 = { ...(D.settings.u16 || {}), sfAsk: on }; touch(D.settings); NEXT_LOG_LABEL = 'Sharefarm question when starting a record ' + (on ? 'on' : 'off'); S.skipConfirm = true; await changed(); });
+
+/* ================= look, Box colours, check jobs ================= */
+(function () { const st = document.createElement('style'); st.textContent = `.favstar{border:0;background:none;cursor:pointer;font-size:22px;line-height:1;color:#b8860b;padding:2px 6px;vertical-align:middle}.favstar.on{color:#e0a800}.favstar.favrow{font-size:20px;margin-left:auto;flex:0 0 auto;padding:6px 8px}h2 .favstar{font-size:26px}.favhint{font-size:14px}
+.u16-fold{border:0;background:none;cursor:pointer;font-size:15px;color:var(--ink3);padding:0 6px 0 0;line-height:1;flex:0 0 auto}.u16-closed > :not(h3):not(.lay-bar){display:none!important}.u16-closed > h3{margin-bottom:0}
+.edopts{display:flex;flex-wrap:wrap;gap:6px 12px;margin:4px 0 6px;font-size:13px}.edopts label,.u16-lopts label{display:flex;gap:4px;align-items:center}.edopts select,.u16-lopts select{font-size:13px;max-width:100%}.u16-lopts{display:flex;flex-wrap:wrap;gap:6px 10px;width:100%;font-size:13px;margin-top:4px}
+.sf-mirror{font-size:12px;color:#5b4a00;background:#fff7d6;border-radius:6px;padding:2px 6px;margin:6px 0 0;display:inline-block}.sf-in{border-top:1px solid var(--line);padding-top:4px;margin-top:4px}.sf-in:first-of-type{border-top:0}.u16-sfwho select,.u16-sfbk select{font-size:15px}
+@media (max-width:420px){.edopts select,.u16-lopts select{width:100%}.edopts label,.u16-lopts label{width:100%}}`; document.head.appendChild(st); })();
+if (typeof BOXES !== 'undefined') { if (!BOXES.some((x) => x.k === 'sfmirror')) BOXES.push({ k: 'sfmirror', l: '🤝 Sharefarm label on a member\'s records and invoices', sel: '.sf-mirror', txt: '.sf-mirror', sample: '<div class="sf-mirror">🤝 Sharefarm with Business B, Business C</div>', d: { bg: '#fff7d6', fg: '#5b4a00', bd: '#fff7d6', bold: false } });
+  if (!BOXES.some((x) => x.k === 'favstar')) BOXES.push({ k: 'favstar', l: '⭐ Favourite star', sel: '.favstar', txt: '.favstar', sample: '<button class="favstar on">★</button>', d: { bg: 'transparent', fg: '#e0a800', bd: 'transparent', bold: false } }); }
+if (typeof SETUP !== 'undefined' && typeof U8_TRY !== 'undefined') [
+  ['chk253-sfnew', 'Check: 🤝 make a sharefarm', 'Open a client business that shares farming → 🤝 Set up a sharefarm with other businesses… → choose the members and their shares (they must add up to 100%), then tick the herds / flocks and farms that belong to the sharefarm. It opens the new sharefarm — with 🤝 in All contacts.', 'u13:biz'],
+  ['chk253-sfmig', 'Check: 🤝 "Set up sharefarms" job', 'Jobs → "Set up sharefarms": each business with the old "This is a share farm" tick. 🤝 Set it up… → either make the sharefarm its own entry, or keep that business as the sharefarm.', 'u13:jobs'],
+  ['chk253-sfmirror', 'Check: 🤝 sharefarm records and invoices on each member', 'Open a member of a sharefarm: 🤝 Sharefarms (shares, shared herds, link), 📋 Sharefarm clinical records (Records tab) and 🧾 Sharefarm invoices — their share (Account tab), each labelled "🤝 Sharefarm with …".', 'u13:biz'],
+  ['chk253-sfinv', 'Check: 🤝 invoices split by share', 'Open a sharefarm invoice → 🖨 Their copy for one member: every line shows "X% share of …" and the member\'s share, and the totals add up to their share.', 'recs'],
+  ['chk253-sfwho', 'Check: 🤝 own herd or sharefarm', 'Start a record (or book) for a business in a sharefarm: it asks "Whose animals?" — own herd or the sharefarm. The record page also has the choice until it\'s finalised. (Settings → Records turns the question off.)', 'recs'],
+  ['chk253-edge', 'Check: ⤒ ⤓ on every reorder', 'Any list with ↑ ↓ (Settings lists, page layout, tabs, ✏️ Edit layout on a record) also has ⤒ (to the top) and ⤓ (to the bottom).', 'settings'],
+  ['chk253-edit', 'Check: ✏️ Edit layout per tab', 'Open a business → ✏️ Edit layout (admin): it edits the tab you\'re on — tap the other tabs to edit them. Each section: ⤒ ↑ ↓ ⤓, ✏️ Rename, Shows (Always / Only when it has something in it / Hidden), Opens (As last left / Always collapsed / Always expanded) and Tab. ✓ Finish editing the layout.', 'u13:biz'],
+  ['chk253-fold', 'Check: ▾ collapse every section', 'On a business, person, patient or record: tap ▾ on a section heading — it collapses to one line (▸ opens it). It stays that way on this device.', 'u13:biz'],
+  ['chk253-fav', 'Check: ⭐ favourites', 'Tap ☆ next to a name (person or business page, or any row of a list) — it turns ★ and shows at the top of All contacts. Tap ★ to take it off.', 'u13:biz']
+].forEach(([id, t, tryIt, go]) => { U8_TRY[id] = tryIt; U8_TO[id] = go; if (SETUP.some((x) => x.id === id)) return; SETUP.push({ id, t, steps: [tryIt, `<button type="button" class="btn small" data-act="u8-go" data-go="${go}">➡️ Take me there</button>`, 'If it does what you want, tick <b>✓ Done</b>. If not, tell Claude what\'s wrong.'] }); });
+window.u16Folds = u16Folds;
