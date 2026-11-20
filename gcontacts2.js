@@ -25,8 +25,11 @@
     if (GAuth.valid() || interactive) return GAuth.get(interactive);
     throw Object.assign(new Error('signin'), { signin: true });
   };
+  /* nothing can hang the update any more: every step gives up after a while instead of waiting forever */
+  const withTimeout = (p, ms, what) => Promise.race([p, new Promise((_, rej) => setTimeout(() => rej(new Error(`${what} didn't answer within ${Math.round(ms / 1000)} seconds — it tries again next time`)), ms))]);
   G.api = async function (url, opt) {
-    const t = (this.srvTok && Date.now() < this.srvTok.exp - 60000) ? this.srvTok.t : GAuth.valid() ? GAuth.tok.t : await this.token(false); const r = await fetch(url, { ...opt, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t } });
+    const t = (this.srvTok && Date.now() < this.srvTok.exp - 60000) ? this.srvTok.t : GAuth.valid() ? GAuth.tok.t : await withTimeout(this.token(false), 45000, 'Google access'); const ac = new AbortController(); const tm = setTimeout(() => ac.abort(), 45000); let r;
+    try { r = await fetch(url, { ...opt, signal: ac.signal, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + t } }); } catch (e) { if (e.name === 'AbortError') throw new Error("Google didn't answer within 45 seconds — it tries again next time"); throw e; } finally { clearTimeout(tm); }
     if (r.status === 401) { this.srvTok = null; throw Object.assign(new Error('signin'), { signin: true }); }
     if (r.status === 429) throw Object.assign(new Error('rate'), { rate: true });
     return r;
@@ -46,10 +49,10 @@
   G.photoSig = function (c) { const sp = this.spec(c); return JSON.stringify([sp, sp.custom ? fp(sp.custom) : (sp.parts || []).map((p) => fp(tagPhotoSrc(p.tag))), D.settings.photoSig1 || '']); };
   G.dataHash = function (c) { const s = JSON.stringify(this.person(c)); let x = 0; for (let i = 0; i < s.length; i++) x = (x * 31 + s.charCodeAt(i)) | 0; return x.toString(36); };
   G.st.dd = G.st.dd || {}; G.st.pd = G.st.pd || {}; /* dd: names/numbers sent · pd: caller photo sent */
-  async function loadSure(src) { for (let t = 0; t < 4; t++) { if (t) { imgCache.delete(src); await sleep(800 * t); } const im = await loadImg(src); if (im && im.width) return im; } imgCache.delete(src); return null; }
+  async function loadSure(src) { for (let t = 0; t < 4; t++) { if (t) { imgCache.delete(src); await sleep(800 * t); } const im = await Promise.race([loadImg(src), sleep(10000).then(() => null)]); if (im && im.width) return im; } imgCache.delete(src); return null; }
   G.photoBytes = async function (c) { const sp = this.spec(c); const srcs = sp.custom ? [sp.custom] : (sp.parts || []).map((p) => tagPhotoSrc(p.tag));
     for (let i = 0; i < srcs.length; i++) { if (!srcs[i]) continue; if (!(await loadSure(srcs[i]))) { const tg = sp.custom ? 'their own' : `"${tagName(sp.parts[i].tag)}"`; throw new Error(`the ${tg} photo couldn't be loaded on this device, so it wasn't sent (it tries again next time)`); } }
-    photoCache.delete(JSON.stringify(sp) + 480); const src = await renderPhoto(sp, 480); return src.split(',')[1]; };
+    photoCache.delete(JSON.stringify(sp) + 480); const src = await withTimeout(renderPhoto(sp, 480), 20000, 'Making the caller photo'); return src.split(',')[1]; };
   G.sendPhoto = async function (c) { const r = await this.api(`${PEOPLE}${c.gid}:updateContactPhoto`, { method: 'PATCH', body: JSON.stringify({ photoBytes: await this.photoBytes(c) }) });
     if (r.status === 404) { c.gid = null; throw new Error('it had been deleted from Google Contacts — it is added again next time'); } if (!r.ok) throw new Error(`Google said ${r.status} with the caller photo: ${(await r.text()).slice(0, 100)}`); };
   const FIELDS = 'names,phoneNumbers,emailAddresses,organizations,addresses';
@@ -65,7 +68,7 @@
     c.gid = gid; this.st.dd[c.id] = this.dataHash(c); await this.sendPhoto(c); this.st.pd[c.id] = this.photoSig(c); };
   const linkGid = (G0, c) => { if (!c.gid) return; G0.st.gids[c.id] = c.gid; if (c._biz) { if (c._biz.gid !== c.gid) { c._biz.gid = c.gid; touch(c._biz); } } else if (!c._gidSaved) { touch(c); } };
   G.run = async function () {
-    if (this.running) return; this.running = true; let wake = null; const msg = (m) => { this.st.msg = m; this.persist(); if (S.tab === 'settings' && !SHEET) { const el = document.querySelector('[data-gc-status]'); if (el) el.textContent = m; } };
+    if (this.running) return; this.running = true; let wake = null; const msg = (m) => { this.st.msg = m; this.persist(); if (S.tab === 'settings' && !SHEET) { const el = document.querySelector('[data-gc-status]'); if (el) el.textContent = m; const t = document.querySelector('[data-gc-time]'); if (t) t.textContent = `(working… last step ${new Date().toLocaleTimeString('en-AU', { hour: 'numeric', minute: '2-digit', second: '2-digit' })})`; } };
     let fails = 0, removed = 0, why = '', sentD = 0, sentP = 0, waits = 0; const errs = this.st.errs = {}; const fail = (c, e) => { fails++; errs[c.id] = e.message; why = why || `${fullName(c) || (c._biz && c._biz.name) || 'a contact'}: ${e.message}`; console.warn('Google Contacts', fullName(c), e); };
     const stopWhy = () => this.st.srvErr || 'Google needs connecting'; const ok = () => this.st.on && navigator.onLine && !this.stopNow;
     const rated = async (label) => { if (++waits > 20) { why = "Google's limit kept being reached — it carries on next time"; return false; } msg(`Google's limit reached — waiting a minute, then carrying on (${label})`); await sleep(60000); return true; };
@@ -106,7 +109,7 @@
       for (let i = 0; i < ph.length && ok() && why !== stopWhy(); i++) { const c = ph[i];
         try { await this.sendPhoto(c); this.st.pd[c.id] = this.photoSig(c); sentP++; waits = 0; }
         catch (e) { if (e.signin) { why = stopWhy(); break; } if (e.rate) { if (await rated(`${i} of ${ph.length} caller photos`)) { i--; continue; } break; } fail(c, e); }
-        if (i % 5 === 0) msg(`Sending caller photos… ${i + 1} of ${ph.length}${fails ? ` · ${fails} couldn't be sent` : ''}`);
+        msg(`Sending caller photos… ${i + 1} of ${ph.length}${fails ? ` · ${fails} couldn't be sent` : ''}`);
         await sleep(1100); }
       this.st.done = {}; /* old record no longer used */
       /* deleted or merged in the app → out of Google Contacts too */
@@ -150,7 +153,7 @@
   if (typeof callerPhotosHtml === 'function') callerPhotosHtml = function () { const gp = G.st; const ok = !!(G.srvTok && Date.now() < G.srvTok.exp) || GAuth.valid();
     return `<div class="lbl" style="margin-top:14px">Caller photos (Google Contacts)</div>
     <label style="display:flex;gap:8px;align-items:flex-start;margin:6px 0"><input type="checkbox" data-act="gpush-toggle" ${gp.on ? 'checked' : ''} ${S.admin ? '' : 'disabled title="Only the admin can change this"'}> <span>This device keeps Google Contacts up to date <span class="setlock fixed" style="font-size:11px;padding:1px 7px">🔒 Admin only</span><br><span class="hint">It updates whenever the app is open on this device. Google access comes from the practice's Google connection (Settings → Scheduling), so there's no Google sign-in to keep doing.</span></span></label>
-    ${gp.on ? `<div class="kv"><div class="k">Status</div><div class="v">${h(gp.msg || 'Waiting')}${G.running ? ' <span class="hint">(working…)</span>' : ''}</div></div>${gp.srvErr && !ok ? `<div class="kv"><div class="k">Google connection</div><div class="v" style="color:var(--red)">${h(gp.srvErr)}</div></div>` : ''}<div class="actions"><button class="btn small" data-act="gpush-now">Update Google Contacts now</button></div>` : ''}
+    ${gp.on ? `<div class="kv"><div class="k">Status</div><div class="v"><span data-gc-status>${h(gp.msg || 'Waiting')}</span>${G.running ? ' <span class="hint" data-gc-time>(working…)</span>' : ''}</div></div>${gp.srvErr && !ok ? `<div class="kv"><div class="k">Google connection</div><div class="v" style="color:var(--red)">${h(gp.srvErr)}</div></div>` : ''}<div class="actions"><button class="btn small" data-act="gpush-now">Update Google Contacts now</button></div>` : ''}
     ${S.admin ? `<div class="actions"><button class="btn small" data-act="gc2-backup">⬇️ Download a backup of Google Contacts</button><button class="btn small danger" data-act="gc2-again">🧹 Start Google Contacts again</button></div><div class="hint">Options (what's sent, removing deleted contacts): Settings → Contacts → Google Contacts (caller ID) options.</div>` : ''}
     ${S.admin ? `<div class="actions"><button class="btn small primary" data-act="gc3-open">🔍 Compare the app with Google Contacts</button></div>` : ''}`; };
   /* the ones Google wouldn't take, with what Google said — under the status in Settings */
