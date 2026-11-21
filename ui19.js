@@ -21,7 +21,7 @@ function u19PinBar(root) { const bar = root.querySelector(':scope > .u15-tabs');
   const cur = (bar.querySelector('.u15-tab.on') || {}).dataset; if (cur) mid.forEach((el) => { if (el.dataset.u15t && !isSec(el) && el.dataset.u15t !== 'top') el.classList.toggle('u15-off', el.dataset.u15t !== cur.t); });
   const tops = mid.filter((el) => el.dataset.u15t === 'top'); const anchor = mid.find((el) => el.dataset.u15t !== 'top') || null;
   tops.forEach((el) => root.insertBefore(el, anchor)); root.insertBefore(bar, anchor || (kids[j] || null)); }
-if (typeof u15Apply === 'function') u15Apply = (function (orig) { return function (pg, id, root) { const r = orig.apply(this, arguments); try { if (root && (pg === 'biz' || pg === 'person' || pg === 'patient')) u19PinBar(root); } catch (e) { console.warn('u19 tabs', e); } return r; }; })(u15Apply);
+if (typeof u15Apply === 'function') u15Apply = (function (orig) { return function (pg, id, root) { const r = orig.apply(this, arguments); try { if (root && (pg === 'biz' || pg === 'bizo' || pg === 'person' || pg === 'patient')) u19PinBar(root); } catch (e) { console.warn('u19 tabs', e); } return r; }; })(u15Apply);
 window.u19PinBar = u19PinBar;
 
 /* ================= 5. 🤝 Sharefarms tab ================= */
@@ -41,7 +41,7 @@ function u19SfMig() { try { if (!D.settings || D.settings.u19sfMig) return; cons
   .u11-oldh{border-top:2px solid #ccc;margin-top:18px;padding-top:8px}`; document.head.appendChild(st); })();
 
 /* ================= 7. ✓ Apply and open ➜ on every job ================= */
-const U19_NOT = /^(job-dismiss|job-ai|pop-job-ai|open|job-open|del-contact|del-biz|job-sel|job-selall|job-rename|km-pins|lookup-km|u19-ao|pt-open|bk-open|u13-open|ezy-open|tab)$/;
+const U19_NOT = /^(pcq-start|pcq-add|pcq-full|svc-start|svc-[a-z]+|job-dismiss|job-ai|pop-job-ai|open|job-open|del-contact|del-biz|job-sel|job-selall|job-rename|km-pins|lookup-km|u19-ao|pt-open|bk-open|u13-open|ezy-open|tab)$/;
 function u19Target(j) { if (!j) return null; const biz = (id) => (id && IDX.biz.get(id) ? { kind: 'business', id } : null);
   if ((j.kind === 'business' || j.kind === 'contact') && j.id) { if (j.kind === 'contact' ? D.contacts.some((c) => c.id === j.id && !c.gone) : IDX.biz.get(j.id)) return { kind: j.kind, id: j.id, fid: j.fid || null }; }
   const b = biz(j.ginfo) || biz(j.bid) || biz(j.data && j.data.bid) || (j.u13 && biz(j.u13.bid)) || (j.u14prac && (j.u14prac.kind === 'business' ? biz(j.u14prac.id) : { kind: 'contact', id: j.u14prac.id }));
@@ -52,7 +52,7 @@ function u19TName(t) { if (!t) return ''; if (t.kind === 'business') { const b =
 if (typeof jobItemHtml === 'function') jobItemHtml = (function (orig) { return function (j, inline) { let html = orig.apply(this, arguments); try { if (inline || !j) return html; const t = u19Target(j); if (!t) return html; let n = 0;
     html = html.replace(/<button([^>]*class="[^"]*\b(primary|greenbtn)\b[^"]*"[^>]*)>([\s\S]*?)<\/button>/g, (m0, attrs, cls, label) => { const act = (/data-act="([^"]+)"/.exec(attrs) || [])[1] || ''; if (!act || U19_NOT.test(act) || /data-u19i=/.test(attrs) || /disabled/.test(attrs)) return m0;
       const i = n++; return `<button${attrs} data-u19i="${i}">${label}</button><button type="button" class="btn small u19-ao" data-act="u19-ao" data-i="${i}" data-key="${h(j.key || '')}" data-tk="${t.kind}" data-tid="${h(t.id)}" ${t.fid ? `data-fid="${h(t.fid)}"` : ''} title="Do the same as the button before, then open ${h(u19TName(t))}">✓ Apply and open ➜</button>`; });
-    if (!n && !new RegExp(`data-act="open"[^>]*data-id="${t.id.replace(/[^\w-]/g, '')}"`).test(html)) { const nm = u19TName(t); html = html.replace(/<div class="acts">/, `<div class="acts"><button type="button" class="btn small" data-act="open" data-kind="${t.kind}" data-id="${h(t.id)}">➜ Open ${h(nm.length > 30 ? nm.slice(0, 28) + '…' : nm)}</button>`); }
+    if (!n && !new RegExp(`data-act="open"[^>]*data-id="${t.id.replace(/[^\w-]/g, '')}"`).test(html)) { const nm = u19TName(t); html = html.replace(/<div class="acts">/, `<div class="acts"><button type="button" class="btn small" data-act="u19-open" data-kind="${t.kind}" data-id="${h(t.id)}" ${t.fid ? `data-fid="${h(t.fid)}"` : ''}>➜ Open ${h(nm.length > 30 ? nm.slice(0, 28) + '…' : nm)}</button>`); }
   } catch (e) { console.warn('u19 apply and open', e); } return html; }; })(jobItemHtml);
 function u19Go(p) { U19.pend = null; if (typeof SHEET !== 'undefined' && SHEET && !SHEET.inline) closeSheet(); /* the same page, not a new browser tab */ if (!['all', 'contacts', 'biz', 'loc'].includes(S.tab)) { S.backTo = S.tab; S.tab = p.tk === 'business' ? 'biz' : 'contacts'; } S.sel = { kind: p.tk, id: p.tid }; renderAll(); const dt = document.getElementById('detail'); if (dt) dt.scrollTop = 0; document.body.classList.add('show-detail');
   setTimeout(() => { try { let el = p.fid ? document.querySelector(`#detail [data-fid="${CSS.escape(p.fid)}"]`) : null; if (el) { el = el.closest('.card, .farmcard, .kv, details') || el; el.scrollIntoView({ block: 'center', behavior: 'smooth' }); if (typeof u18Point === 'function') u18Point(el); } } catch (e) { } }, 500); }

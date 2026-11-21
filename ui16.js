@@ -26,8 +26,8 @@ function u16EdTools() { const dt = document.querySelector('#detail .d-wrap'); if
   if (top) { const em = top.querySelector('.secedit'); if (em) em.insertAdjacentHTML('beforebegin', btn); else top.insertAdjacentHTML('beforeend', btn); } else { const box = document.createElement('div'); box.className = 'lay-tools'; box.innerHTML = btn; dt.prepend(box); } }
 document.addEventListener('click', (e) => { const el = e.target.closest && e.target.closest('[data-act=edit-page]'); if (!el || S.admin) return; e.preventDefault(); e.stopImmediatePropagation(); toast('🔒 Editing the layout is for the admin — unlock first'); const b = document.createElement('button'); b.dataset.act = 'admin-unlock'; b.hidden = true; document.body.appendChild(b); b.click(); b.remove(); }, true);
 /* which tab a section is on — from the edit bar */
-function u16TabSel(kindOrPg, k, keyOverride) { const pg = kindOrPg === 'business' ? 'biz' : kindOrPg === 'contact' ? 'person' : kindOrPg; if (typeof u15Cfg !== 'function' || typeof U15_DEF === 'undefined' || !U15_DEF[pg]) return '';
-  if ((u15LS('bvp-u15', {}).open || {})[pg] === 'off') return ''; const key = keyOverride || (pg === 'biz' || pg === 'person' ? 'lk:' + k : k); const C = u15Cfg(pg); const cur = u15TabOf(pg, key, null);
+function u16TabSel(kindOrPg, k, keyOverride) { const pg = kindOrPg === 'business' ? u15BizPg(S.sel && S.sel.kind === 'business' ? S.sel.id : null) : kindOrPg === 'contact' ? 'person' : kindOrPg; if (typeof u15Cfg !== 'function' || typeof U15_DEF === 'undefined' || !U15_DEF[pg]) return '';
+  if ((u15LS('bvp-u15', {}).open || {})[pg] === 'off') return ''; const key = keyOverride || (pg === 'biz' || pg === 'bizo' || pg === 'person' ? 'lk:' + k : k); const C = u15Cfg(pg); const cur = u15TabOf(pg, key, null);
   return `<label>Tab <select class="u16-tabsel" data-pg="${pg}" data-key="${h(key)}" aria-label="Which tab this section is on"><option value="top" ${cur === 'top' ? 'selected' : ''}>Above the tabs (always shown)</option>${C.tabs.map((t) => `<option value="${h(t.id)}" ${cur === t.id ? 'selected' : ''}>${h(t.n)}</option>`).join('')}</select></label>`; }
 window.u16TabSel = u16TabSel;
 document.addEventListener('change', async (e) => { const el = e.target; if (!el.classList || !el.classList.contains('u16-tabsel')) return; if (!needAdmin()) { renderAll(); return; } const pg = el.dataset.pg, key = el.dataset.key, v = el.value;
@@ -76,7 +76,7 @@ document.addEventListener('change', (e) => { const el = e.target; if (!el.classL
 /* ================= 3c. ▾ collapse / ▸ expand on every section ================= */
 function u16FoldSets() { const out = []; const lay = typeof LAY !== 'undefined' && LAY.on;
   const dt = document.querySelector('#detail .d-wrap'); if (dt && S.sel && ['business', 'contact'].includes(S.sel.kind) && !S.editPage && !(typeof showAllOn === 'function' && showAllOn(S.sel.id)) && !document.querySelector('#detail #sheet'))
-    out.push({ pg: S.sel.kind === 'business' ? 'biz' : 'person', kind: S.sel.kind, secs: u15Secs(dt) });
+    out.push({ pg: S.sel.kind === 'business' ? u15BizPg(S.sel.id) : 'person', kind: S.sel.kind, secs: u15Secs(dt) });
   if (!lay && S.tab === 'pat' && typeof PT !== 'undefined' && PT.sel && !S.pageEd) { const root = document.querySelector('#list .d-wrap'); if (root && root.querySelector('[data-act=pt-back]')) out.push({ pg: 'patient', lay: 'patient', secs: u15Secs(root) }); }
   if (!lay && S.tab === 'rec' && typeof CR !== 'undefined' && CR.page === 'edit') { const root = document.querySelector('#list .cr-edit'); if (root) out.push({ pg: 'rec', lay: 'rec', secs: [...root.querySelectorAll('.cr-sec')] }); }
   return out; }

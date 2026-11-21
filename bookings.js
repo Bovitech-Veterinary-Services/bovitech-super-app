@@ -305,8 +305,15 @@ function bkBestTurn(st, from) { // the quickest turn-off to use from where you'r
   return ts.map((t) => ({ t, m: Travel.mins(o, Travel.stopPt({ ...st, tk: t.key })) })).sort((a, b) => a.m - b.m)[0].t.key;
 }
 function bkYardUse(fid, yid) { const fs = Bk.fsched(fid); if (fs.perYard && yid && fs.yards && fs.yards[yid]) return fs.yards[yid]; return fs; } // the rule for these yards
+/* v2.56.1: "not tested here yet — speed unknown": a rate record with unk (and no speed) — the usual rate is used, flagged to confirm */
+function bkRateRec(fid, yid, svc) { if (!fid) return null; const fs = Bk.fsched(fid); if (fs.ratesPerYard && yid) { const y = Bk.get(`yrate:${fid}:${yid}:${svc}`); if (y && !y.gone && (y.hph || y.unk)) return y; } const y = Bk.get('yard:' + fid + ':' + svc); return y && !y.gone ? y : null; }
+function bkRateUnk(fid, yid, svc) { const r = bkRateRec(fid, yid, svc); return !!(r && r.unk && !r.hph); }
+function bkSetUnk(fid, yid, svc, on) { const fs = Bk.fsched(fid); const per = !!(fs.ratesPerYard && yid); const id = per ? `yrate:${fid}:${yid}:${svc}` : 'yard:' + fid + ':' + svc; let y = Bk.get(id);
+  if (on) { if (!y) { y = { id, cfg: per ? 'yrate' : 'yard', fid, svc }; if (per) y.yid = yid; D.bkcfg.push(y); } if (!y.unk || y.hph || y.gone) { y.unk = true; delete y.hph; delete y.gone; touch(y); } return true; }
+  if (y && y.unk) { delete y.unk; if (!y.hph) y.gone = true; touch(y); return true; } return false; }
+window.bkRateUnk = bkRateUnk; window.bkSetUnk = bkSetUnk; window.bkRateRec = bkRateRec;
 function bkRate(fid, yid, svc) { // head per hour at these yards: their own rate, or the farm's, when the procedure uses each farm's rate
-  if (!fid) return null; if (bkCattleSvc(svc) && bkSheepOnly(fid, yid)) return null; /* no preg / bull testing speed at sheep yards */ const fs = Bk.fsched(fid);
+  if (!fid) return null; if (bkRateUnk(fid, yid, svc)) return null; if (bkCattleSvc(svc) && bkSheepOnly(fid, yid)) return null; /* no preg / bull testing speed at sheep yards */ const fs = Bk.fsched(fid);
   if (fs.ratesPerYard && yid) { const y = Bk.get(`yrate:${fid}:${yid}:${svc}`); if (y && !y.gone && y.hph) return { hph: y.hph, yard: true }; }
   const y = Bk.get('yard:' + fid + ':' + svc); return y && !y.gone && y.hph ? { hph: y.hph } : null;
 }

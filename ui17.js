@@ -96,9 +96,9 @@ window.addEventListener('resize', () => { if (U17.cur) u17Place(U17.cur.el); });
 window.u17Show = u17Show;
 
 /* ================= 6. ➕ New tab / ✏️ Rename / 🗑️ Delete on the tab bar while editing the layout ================= */
-function u17EdPg() { if (!S.admin) return null; if (S.editPage && S.sel && (S.sel.kind === 'business' || S.sel.kind === 'contact')) return S.sel.kind === 'business' ? 'biz' : 'person'; const lo = typeof LAY !== 'undefined' && LAY.on; return lo === 'rec' ? 'rec' : lo === 'patient' ? 'patient' : null; }
+function u17EdPg() { if (!S.admin) return null; if (S.editPage && S.sel && (S.sel.kind === 'business' || S.sel.kind === 'contact')) return S.sel.kind === 'business' ? u15BizPg(S.sel.id) : 'person'; const lo = typeof LAY !== 'undefined' && LAY.on; return lo === 'rec' ? 'rec' : lo === 'patient' ? 'patient' : null; }
 function u17TabTools() { try { const pg = u17EdPg(); if (!pg || typeof u15Cfg !== 'function') return; const C = u15Cfg(pg); let bar = document.querySelector(`.u15-tabs[data-pg="${pg}"]`);
-  if (!bar) { /* only one tab in use: still show the tabs so a new one can be added */ const root = pg === 'biz' || pg === 'person' ? document.querySelector('#detail .d-wrap') : pg === 'rec' ? document.querySelector('#list .cr-edit') : document.querySelector('#list .d-wrap'); if (!root) return;
+  if (!bar) { /* only one tab in use: still show the tabs so a new one can be added */ const root = pg === 'biz' || pg === 'bizo' || pg === 'person' ? document.querySelector('#detail .d-wrap') : pg === 'rec' ? document.querySelector('#list .cr-edit') : document.querySelector('#list .d-wrap'); if (!root) return;
     const first = root.querySelector('[data-dnd^="eplayout:"]') || root.querySelector('.cr-sec, .edsec, .card'); if (!first) return; bar = document.createElement('div'); bar.className = 'u15-tabs'; bar.dataset.pg = pg; bar.setAttribute('role', 'tablist');
     const cur = (U15.cur[pg] && U15.cur[pg].t) || C.tabs[0].id; bar.innerHTML = C.tabs.map((t) => `<button type="button" role="tab" class="u15-tab ${t.id === cur ? 'on' : ''}" data-act="u15-tab" data-pg="${pg}" data-t="${h(t.id)}">${h(t.n)}</button>`).join(''); first.parentElement.insertBefore(bar, first); }
   if (bar.querySelector('.u17-ttools')) return; const have = new Set([...bar.querySelectorAll('.u15-tab')].map((b) => b.dataset.t));

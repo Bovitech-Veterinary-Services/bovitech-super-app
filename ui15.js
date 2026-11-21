@@ -107,7 +107,7 @@ if (typeof giApply === 'function') giApply = (function (orig) { return function 
     if (m) { touch(bs); touch(b); } } catch (e) { console.warn('u15 giApply', e); } return n + m; }; })(giApply);
 
 /* ================= 5. tabs on business, person, patient and record pages ================= */
-const U15_PAGES = { biz: 'Business page', person: 'Person page', patient: 'Patient page', rec: 'Clinical record' };
+const U15_PAGES = { biz: 'Business page (client)', bizo: 'Business page (other — suppliers, depots…)', person: 'Person page', patient: 'Patient page', rec: 'Clinical record' };
 const U15_DEF = {
   biz: { tabs: [['det', 'Details'], ['sch', 'Scheduling'], ['pat', 'Patients'], ['rec', 'Records & appointments'], ['com', 'Comms & attachments'], ['acc', 'Account']],
     rules: [['top', /warning|biosecurity|don.?t mention|^jobs/], ['acc', /account|invoice|credit|xero|statement|balance|estimate/], ['com', /communication|attachment|email|texts|messages/], ['sch', /scheduling|farm|location|pins|saved route|booking rule|yard/], ['pat', /^patients?\b|herd|flock/], ['rec', /appointment|clinical record|ezyvet|keep note|lab|result|summary|recording|record/]] },
@@ -118,6 +118,11 @@ const U15_DEF = {
   rec: { tabs: [['visit', 'Visit'], ['proc', 'Procedures'], ['notes', 'Notes'], ['sheets', 'Recording sheets'], ['inv', 'Invoice']],
     sec: { visit: 'visit', patients: 'visit', travel: 'visit', labour: 'visit', ah: 'visit', links: 'visit', procs: 'proc', items: 'proc', labs: 'proc', notes: 'notes', fus: 'notes', certs: 'notes' },
     rules: [['sheets', /recording sheet|eye|foot trim/], ['inv', /invoice|billing|estimate|discount|charge/], ['notes', /note|follow|certificate|summary/], ['proc', /procedure|medication|lab/]] } };
+/* v2.56.1: businesses that aren't clients (suppliers, depots, other) have their own, shorter set of tabs */
+U15_DEF.bizo = { tabs: [['det', 'Details'], ['warn', 'Warnings'], ['com', 'Comms & attachments'], ['acc', 'Account']],
+  rules: [['top', /^jobs|don.?t mention/], ['warn', /warning|caution|biosecurity/], ['acc', /account|invoice|credit|xero|statement|balance|order/], ['com', /communication|attachment|email|texts|messages/]] };
+function u15BizPg(id) { const b = id && IDX.biz && IDX.biz.get(id); return b && typeof isClientBiz === 'function' && !isClientBiz(b) ? 'bizo' : 'biz'; }
+window.u15BizPg = u15BizPg;
 const u15Cfg = (pg) => { const c = ((D.settings || {}).u15tabs || {})[pg]; return { tabs: c && Array.isArray(c.tabs) && c.tabs.length ? c.tabs : U15_DEF[pg].tabs.map(([id, n]) => ({ id, n })), map: (c && c.map) || {} }; };
 function u15SetCfg(pg, c) { D.settings.u15tabs = { ...(D.settings.u15tabs || {}), [pg]: c }; touch(D.settings); }
 const u15Dev = () => u15LS('bvp-u15', { open: {}, last: {} });
@@ -158,7 +163,7 @@ document.addEventListener('click', (e) => { const el = e.target.closest && e.tar
 /* something on another tab that the app scrolls to (search result, a link to a section, "jump to") → that tab opens first */
 (function () { const sv = Element.prototype.scrollIntoView; Element.prototype.scrollIntoView = function () { try { const sec = this.closest && this.closest('.u15-off[data-u15t]'); if (sec) { const bar = sec.parentElement && sec.parentElement.querySelector(':scope > .u15-tabs'); if (bar) u15Show(bar.dataset.pg, sec.dataset.u15t); } } catch (e) { } return sv.apply(this, arguments); }; })();
 function u15Run() { try {
-  /* business / person (the details pane) — in ✏️ Edit layout, one tab at a time */ const dt = document.querySelector('#detail .d-wrap'); if (dt && S.sel && (S.sel.kind === 'business' || S.sel.kind === 'contact') && !document.querySelector('#detail #sheet')) { const pg = S.sel.kind === 'business' ? 'biz' : 'person'; const ed = dt.querySelector('[data-dnd^="eplayout:"]'); u15Apply(pg, S.sel.id, dt, ed ? [...ed.querySelectorAll(':scope > .edsec')] : u15Secs(dt)); }
+  /* business / person (the details pane) — in ✏️ Edit layout, one tab at a time */ const dt = document.querySelector('#detail .d-wrap'); if (dt && S.sel && (S.sel.kind === 'business' || S.sel.kind === 'contact') && !document.querySelector('#detail #sheet')) { const pg = S.sel.kind === 'business' ? u15BizPg(S.sel.id) : 'person'; const ed = dt.querySelector('[data-dnd^="eplayout:"]'); u15Apply(pg, S.sel.id, dt, ed ? [...ed.querySelectorAll(':scope > .edsec')] : u15Secs(dt)); }
   /* patient */ if (S.tab === 'pat' && typeof PT !== 'undefined' && PT.sel && S.pageEd !== 'ptpage') { const root = document.querySelector('#list .d-wrap'); if (root && root.querySelector('[data-act=pt-back]')) u15Apply('patient', PT.sel, root, u15Secs(root)); }
   /* record */ const p = u15Page(); if (p) { const tops = p.secs; if (tops.length) { const root = p.root; const bar0 = root.querySelector('.u15-tabs'); if (bar0) bar0.remove(); u15ApplyNested(p.pg, p.id, root, tops); } }
   } catch (e) { console.warn('u15 tabs', e); } }
@@ -184,7 +189,7 @@ if (typeof layApply === 'function') layApply = (function (orig) { return functio
 U15.setPg = 'biz';
 function u15SecList(pg) { const seen = { ...u15LS('bvp-u15seen-' + pg, {}), ...(U15.seen[pg] || {}) }; const C = u15Cfg(pg); Object.keys(C.map).forEach((k) => { if (!seen[k]) seen[k] = k; });
   if (pg === 'rec') Object.keys(U15_DEF.rec.sec).forEach((k) => { if (!seen[k]) seen[k] = k; });
-  if ((pg === 'biz' || pg === 'person') && typeof LAYOUT_SECS !== 'undefined') { const kind = pg === 'biz' ? 'business' : 'contact'; const nrm = (v) => String(v).replace(/[^\p{L}\s]/gu, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
+  if ((pg === 'biz' || pg === 'bizo' || pg === 'person') && typeof LAYOUT_SECS !== 'undefined') { const kind = pg === 'biz' || pg === 'bizo' ? 'business' : 'contact'; const nrm = (v) => String(v).replace(/[^\p{L}\s]/gu, ' ').replace(/\s+/g, ' ').trim().toLowerCase();
     (typeof layoutKeys === 'function' ? layoutKeys(kind) : LAYOUT_SECS[kind].map((x) => x[0])).forEach((k0) => { seen['lk:' + k0] = typeof layoutLabel === 'function' ? layoutLabel(kind, k0) : k0; });
     const lkL = new Set(Object.entries(seen).filter(([k]) => k.startsWith('lk:')).map(([, v]) => nrm(v))); Object.keys(seen).forEach((k) => { if (!k.startsWith('lk:') && lkL.has(nrm(seen[k]))) delete seen[k]; }); } /* v2.53: the page's own sections by their layout name */
   return Object.entries(seen).sort((a, b) => String(a[1]).localeCompare(String(b[1]))); }

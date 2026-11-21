@@ -12,7 +12,7 @@
       homebase → drop-off → homebase, or the extra km going via it from the farm; shared drop-offs: full price with a discount)
   10. 📅 Scheduling card: one kind of divider, only the headings on the left in bold */
 const U18 = { ed: null, colAll: false };
-const u18Pg = (kind) => (kind === 'business' ? 'biz' : kind === 'contact' ? 'person' : kind);
+const u18Pg = (kind) => (kind === 'business' ? (typeof u15BizPg === 'function' ? u15BizPg(S.sel && S.sel.kind === 'business' ? S.sel.id : null) : 'biz') : kind === 'contact' ? 'person' : kind);
 
 /* ================= 2. favourites: their own symbols and colours ================= */
 if (typeof SYM_DEFS !== 'undefined') [['fav_all', '★', 'Favourite — for everyone (every device)'], ['fav_me', '★', 'Favourite — just me (this device only)']].forEach((x) => { if (!SYM_DEFS.some((y) => y[0] === x[0])) SYM_DEFS.push(x); });
@@ -120,7 +120,7 @@ function u18MergeDom() { if (S.editPage || !S.sel || !['business', 'contact'].in
 
 /* ================= 4. ⚠️ the Warnings tab ================= */
 if (typeof U15_DEF !== 'undefined') ['biz', 'person'].forEach((pg) => { const T = U15_DEF[pg].tabs; if (!T.some((t) => t[0] === 'warn')) T.splice(1, 0, ['warn', 'Warnings']); });
-if (typeof U15_LK !== 'undefined') { Object.assign(U15_LK.biz, { warn: 'warn', biosec: 'warn', u18fw: 'warn' }); Object.assign(U15_LK.person, { warn: 'warn', u18fw: 'warn' }); }
+if (typeof U15_LK !== 'undefined') { Object.assign(U15_LK.biz, { warn: 'warn', biosec: 'warn', u18fw: 'warn' }); U15_LK.bizo = Object.assign(U15_LK.bizo || {}, { warn: 'warn', biosec: 'warn', u18fw: 'warn' }); Object.assign(U15_LK.person, { warn: 'warn', u18fw: 'warn' }); }
 function u18WarnMig() { try { if (!D.settings || D.settings.u18warnMig) return; const all = { ...(D.settings.u15tabs || {}) }; ['biz', 'person'].forEach((pg) => { const c = all[pg]; if (c && Array.isArray(c.tabs) && !c.tabs.some((t) => t.id === 'warn')) { const i = c.tabs.findIndex((t) => t.id === 'det'); const tabs = [...c.tabs]; tabs.splice(i >= 0 ? i + 1 : 1, 0, { id: 'warn', n: 'Warnings' }); all[pg] = { ...c, tabs }; } });
   D.settings.u15tabs = all; D.settings.u18warnMig = 1; touch(D.settings); save(); if (window.Sync && Sync.soon) Sync.soon(); else if (window.SupaSync && SupaSync.soon) SupaSync.soon(); } catch (e) { console.warn('u18 warnings tab', e); } }
 const u18FarmNotes = (f) => (f && f.notes ? f.notes.filter((n) => !n.res && ['warn', 'caution', 'repair', 'minor'].includes(n.k)) : []);
