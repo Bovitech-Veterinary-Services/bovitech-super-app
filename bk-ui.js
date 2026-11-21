@@ -296,14 +296,18 @@ function bkSettingsCard() { return `<div class="card"><h3>Scheduling (testing)</
 /* ---------------- the business page: how this client's farms and yards are booked ---------------- */
 function bkRateSvcs() { return Bk.cfg('service').filter((x) => x.mode === 'perhead' && x.rateFrom === 'farm'); } // procedures whose speed is set per farm / yard
 function bkRateOk(use, sv) { if (use === 'none' || (use === 'individual' && sv.yard)) return false; return !(sv.yard && (use === 'preg' || use === 'bull') && sv.yard !== use); }
+/* v2.56: the last and next appointment — on the Scheduling card (was under the business name) */
+function bkLastNextRows(b) { if (typeof bizLastVisit !== 'function') return ''; const l = bizLastVisit(b), n = typeof bizNextVisit === 'function' ? bizNextVisit(b) : null;
+  return `<div class="kv bk-lastnext"><div class="k">Last appointment</div><div class="v">${l ? bkDate(l, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' }) : '<i>None yet</i>'}</div></div>${n ? `<div class="kv bk-lastnext"><div class="k">Next appointment</div><div class="v">${bkDate(n, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div></div>` : ''}`; }
 function bkBizCard(b) {
   if (!Bk.on() || (typeof isClientBiz === 'function' && !isClientBiz(b))) return '';
   const bs = Bk.bsched(b.id), ed = Bk.can('book'), fs = bkFarmsOf(b.id), rs = bkRateSvcs();
   const sp = (fid, yid, sv) => { const y = bkRate(fid, yid, sv.id); return y && y.hph ? `<b>${y.hph}/hour</b>` : `${'<b style="color:#a15c00">TBC</b>' + (sv.hph ? ' <span class="hint">(' + sv.hph + '/hour until known)</span>' : '')}`; };
   /* v2.51: each yard on its own, with every procedure's speed on its own line */
-  const ruleLine = (fid, yid, label) => { const x = bkYardUse(fid, yid), use = x.use || ''; const rr = rs.filter((sv) => bkRateOk(use, sv));
+  const ruleLine = (fid, yid, label) => { const x = bkYardUse(fid, yid), use = x.use || ''; const rr = rs.filter((sv) => bkRateOk(use, sv) && !(bkCattleSvc(sv) && bkSheepOnly(fid, yid)));
     return `<div class="bk-yrow">${label ? `<div class="bk-yname">${h(label)}</div>` : ''}<div class="bk-canrow"><span class="bk-canlbl">What can be booked here:</span> ${typeof u15CanText === 'function' ? u15CanText(fid, yid) : use === 'none' ? '<b style="color:var(--red)">⛔ Do not service</b>' : h(BK_USE[use])}</div>${rr.map((sv) => `<div class="bk-spl">${h(sv.name)}: ${sp(fid, yid, sv)}</div>`).join('')}${x.note ? `<div class="bk-spnote">${h(x.note)}</div>` : ''}</div>`; };
   return `<div class="card bk-bizcard"><h3><span class="sp">📅 Scheduling</span>${ed ? `<button class="btn small" data-act="bks-bsched" data-id="${b.id}" aria-label="Edit scheduling">✏️</button>` : ''}</h3>
+    ${bkLastNextRows(b)}
     <div class="kv bk-tap" ${ed ? `data-act="bks-bsched" data-id="${b.id}" title="Tap to change"` : ''}><div class="k">Additional labour</div><div class="v">${bs.labour ? '<b>Needed at every non-emergency appointment</b> — you\'re reminded when booking' : 'Check if additional labour is required'}</div></div>
     ${bs.note ? `<div class="kv bk-tap" ${ed ? `data-act="bks-bsched" data-id="${b.id}" title="Tap to change"` : ''}><div class="k">Booking note</div><div class="v">${h(bs.note)}</div></div>` : ''}
     <div class="kv bk-tap" ${ed ? `data-act="bks-bsched" data-id="${b.id}" title="Tap to change"` : ''}><div class="k">PO number</div><div class="v">${b.poReq ? '<b>📋 Always needed for orders</b><br>Invoices can\'t be approved without one' : 'Not needed'}</div></div>

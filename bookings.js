@@ -288,10 +288,14 @@ function bkRuleText(r, anchor) {
 }
 
 /* ---------------- farms and yards ---------------- */
+/* v2.56: preg and bull testing speeds only apply at cattle yards — sheep yards and shearing sheds don't have them */
+function bkSheepType(t) { if (!t) return false; if (t === 'sheep' || t === 'shed') return true; try { const p = typeof pinT === 'function' ? pinT(t) : null; return !!p && /sheep|shear/i.test(p.name || '') && !/cattle/i.test(p.name || ''); } catch (e) { return false; } }
+function bkCattleSvc(sv) { if (!sv) return false; if (typeof sv === 'string') sv = (typeof Bk !== 'undefined' && Bk.get && Bk.get(sv)) || { id: sv }; return /preg|bull|bbse|pd\b/i.test((sv.name || '') + ' ' + (sv.id || '')); }
+function bkSheepOnly(fid, yid) { const f = fid && IDX.farms && IDX.farms.get(fid); if (!f) return false; const ys = bkYardsOf(f); if (yid) { const y = ys.find((x) => x.yid === yid); return !!(y && y.sheep); } return ys.length > 0 && ys.every((x) => x.sheep); }
 function bkYardsOf(f) { // the yards pins on a farm (the main pin counts when it's a yards pin)
   if (!f) return []; const out = []; const yt = (t) => (typeof isYardType === 'function' ? isYardType(t) : /cattle|sheep|yard/.test(t || ''));
-  if (f.lat != null && yt(f.pinType)) out.push({ yid: 'm', name: f.yLabel || f.name || (typeof pinT === 'function' ? pinT(f.pinType).name : 'Yards'), lat: +f.lat, lng: +f.lng, safety: f.safety || {} });
-  (f.extra || []).forEach((x) => { if (x.type !== 'turn' && yt(x.type) && x.lat != null) out.push({ yid: x.id, name: x.name || (typeof pinT === 'function' ? pinT(x.type).name : 'Yards'), lat: +x.lat, lng: +x.lng, safety: x.safety || {} }); });
+  if (f.lat != null && yt(f.pinType)) out.push({ yid: 'm', type: f.pinType || '', sheep: bkSheepType(f.pinType), name: f.yLabel || f.name || (typeof pinT === 'function' ? pinT(f.pinType).name : 'Yards'), lat: +f.lat, lng: +f.lng, safety: f.safety || {} });
+  (f.extra || []).forEach((x) => { if (x.type !== 'turn' && yt(x.type) && x.lat != null) out.push({ yid: x.id, type: x.type || '', sheep: bkSheepType(x.type), name: x.name || (typeof pinT === 'function' ? pinT(x.type).name : 'Yards'), lat: +x.lat, lng: +x.lng, safety: x.safety || {} }); });
   const seen = {}; out.forEach((y) => { seen[y.name] = (seen[y.name] || 0) + 1; }); const n = {}; out.forEach((y) => { if (seen[y.name] > 1) { n[y.name] = (n[y.name] || 0) + 1; y.name += ' ' + n[y.name]; } });
   return out;
 }
@@ -302,7 +306,7 @@ function bkBestTurn(st, from) { // the quickest turn-off to use from where you'r
 }
 function bkYardUse(fid, yid) { const fs = Bk.fsched(fid); if (fs.perYard && yid && fs.yards && fs.yards[yid]) return fs.yards[yid]; return fs; } // the rule for these yards
 function bkRate(fid, yid, svc) { // head per hour at these yards: their own rate, or the farm's, when the procedure uses each farm's rate
-  if (!fid) return null; const fs = Bk.fsched(fid);
+  if (!fid) return null; if (bkCattleSvc(svc) && bkSheepOnly(fid, yid)) return null; /* no preg / bull testing speed at sheep yards */ const fs = Bk.fsched(fid);
   if (fs.ratesPerYard && yid) { const y = Bk.get(`yrate:${fid}:${yid}:${svc}`); if (y && !y.gone && y.hph) return { hph: y.hph, yard: true }; }
   const y = Bk.get('yard:' + fid + ':' + svc); return y && !y.gone && y.hph ? { hph: y.hph } : null;
 }

@@ -20,9 +20,10 @@ function u16LayMigrate() { try { const L = (D.settings || {}).layouts || {}; let
     const nl = { ...L }; delete nl[lk]; D.settings.layouts = nl; ch = true; });
   if (ch) { touch(D.settings); save(); if (window.Sync) Sync.soon(); } } catch (e) { console.warn('u16 layout move', e); } }
 /* "✏️ Edit layout" at the top of business and person pages */
-function u16EdTools() { const dt = document.querySelector('#detail .d-wrap'); if (!dt || !S.sel || !['business', 'contact'].includes(S.sel.kind) || S.editPage || document.querySelector('#detail #sheet')) return; if (dt.querySelector(':scope > .u16-edtools')) return;
-  const box = document.createElement('div'); box.className = 'lay-tools u16-edtools'; box.innerHTML = `<button type="button" class="btn small" data-act="edit-page" data-kind="${S.sel.kind}" title="Move, rename, hide and collapse the sections on this page — every device">✏️ Edit layout</button>`;
-  const top = dt.querySelector(':scope > .dtop'); if (top) top.after(box); else dt.prepend(box); }
+function u16EdTools() { const dt = document.querySelector('#detail .d-wrap'); if (!dt || !S.sel || !['business', 'contact'].includes(S.sel.kind) || S.editPage || document.querySelector('#detail #sheet')) return; if (dt.querySelector('.u16-edtools')) return;
+  /* v2.56: in the top bar, to the left of ✏️ Edit mode — the bar stays at the top while scrolling */
+  const top = dt.querySelector(':scope > .dtop'); const btn = `<span class="u16-edtools"><button type="button" class="btn small" data-act="edit-page" data-kind="${S.sel.kind}" title="Move, rename, hide and collapse the sections on this page — every device">✏️ Edit layout</button></span>`;
+  if (top) { const em = top.querySelector('.secedit'); if (em) em.insertAdjacentHTML('beforebegin', btn); else top.insertAdjacentHTML('beforeend', btn); } else { const box = document.createElement('div'); box.className = 'lay-tools'; box.innerHTML = btn; dt.prepend(box); } }
 document.addEventListener('click', (e) => { const el = e.target.closest && e.target.closest('[data-act=edit-page]'); if (!el || S.admin) return; e.preventDefault(); e.stopImmediatePropagation(); toast('🔒 Editing the layout is for the admin — unlock first'); const b = document.createElement('button'); b.dataset.act = 'admin-unlock'; b.hidden = true; document.body.appendChild(b); b.click(); b.remove(); }, true);
 /* which tab a section is on — from the edit bar */
 function u16TabSel(kindOrPg, k, keyOverride) { const pg = kindOrPg === 'business' ? 'biz' : kindOrPg === 'contact' ? 'person' : kindOrPg; if (typeof u15Cfg !== 'function' || typeof U15_DEF === 'undefined' || !U15_DEF[pg]) return '';
