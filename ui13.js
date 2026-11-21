@@ -447,7 +447,7 @@ if (typeof u8Go === 'function') u8Go = (function (orig) { return function (k) { 
   return orig.apply(this, arguments); }; })(u8Go);
 const U13_CHECKS = [
   ['chk251-po', 'Check: 📋 PO number in ✏️ Scheduling', 'A client business → 📅 Scheduling → ✏️: tick "Always needs a PO number for orders" and Save (it asks first). The card shows a "PO number" row like the others: Always needed for orders. Untick it the same way.', 'u13:biz'],
-  ['chk251-popup', 'Check: confirm pop-ups show formatting', 'Business → 📅 Scheduling → 🧮 Yard speed: work out a speed — the "Please confirm" pop-up shows the speed in bold and the working underneath (no code showing).', 'u13:biz'],
+  ['chk251-popup', 'Check: confirm pop-ups show formatting', 'Business → 📅 Scheduling → 🧮 Yard speed calculator: work out a speed — the "Please confirm" pop-up shows the speed in bold and the working underneath (no code showing).', 'u13:biz'],
   ['chk251-sched', 'Check: 📅 Scheduling card easier to read', 'A client business → 📅 Scheduling: darker text; Bulk lists one per line; preg testing and bull testing as their own rows with a line between; "Yard speeds" with each farm and yard, and preg and bull testing speeds on separate lines.', 'u13:biz'],
   ['chk251-farmowner', 'Check: 🔎 farm search shows the owner', 'A record → Farms visited → ➕ Add a farm… → 🔎 Another farm: type part of a business name — its farms come up, each showing the owner (tap the owner to open the business).', 'u13:rec'],
   ['chk251-route', 'Check: 🏁 route start and finish', 'A record → Farms visited: Start and Finish show 🏠 Homebase. Tap Change to pick a farm or somewhere else — a box asks for the total km driven, and travel uses it.', 'u13:rec'],
